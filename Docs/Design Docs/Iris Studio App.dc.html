@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"><style>
+body{margin:0;background:#EDE9E2;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#5B3FD1;text-decoration:none}a:hover{color:#4630A8}
+*{box-sizing:border-box}
+input,textarea,button{font-family:'DM Sans',system-ui,sans-serif}
+input:focus,textarea:focus{outline:2px solid #5B3FD1;outline-offset:1px}
+.scroll::-webkit-scrollbar{width:0;height:0}
+.scroll{scrollbar-width:none}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes popIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes drawerIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+</style></helmet>
+
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:16px;padding:34px 20px 60px">
+
+<div style="display:flex;align-items:center;gap:14px">
+  <div style="font:700 15px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Iris Studio</div>
+  <div style="display:flex;background:#fff;border:1px solid #E7DFD3;border-radius:24px;padding:3px;gap:2px">
+    <div onClick="{{ setPublic }}" style="{{ publicTabStyle }}">Landing</div>
+    <div onClick="{{ setTeacher }}" style="{{ teacherTabStyle }}">Teacher</div>
+    <div onClick="{{ setStudent }}" style="{{ studentTabStyle }}">Student</div>
+  </div>
+  <div style="font:400 11.5px/1.4 'DM Sans',sans-serif;color:#8C8378;max-width:210px">{{ roleHint }}</div>
+</div>
+
+<div data-phone="1" style="width:390px;height:844px;border-radius:36px;overflow:hidden;position:relative;background:#F4F1EA;box-shadow:0 18px 50px rgba(30,27,24,.22);display:flex;flex-direction:column;border:1px solid rgba(0,0,0,.1)">
+
+  <div style="{{ statusBarStyle }}"><span>9:41</span><span style="display:flex;gap:5px;align-items:center"><span style="font:500 11px 'DM Mono',monospace">LIFF</span><span style="width:17px;height:9px;border:1.4px solid currentColor;border-radius:2px;display:block"></span></span></div>
+
+  <div class="scroll" style="flex:1;overflow-y:auto;overflow-x:hidden;position:relative">
+
+  <!-- ============ PUBLIC LANDING ============ -->
+  <sc-if value="{{ isPHome }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:10px 22px 30px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+        <div>
+          <div style="font:800 34px/.94 'Bricolage Grotesque',sans-serif;letter-spacing:-.035em;color:#1E1B18">Iris</div>
+          <div style="font:800 34px/.94 'Bricolage Grotesque',sans-serif;letter-spacing:-.035em;color:#1E1B18">Studio</div>
+          <div style="width:52px;height:3px;border-radius:3px;background:#FF6B4A;margin-top:11px"></div>
+        </div>
+        <div onClick="{{ openDrawer }}" style="width:42px;height:42px;border-radius:14px;background:#fff;border:1px solid #E7DFD3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;flex:none">
+          <span style="width:17px;height:1.8px;border-radius:2px;background:#1E1B18;display:block"></span>
+          <span style="width:17px;height:1.8px;border-radius:2px;background:#1E1B18;display:block"></span>
+          <span style="width:11px;height:1.8px;border-radius:2px;background:#1E1B18;display:block"></span>
+        </div>
+      </div>
+
+      <div style="font:400 13px/1.5 'DM Sans',sans-serif;color:#8C8378;margin-top:16px;max-width:280px">Voice lessons in Taipei. Grades, harmony, recitals — taught one singer at a time.</div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:28px">
+        <div style="font:800 19px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Upcoming Events</div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">{{ pubEventCount }}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px">
+        <sc-for list="{{ pubEvents }}" as="e" hint-placeholder-count="2">
+          <div onClick="{{ e.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px 15px;display:flex;align-items:center;gap:12px;cursor:pointer">
+            <div style="flex:1;min-width:0">
+              <div style="font:700 14.5px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ e.name }}</div>
+              <div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ e.place }}</div>
+            </div>
+            <div style="font:500 11.5px 'DM Mono',monospace;color:#1E1B18;flex:none">{{ e.date }}</div>
+            <div style="font:400 15px 'DM Sans',sans-serif;color:#B0A79A;flex:none">›</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:26px">
+        <div style="font:800 19px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Iris 分享</div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Notes</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px">
+        <sc-for list="{{ pubPosts }}" as="p" hint-placeholder-count="2">
+          <div onClick="{{ p.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px 15px;display:flex;align-items:center;gap:12px;cursor:pointer">
+            <div style="flex:1;min-width:0">
+              <div style="font:700 14.5px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ p.title }}</div>
+              <div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ p.kind }}</div>
+            </div>
+            <div style="font:500 11.5px 'DM Mono',monospace;color:#1E1B18;flex:none">{{ p.date }}</div>
+            <div style="font:400 15px 'DM Sans',sans-serif;color:#B0A79A;flex:none">›</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;gap:9px;margin-top:26px">
+        <sc-for list="{{ pubSocials }}" as="s" hint-placeholder-count="4">
+          <div onClick="{{ s.onOpen }}" style="width:46px;height:46px;border-radius:15px;background:#fff;border:1px solid #E7DFD3;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Mono',monospace;color:#1E1B18;cursor:pointer">{{ s.label }}</div>
+        </sc-for>
+      </div>
+
+      <div onClick="{{ openDrawer }}" style="margin-top:26px;background:#2A1F5C;color:#fff;border-radius:20px;padding:16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+        <div>
+          <div style="font:700 14px/1.15 'Bricolage Grotesque',sans-serif">Already with the studio?</div>
+          <div style="font:400 11.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.66);margin-top:5px">Sign in to see classes, homework and fees</div>
+        </div>
+        <div style="font:400 17px 'DM Sans',sans-serif;flex:none">›</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ LOGIN ============ -->
+  <sc-if value="{{ isPLogin }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:10px 22px 30px">
+      <div onClick="{{ goPHome }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Iris Studio</div>
+      <div style="margin-top:44px">
+        <div style="font:800 30px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.03em;color:#1E1B18">Iris Studio</div>
+        <div style="width:96px;height:3px;border-radius:3px;background:#FF6B4A;margin-top:10px"></div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:#8C8378;margin-top:16px">{{ loginKicker }}</div>
+      </div>
+
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:34px">Username</div>
+      <input onChange="{{ setLoginUser }}" value="{{ loginUser }}" placeholder="{{ loginUserHint }}" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:15px;font:400 14px 'DM Sans',sans-serif;background:#fff;color:#1E1B18">
+
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Password</div>
+      <input onChange="{{ setLoginPass }}" value="{{ loginPass }}" type="password" placeholder="••••••••" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:15px;font:400 14px 'DM Sans',sans-serif;background:#fff;color:#1E1B18">
+
+      <div onClick="{{ doLogin }}" style="{{ loginBtnStyle }}">{{ loginBtnLabel }}</div>
+      <div style="font:400 11.5px/1.5 'DM Sans',sans-serif;color:#B0A79A;text-align:center;margin-top:14px">LINE keeps you signed in after the first time.</div>
+
+      <div onClick="{{ switchLoginRole }}" style="margin-top:22px;text-align:center;font:600 12.5px 'DM Sans',sans-serif;color:#5B3FD1;cursor:pointer">{{ switchLoginLabel }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER HOME ============ -->
+  <sc-if value="{{ isTHome }}" hint-placeholder-val="{{ true }}">
+    <div>
+      <div style="background:#2A1F5C;color:#fff;padding:2px 0 24px;border-radius:0 0 28px 28px">
+        <div style="padding:12px 22px 0;display:flex;align-items:center;justify-content:space-between">
+          <div style="font:700 17px/1 'Bricolage Grotesque',sans-serif">Iris Studio</div>
+          <div style="display:flex;gap:9px;align-items:center">
+            <div onClick="{{ goRequests }}" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;position:relative;font:400 15px/1 'DM Sans',sans-serif;cursor:pointer">♪<span style="position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:#FF6B4A;border:2px solid #2A1F5C"></span></div>
+            <div style="width:34px;height:34px;border-radius:50%;background:#8C7BF0;display:flex;align-items:center;justify-content:center;font:700 12px 'Bricolage Grotesque',sans-serif">IL</div>
+          </div>
+        </div>
+        <div style="padding:20px 22px 0">
+          <div style="font:400 13px/1.3 'DM Sans',sans-serif;color:rgba(255,255,255,.66)">Morning, Iris. Wed 18 Aug —</div>
+          <div style="font:800 32px/1.04 'Bricolage Grotesque',sans-serif;letter-spacing:-.03em;margin-top:8px">{{ homeHeadline }}</div>
+        </div>
+      </div>
+
+      <div style="padding:16px 16px 0;display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <div onClick="{{ goFees }}" style="background:#FF6B4A;color:#fff;border-radius:20px;padding:15px;grid-column:span 2;display:flex;align-items:center;justify-content:space-between;cursor:pointer" style-hover="background:#F25F3E">
+          <div><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;opacity:.85">Unpaid this cycle</div><div style="font:800 27px/1 'Bricolage Grotesque',sans-serif;margin-top:7px;letter-spacing:-.02em">{{ unpaidTotal }}</div><div style="font:400 11.5px/1 'DM Sans',sans-serif;margin-top:7px;opacity:.9">{{ unpaidSub }}</div></div>
+          <div style="background:#fff;color:#D2542F;border-radius:20px;padding:9px 14px;font:700 12px 'DM Sans',sans-serif;flex:none">Remind</div>
+        </div>
+        <div onClick="{{ goHomework }}" style="background:#fff;border-radius:20px;padding:14px;cursor:pointer;border:1px solid #E7DFD3" style-hover="border-color:#5B3FD1">
+          <div style="font:800 26px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ toReviewCount }}</div>
+          <div style="font:500 12.5px/1.25 'DM Sans',sans-serif;margin-top:8px;color:#1E1B18">Homework<br>to review</div>
+          <div style="display:flex;margin-top:11px"><span style="width:22px;height:22px;border-radius:50%;background:#CFC4F5;display:block"></span><span style="width:22px;height:22px;border-radius:50%;background:#FFD9A0;display:block;margin-left:-7px;border:2px solid #fff"></span><span style="width:22px;height:22px;border-radius:50%;background:#B9E3D0;display:block;margin-left:-7px;border:2px solid #fff"></span></div>
+        </div>
+        <div onClick="{{ goRequests }}" style="background:#5B3FD1;color:#fff;border-radius:20px;padding:14px;cursor:pointer">
+          <div style="font:800 26px/1 'Bricolage Grotesque',sans-serif">{{ requestCount }}</div>
+          <div style="font:500 12.5px/1.25 'DM Sans',sans-serif;margin-top:8px">Reschedule<br>requests</div>
+          <div style="font:500 10px 'DM Mono',monospace;margin-top:11px;background:rgba(255,255,255,.18);display:inline-block;padding:3px 8px;border-radius:20px">{{ oldestRequest }}</div>
+        </div>
+        <div onClick="{{ goEvents }}" style="background:#fff;border-radius:20px;padding:14px;cursor:pointer;border:1px solid #E7DFD3" style-hover="border-color:#5B3FD1">
+          <div style="font:800 26px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ eventCount }}</div>
+          <div style="font:500 12.5px/1.25 'DM Sans',sans-serif;margin-top:8px;color:#1E1B18">Upcoming<br>events</div>
+          <div style="font:400 11px/1 'DM Sans',sans-serif;color:#8C8378;margin-top:11px">{{ nextEventLabel }}</div>
+        </div>
+        <div onClick="{{ goClasses }}" style="background:#fff;border-radius:20px;padding:14px;cursor:pointer;border:1px solid #E7DFD3" style-hover="border-color:#5B3FD1">
+          <div style="font:800 26px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ classCount }}</div>
+          <div style="font:500 12.5px/1.25 'DM Sans',sans-serif;margin-top:8px;color:#1E1B18">Classes<br>running</div>
+          <div style="font:400 11px/1 'DM Sans',sans-serif;color:#8C8378;margin-top:11px">{{ studentCount }} students</div>
+        </div>
+      </div>
+
+      <div style="padding:20px 22px 16px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><div style="font:700 14px 'Bricolage Grotesque',sans-serif;color:#1E1B18">Up next</div><div onClick="{{ goStudents }}" style="font:500 11.5px 'DM Sans',sans-serif;color:#5B3FD1;cursor:pointer">Full day</div></div>
+        <div class="scroll" style="display:flex;gap:10px;margin-top:12px;margin-right:-22px;padding-right:22px;overflow-x:auto">
+          <sc-for list="{{ upNext }}" as="l" hint-placeholder-count="3">
+            <div onClick="{{ l.onOpen }}" style="{{ l.cardStyle }}"><div style="{{ l.timeStyle }}">{{ l.time }}</div><div style="font:700 13.5px/1.15 'Bricolage Grotesque',sans-serif;margin-top:7px">{{ l.name }}</div><div style="{{ l.subStyle }}">{{ l.sub }}</div></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER STUDENTS ============ -->
+  <sc-if value="{{ isTStudents }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Students</div>
+        <div style="font:500 11.5px 'DM Mono',monospace;color:#8C8378">{{ studentCount }} active</div>
+      </div>
+      <div style="margin-top:14px;background:#fff;border:1px solid #E7DFD3;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:9px;color:#B0A79A;font:400 13px 'DM Sans',sans-serif">Search name, instrument, grade…</div>
+      <div style="display:flex;gap:7px;margin-top:12px;flex-wrap:wrap">
+        <sc-for list="{{ studentFilters }}" as="f" hint-placeholder-count="4">
+          <div onClick="{{ f.onPick }}" style="{{ f.style }}">{{ f.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:16px">
+        <sc-for list="{{ studentRows }}" as="s" hint-placeholder-count="6">
+          <div onClick="{{ s.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:pointer" style-hover="border-color:#5B3FD1">
+            <div style="{{ s.avatarStyle }}">{{ s.initials }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ s.name }}</div>
+              <div style="font:400 11.5px/1.3 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ s.sub }}</div>
+            </div>
+            <div style="text-align:right;flex:none">
+              <div style="{{ s.pillStyle }}">{{ s.pill }}</div>
+              <div style="font:400 10.5px 'DM Mono',monospace;color:#B0A79A;margin-top:6px">{{ s.hwLabel }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER STUDENT DETAIL ============ -->
+  <sc-if value="{{ isTStudent }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="background:#2A1F5C;color:#fff;padding:12px 22px 22px;border-radius:0 0 26px 26px">
+        <div onClick="{{ back }}" style="font:500 12.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.7);cursor:pointer">‹ Students</div>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:16px">
+          <div style="width:56px;height:56px;border-radius:50%;background:#8C7BF0;display:flex;align-items:center;justify-content:center;font:700 19px 'Bricolage Grotesque',sans-serif;flex:none">{{ cur.initials }}</div>
+          <div style="flex:1">
+            <div style="font:800 24px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em">{{ cur.name }}</div>
+            <div style="font:400 12px/1.3 'DM Sans',sans-serif;color:rgba(255,255,255,.66);margin-top:5px">{{ cur.sub }}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:18px">
+          <div style="flex:1;background:rgba(255,255,255,.1);border-radius:14px;padding:10px 12px"><div style="font:700 16px/1 'Bricolage Grotesque',sans-serif">{{ cur.grade }}</div><div style="font:400 10.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:5px">grade</div></div>
+          <div style="flex:1;background:rgba(255,255,255,.1);border-radius:14px;padding:10px 12px"><div style="font:700 16px/1 'Bricolage Grotesque',sans-serif">{{ cur.streak }}d</div><div style="font:400 10.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:5px">streak</div></div>
+          <div style="flex:1;background:rgba(255,255,255,.1);border-radius:14px;padding:10px 12px"><div style="{{ cur.feeValStyle }}">{{ cur.feeShort }}</div><div style="font:400 10.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:5px">fee</div></div>
+        </div>
+      </div>
+      <div style="padding:18px 22px 20px">
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Class</div>
+        <div style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px;margin-top:10px;display:flex;align-items:center;justify-content:space-between">
+          <div><div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ cur.className }}</div><div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ cur.slot }}</div></div>
+          <div onClick="{{ goClasses }}" style="font:600 11.5px 'DM Sans',sans-serif;color:#5B3FD1;cursor:pointer">Manage</div>
+        </div>
+
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Homework history</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          <sc-for list="{{ curHomework }}" as="h" hint-placeholder-count="3">
+            <div onClick="{{ h.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer" style-hover="border-color:#5B3FD1">
+              <div style="{{ h.typeStyle }}">{{ h.typeIcon }}</div>
+              <div style="flex:1;min-width:0"><div style="font:600 13px/1.2 'DM Sans',sans-serif;color:#1E1B18">{{ h.title }}</div><div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ h.meta }}</div></div>
+              <div style="{{ h.pillStyle }}">{{ h.pill }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Fee · 4-week cycle</div>
+        <div style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px;margin-top:10px">
+          <div style="display:flex;gap:6px">
+            <sc-for list="{{ curWeeks }}" as="w" hint-placeholder-count="4">
+              <div style="flex:1;text-align:center"><div style="{{ w.dotStyle }}">{{ w.mark }}</div><div style="font:400 9.5px 'DM Mono',monospace;color:#B0A79A;margin-top:6px">{{ w.label }}</div></div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding-top:13px;border-top:1px solid #F0EAE0">
+            <div><div style="font:700 17px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ cur.feeAmount }}</div><div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ cur.feeNote }}</div></div>
+            <div onClick="{{ remindCurrent }}" style="{{ cur.remindBtnStyle }}">Remind on WhatsApp</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:9px;margin-top:20px">
+          <div onClick="{{ goAssign }}" style="flex:1;background:#1E1B18;color:#fff;border-radius:16px;padding:14px;text-align:center;font:700 13px 'DM Sans',sans-serif;cursor:pointer">Give homework</div>
+          <div onClick="{{ goClasses }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:14px;text-align:center;font:700 13px 'DM Sans',sans-serif;cursor:pointer">Change class</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER HOMEWORK ============ -->
+  <sc-if value="{{ isTHomework }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Homework</div>
+        <div onClick="{{ goAssign }}" style="background:#5B3FD1;color:#fff;border-radius:20px;padding:9px 15px;font:700 12px 'DM Sans',sans-serif;cursor:pointer">+ Give</div>
+      </div>
+      <div style="display:flex;gap:7px;margin-top:14px">
+        <sc-for list="{{ hwTabs }}" as="t" hint-placeholder-count="3">
+          <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:16px">
+        <sc-for list="{{ hwRows }}" as="h" hint-placeholder-count="4">
+          <div onClick="{{ h.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:13px 14px;cursor:pointer" style-hover="border-color:#5B3FD1">
+            <div style="display:flex;align-items:center;gap:11px">
+              <div style="{{ h.typeStyle }}">{{ h.typeIcon }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 14.5px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ h.student }}</div>
+                <div style="font:400 11.5px/1.3 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ h.title }}</div>
+              </div>
+              <div style="{{ h.pillStyle }}">{{ h.pill }}</div>
+            </div>
+            <sc-if value="{{ h.showWave }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:flex-end;gap:2.5px;height:22px;margin-top:12px">
+                <sc-for list="{{ h.wave }}" as="b" hint-placeholder-count="20">
+                  <span style="{{ b.style }}"></span>
+                </sc-for>
+              </div>
+            </sc-if>
+            <div style="font:400 10.5px 'DM Mono',monospace;color:#B0A79A;margin-top:10px">{{ h.meta }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER REVIEW ============ -->
+  <sc-if value="{{ isTReview }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="background:#1E1B18;color:#fff;padding:12px 22px 20px">
+        <div onClick="{{ back }}" style="font:500 12.5px 'DM Sans',sans-serif;color:rgba(255,255,255,.65);cursor:pointer">‹ Homework</div>
+        <div style="font:800 24px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;margin-top:14px">{{ rev.student }}</div>
+        <div style="font:400 12px/1.3 'DM Sans',sans-serif;color:rgba(255,255,255,.62);margin-top:6px">{{ rev.title }} · {{ rev.meta }}</div>
+        <sc-if value="{{ isPhotoReview }}" hint-placeholder-val="{{ false }}">
+          <div style="background:rgba(255,255,255,.08);border-radius:18px;padding:14px;margin-top:16px">
+            <div style="border-radius:14px;background:repeating-linear-gradient(135deg,rgba(255,255,255,.06) 0 10px,rgba(255,255,255,.02) 10px 20px);border:1px dashed rgba(255,255,255,.28);height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+              <div style="width:38px;height:38px;border-radius:12px;background:#FFD9A0;color:#8A5A20;display:flex;align-items:center;justify-content:center;font:600 16px 'DM Sans',sans-serif">◧</div>
+              <div style="font:500 11px 'DM Mono',monospace;color:rgba(255,255,255,.55);white-space:nowrap">PHOTO FROM {{ revFirstName }}</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+              <div style="font:400 11.5px/1.4 'DM Sans',sans-serif;color:rgba(255,255,255,.6)">{{ rev.title }}</div>
+              <div style="background:rgba(255,255,255,.14);border-radius:20px;padding:7px 12px;font:600 11px 'DM Sans',sans-serif;color:#fff;flex:none">Full size</div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isAudioReview }}" hint-placeholder-val="{{ true }}">
+        <div style="background:rgba(255,255,255,.08);border-radius:18px;padding:16px;margin-top:16px">
+          <div style="display:flex;align-items:center;gap:13px">
+            <div onClick="{{ togglePlay }}" style="width:46px;height:46px;border-radius:50%;background:#C8FF6B;color:#1B1726;display:flex;align-items:center;justify-content:center;font:700 15px 'DM Sans',sans-serif;flex:none;cursor:pointer">{{ playIcon }}</div>
+            <div style="flex:1">
+              <div style="display:flex;align-items:flex-end;gap:2.5px;height:30px">
+                <sc-for list="{{ revWave }}" as="b" hint-placeholder-count="26">
+                  <span style="{{ b.style }}"></span>
+                </sc-for>
+              </div>
+              <div style="display:flex;justify-content:space-between;font:500 10px 'DM Mono',monospace;color:rgba(255,255,255,.5);margin-top:8px"><span>{{ playPos }}</span><span>{{ rev.duration }}</span></div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+      <div style="padding:18px 22px 24px">
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">How was it?</div>
+        <div style="display:flex;gap:8px;margin-top:11px">
+          <sc-for list="{{ stars }}" as="s" hint-placeholder-count="5">
+            <div onClick="{{ s.onPick }}" style="{{ s.style }}">★</div>
+          </sc-for>
+        </div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Quick notes</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">
+          <sc-for list="{{ quickNotes }}" as="q" hint-placeholder-count="4">
+            <div onClick="{{ q.onPick }}" style="{{ q.style }}">{{ q.label }}</div>
+          </sc-for>
+        </div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Feedback</div>
+        <textarea onChange="{{ setFeedback }}" value="{{ feedbackText }}" placeholder="Type what you'd say in the room…" style="width:100%;height:104px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;color:#1E1B18;background:#fff;resize:none"></textarea>
+        <div style="display:flex;gap:9px;margin-top:16px">
+          <div onClick="{{ sendFeedback }}" style="flex:1;background:#5B3FD1;color:#fff;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Send feedback</div>
+          <div onClick="{{ recordReply }}" style="width:54px;background:#fff;border:1px solid #E7DFD3;border-radius:16px;display:flex;align-items:center;justify-content:center;font:400 17px 'DM Sans',sans-serif;color:#1E1B18;cursor:pointer">♪</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER ASSIGN ============ -->
+  <sc-if value="{{ isTAssign }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ back }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Back</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">Give homework</div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Who</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">
+        <sc-for list="{{ assignPeople }}" as="p" hint-placeholder-count="6">
+          <div onClick="{{ p.onToggle }}" style="{{ p.style }}">{{ p.name }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Piece / task</div>
+      <input onChange="{{ setFormTitle }}" value="{{ formTitle }}" placeholder="Sirens + lip trills, full range" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/>
+      <div style="display:flex;gap:9px;margin-top:14px">
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Due</div><input onChange="{{ setFormDue }}" value="{{ formDue }}" placeholder="25 Aug" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Minutes/day</div><input onChange="{{ setFormMins }}" value="{{ formMins }}" placeholder="20" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">They send back</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">
+        <sc-for list="{{ submitTypes }}" as="t" hint-placeholder-count="5">
+          <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Note</div>
+      <textarea onChange="{{ setFormNote }}" value="{{ formNote }}" placeholder="Warm up first, and don't push the top — let it float." style="width:100%;height:84px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;background:#fff;color:#1E1B18;resize:none"></textarea>
+      <div onClick="{{ saveHomework }}" style="background:#1E1B18;color:#fff;border-radius:16px;padding:16px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;margin-top:18px;cursor:pointer">{{ assignCta }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER FEES ============ -->
+  <sc-if value="{{ isTFees }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Fees</div>
+      <div style="font:400 12px/1.3 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">Cycle 8 · 4 Aug – 31 Aug · four weeks</div>
+
+      <div style="background:#2A1F5C;color:#fff;border-radius:22px;padding:17px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.6)">Collected</div><div style="font:800 25px/1 'Bricolage Grotesque',sans-serif;margin-top:7px">{{ collectedTotal }}</div></div>
+          <div style="text-align:right"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.6)">Outstanding</div><div style="font:800 25px/1 'Bricolage Grotesque',sans-serif;margin-top:7px;color:#FF8F76">{{ unpaidTotal }}</div></div>
+        </div>
+        <div style="height:8px;border-radius:8px;background:rgba(255,255,255,.16);margin-top:15px;overflow:hidden"><div style="{{ collectedBarStyle }}"></div></div>
+        <div style="font:400 11px 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:9px">{{ collectedNote }}</div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px">
+        <div style="font:700 14px 'Bricolage Grotesque',sans-serif;color:#1E1B18">Every student</div>
+        <div onClick="{{ selectAllUnpaid }}" style="font:600 11.5px 'DM Sans',sans-serif;color:#5B3FD1;cursor:pointer">Select all unpaid</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+        <sc-for list="{{ feeRows }}" as="f" hint-placeholder-count="6">
+          <div onClick="{{ f.onToggle }}" style="{{ f.rowStyle }}">
+            <div style="{{ f.checkStyle }}">{{ f.check }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font:700 14px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ f.name }}</div>
+              <div style="display:flex;gap:4px;margin-top:7px">
+                <sc-for list="{{ f.weeks }}" as="w" hint-placeholder-count="4">
+                  <span style="{{ w.style }}"></span>
+                </sc-for>
+                <span style="font:400 10px 'DM Mono',monospace;color:#B0A79A;margin-left:5px">{{ f.weekNote }}</span>
+              </div>
+            </div>
+            <div style="text-align:right;flex:none">
+              <div style="font:700 13.5px 'DM Mono',monospace;color:#1E1B18">{{ f.amount }}</div>
+              <div style="{{ f.pillStyle }}">{{ f.pill }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="height:70px"></div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER MORE ============ -->
+  <sc-if value="{{ isTMore }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Studio</div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:16px">
+        <sc-for list="{{ moreRows }}" as="m" hint-placeholder-count="4">
+          <div onClick="{{ m.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:15px;display:flex;align-items:center;gap:13px;cursor:pointer" style-hover="border-color:#5B3FD1">
+            <div style="{{ m.iconStyle }}">{{ m.icon }}</div>
+            <div style="flex:1"><div style="font:700 14.5px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ m.title }}</div><div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ m.sub }}</div></div>
+            <div style="font:400 16px 'DM Sans',sans-serif;color:#B0A79A">›</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER EVENTS ============ -->
+  <sc-if value="{{ isTEvents }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goMore }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Studio</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+        <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Events</div>
+        <div onClick="{{ newEvent }}" style="background:#5B3FD1;color:#fff;border-radius:20px;padding:9px 15px;font:700 12px 'DM Sans',sans-serif;cursor:pointer">+ Create</div>
+      </div>
+      <div style="display:flex;gap:7px;margin-top:14px">
+        <sc-for list="{{ eventTabs }}" as="t" hint-placeholder-count="2">
+          <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+        <sc-for list="{{ eventRows }}" as="e" hint-placeholder-count="3">
+          <div style="{{ e.cardStyle }}">
+            <div style="display:flex;gap:13px">
+              <div style="{{ e.dateStyle }}"><div style="font:800 18px/1 'Bricolage Grotesque',sans-serif">{{ e.day }}</div><div style="font:500 9.5px 'DM Mono',monospace;margin-top:3px">{{ e.mon }}</div></div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif">{{ e.title }}</div>
+                <div style="{{ e.subStyle }}">{{ e.sub }}</div>
+                <div style="{{ e.sentStyle }}">{{ e.sentLabel }}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:7px;margin-top:13px">
+              <div onClick="{{ e.onSend }}" style="{{ e.sendStyle }}">{{ e.sendCta }}</div>
+              <div onClick="{{ e.onEdit }}" style="{{ e.ghostStyle }}">Edit</div>
+              <div onClick="{{ e.onDelete }}" style="{{ e.ghostStyle }}">Delete</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER EVENT FORM ============ -->
+  <sc-if value="{{ isTEventForm }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goEvents }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Events</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">{{ eventFormTitle }}</div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Name</div>
+      <input onChange="{{ setEvName }}" value="{{ evName }}" placeholder="Autumn Recital" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/>
+      <div style="display:flex;gap:9px;margin-top:14px">
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Date</div><input onChange="{{ setEvDate }}" value="{{ evDate }}" placeholder="6 Sep" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Time</div><input onChange="{{ setEvTime }}" value="{{ evTime }}" placeholder="15:00" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Where</div>
+      <input onChange="{{ setEvPlace }}" value="{{ evPlace }}" placeholder="Studio hall, 3F" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Invite</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">
+        <sc-for list="{{ inviteScopes }}" as="i" hint-placeholder-count="3">
+          <div onClick="{{ i.onPick }}" style="{{ i.style }}">{{ i.label }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Note</div>
+      <textarea onChange="{{ setEvNote }}" value="{{ evNote }}" placeholder="Two songs each. Families welcome. Tea afterwards." style="width:100%;height:84px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;background:#fff;color:#1E1B18;resize:none"></textarea>
+      <div style="display:flex;gap:9px;margin-top:18px">
+        <div onClick="{{ saveEvent }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Save draft</div>
+        <div onClick="{{ saveAndSendEvent }}" style="flex:1.3;background:#1E1B18;color:#fff;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Save &amp; send</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER CLASSES ============ -->
+  <sc-if value="{{ isTClasses }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goMore }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Studio</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+        <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Classes</div>
+        <div onClick="{{ newClass }}" style="background:#5B3FD1;color:#fff;border-radius:20px;padding:9px 15px;font:700 12px 'DM Sans',sans-serif;cursor:pointer">+ Create</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+        <sc-for list="{{ classRows }}" as="c" hint-placeholder-count="4">
+          <div style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px">
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <div style="{{ c.tagStyle }}">{{ c.tag }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ c.name }}</div>
+                <div style="font:400 11.5px/1.4 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ c.sub }}</div>
+              </div>
+              <div style="font:500 11px 'DM Mono',monospace;color:#B0A79A;flex:none">{{ c.count }}</div>
+            </div>
+            <div style="display:flex;gap:7px;margin-top:13px">
+              <div onClick="{{ c.onEdit }}" style="background:#F4F1EA;border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;color:#1E1B18;cursor:pointer">Edit</div>
+              <div onClick="{{ c.onDelete }}" style="background:#F4F1EA;border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;color:#D2542F;cursor:pointer">Delete</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER CLASS FORM ============ -->
+  <sc-if value="{{ isTClassForm }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goClasses }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Classes</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">{{ classFormTitle }}</div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Class name</div>
+      <input onChange="{{ setClName }}" value="{{ clName }}" placeholder="Vocal · Grade 4" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Format</div>
+      <div style="display:flex;gap:7px;margin-top:11px">
+        <sc-for list="{{ classFormats }}" as="f" hint-placeholder-count="2">
+          <div onClick="{{ f.onPick }}" style="{{ f.style }}">{{ f.label }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Day</div>
+      <div style="display:flex;gap:6px;margin-top:11px">
+        <sc-for list="{{ dayChips }}" as="d" hint-placeholder-count="7">
+          <div onClick="{{ d.onPick }}" style="{{ d.style }}">{{ d.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:9px;margin-top:14px">
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Time</div><input onChange="{{ setClTime }}" value="{{ clTime }}" placeholder="16:00" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Minutes</div><input onChange="{{ setClLen }}" value="{{ clLen }}" placeholder="45" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+        <div style="flex:1"><div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Room</div><input onChange="{{ setClRoom }}" value="{{ clRoom }}" placeholder="A" style="width:100%;margin-top:9px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/></div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Fee per 4-week cycle (NT$)</div>
+      <input onChange="{{ setClFee }}" value="{{ clFee }}" placeholder="3200" style="width:100%;margin-top:10px;border:1px solid #E7DFD3;border-radius:14px;padding:13px;font:400 13px 'DM Sans',sans-serif;background:#fff;color:#1E1B18"/>
+      <div onClick="{{ saveClass }}" style="background:#1E1B18;color:#fff;border-radius:16px;padding:16px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;margin-top:20px;cursor:pointer">{{ classCta }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TEACHER REQUESTS ============ -->
+  <sc-if value="{{ isTRequests }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goMore }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Studio</div>
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">Time changes</div>
+      <div style="font:400 12px/1.4 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">Students ask, you answer. Nothing moves until you tap yes.</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+        <sc-for list="{{ requestRows }}" as="r" hint-placeholder-count="2">
+          <div onClick="{{ r.onOpen }}" style="{{ r.cardStyle }}">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="{{ r.avatarStyle }}">{{ r.initials }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ r.name }}</div>
+                <div style="font:400 11.5px/1.35 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ r.line }}</div>
+              </div>
+              <div style="{{ r.pillStyle }}">{{ r.pill }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT HOME ============ -->
+  <sc-if value="{{ isSHome }}" hint-placeholder-val="{{ false }}">
+    <div>
+      <div style="background:#2A1F5C;color:#fff;padding:12px 22px 24px;border-radius:0 0 28px 28px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font:700 16px/1 'Bricolage Grotesque',sans-serif">Iris Studio</div>
+          <div onClick="{{ goAlerts }}" style="width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span style="{{ alertDotStyle }}"></span>
+          </div>
+        </div>
+        <div style="font:400 13px/1.3 'DM Sans',sans-serif;color:rgba(255,255,255,.66);margin-top:20px">Hi Chloe —</div>
+        <div style="font:800 30px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.03em;margin-top:8px">{{ studentHeadline }}</div>
+        <div style="background:rgba(255,255,255,.1);border-radius:18px;padding:14px;margin-top:18px;display:flex;align-items:center;gap:13px">
+          <div style="width:44px;height:44px;border-radius:50%;background:#C8FF6B;color:#1B1726;display:flex;align-items:center;justify-content:center;font:800 15px 'Bricolage Grotesque',sans-serif;flex:none">{{ myStreak }}</div>
+          <div style="flex:1"><div style="font:600 13px/1.2 'DM Sans',sans-serif">day practice streak</div><div style="font:400 11px/1.3 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:4px">Longest in the studio this month.</div></div>
+        </div>
+      </div>
+
+      <div style="padding:18px 22px 20px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font:700 15px 'Bricolage Grotesque',sans-serif;color:#1E1B18">My classes</div>
+          <div onClick="{{ newMyClass }}" style="background:#5B3FD1;color:#fff;border-radius:20px;padding:8px 14px;font:700 11.5px 'DM Sans',sans-serif;cursor:pointer">+ Add</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:13px">
+          <sc-for list="{{ myClasses }}" as="c" hint-placeholder-count="2">
+            <div style="background:#fff;border:1px solid #E7DFD3;border-radius:20px;padding:15px">
+              <div style="display:flex;align-items:flex-start;gap:12px">
+                <div style="{{ c.tagStyle }}">{{ c.tag }}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font:700 15.5px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ c.name }}</div>
+                  <div style="font:400 11.5px/1.4 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ c.sub }}</div>
+                  <div style="{{ c.statusStyle }}">{{ c.status }}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:7px;margin-top:13px">
+                <div onClick="{{ c.onReschedule }}" style="{{ c.reschedStyle }}">{{ c.reschedLabel }}</div>
+                <div onClick="{{ c.onEdit }}" style="background:#F4F1EA;border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;color:#1E1B18;cursor:pointer">Edit</div>
+                <div onClick="{{ c.onDelete }}" style="background:#F4F1EA;border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;color:#D2542F;cursor:pointer">Leave</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:24px">Due soon</div>
+        <div onClick="{{ goSHomework }}" style="background:#1E1B18;color:#fff;border-radius:20px;padding:16px;margin-top:11px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif">{{ nextHwTitle }}</div><div style="font:500 10px 'DM Mono',monospace;color:#C8FF6B">{{ nextHwDue }}</div></div>
+          <div style="font:400 11.5px/1.4 'DM Sans',sans-serif;color:rgba(255,255,255,.62);margin-top:6px">{{ nextHwNote }}</div>
+          <div style="background:#C8FF6B;color:#1B1726;border-radius:20px;padding:9px 0;text-align:center;font:700 12px 'DM Sans',sans-serif;margin-top:13px">Record &amp; send</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT CLASS FORM ============ -->
+  <sc-if value="{{ isSClassForm }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goSHome }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ My classes</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">{{ myClassFormTitle }}</div>
+      <div style="background:#FFF4E8;border:1px solid #FFD9A0;border-radius:14px;padding:12px 14px;margin-top:14px;font:400 11.5px/1.45 'DM Sans',sans-serif;color:#8A5A20">Adding a class sends a join request to Iris. She confirms the slot before it's yours.</div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Class</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:11px">
+        <sc-for list="{{ joinableClasses }}" as="c" hint-placeholder-count="3">
+          <div onClick="{{ c.onPick }}" style="{{ c.style }}">
+            <div style="flex:1"><div style="font:700 14px/1.15 'Bricolage Grotesque',sans-serif">{{ c.name }}</div><div style="{{ c.subStyle }}">{{ c.sub }}</div></div>
+            <div style="{{ c.markStyle }}">{{ c.mark }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Preferred day</div>
+      <div style="display:flex;gap:6px;margin-top:11px">
+        <sc-for list="{{ dayChips }}" as="d" hint-placeholder-count="7">
+          <div onClick="{{ d.onPick }}" style="{{ d.style }}">{{ d.label }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Note for Iris</div>
+      <textarea onChange="{{ setMyClassNote }}" value="{{ myClassNote }}" placeholder="I finish school at 16:30 on weekdays." style="width:100%;height:84px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;background:#fff;color:#1E1B18;resize:none"></textarea>
+      <div onClick="{{ saveMyClass }}" style="background:#1E1B18;color:#fff;border-radius:16px;padding:16px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;margin-top:20px;cursor:pointer">{{ myClassCta }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT HOMEWORK ============ -->
+  <sc-if value="{{ isSHomework }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Homework</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+        <sc-for list="{{ myHomework }}" as="h" hint-placeholder-count="3">
+          <div style="{{ h.cardStyle }}">
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <div style="{{ h.typeStyle }}">{{ h.typeIcon }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif">{{ h.title }}</div>
+                <div style="{{ h.subStyle }}">{{ h.sub }}</div>
+              </div>
+              <div style="{{ h.pillStyle }}">{{ h.pill }}</div>
+            </div>
+            <sc-if value="{{ h.hasFeedback }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#F4F1EA;border-radius:14px;padding:12px;margin-top:12px">
+                <div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8C8378">Iris said</div>
+                <div style="font:400 12.5px/1.5 'DM Sans',sans-serif;color:#1E1B18;margin-top:6px">{{ h.feedback }}</div>
+                <div style="font:400 13px 'DM Sans',sans-serif;color:#E8A33D;margin-top:7px">{{ h.starsText }}</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ h.canSubmit }}" hint-placeholder-val="{{ false }}">
+              <div onClick="{{ h.onSubmit }}" style="background:#C8FF6B;color:#1B1726;border-radius:20px;padding:11px 0;text-align:center;font:700 12.5px 'DM Sans',sans-serif;margin-top:13px;cursor:pointer">{{ h.submitCta }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT SUBMIT ============ -->
+  <sc-if value="{{ isSSubmit }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goSHomework }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ Homework</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">{{ submitTitle }}</div>
+      <div style="font:400 12px/1.4 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">{{ submitSubhead }}</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:18px">
+        <sc-for list="{{ submitTypes }}" as="t" hint-placeholder-count="5">
+          <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+        </sc-for>
+      </div>
+      <sc-if value="{{ isAudioSubmit }}" hint-placeholder-val="{{ true }}">
+        <div style="background:#1E1B18;border-radius:22px;padding:24px;margin-top:16px;text-align:center">
+          <div style="display:flex;align-items:flex-end;gap:3px;height:52px;justify-content:center">
+            <sc-for list="{{ recWave }}" as="b" hint-placeholder-count="24">
+              <span style="{{ b.style }}"></span>
+            </sc-for>
+          </div>
+          <div onClick="{{ toggleRecord }}" style="{{ recBtnStyle }}">{{ recBtnLabel }}</div>
+          <div style="font:500 11px 'DM Mono',monospace;color:rgba(255,255,255,.5);margin-top:12px">{{ recTimeLabel }}</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ isPhotoSubmit }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#1E1B18;border-radius:22px;padding:16px 16px 22px;margin-top:16px;text-align:center">
+          <div style="{{ photoFrameStyle }}">
+            <div style="{{ photoIconStyle }}">◧</div>
+            <div style="font:500 11px 'DM Mono',monospace;color:rgba(255,255,255,.5);margin-top:10px">{{ photoFrameLabel }}</div>
+          </div>
+          <div onClick="{{ takePhoto }}" style="{{ shutterStyle }}">{{ shutterLabel }}</div>
+          <div style="font:500 11px 'DM Mono',monospace;color:rgba(255,255,255,.5);margin-top:12px">{{ photoHint }}</div>
+        </div>
+      </sc-if>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Add a note</div>
+      <textarea onChange="{{ setSubmitNote }}" value="{{ submitNote }}" placeholder="The top note still cracks a bit." style="width:100%;height:80px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;background:#fff;color:#1E1B18;resize:none"></textarea>
+      <div onClick="{{ sendSubmission }}" style="{{ sendSubmitStyle }}">{{ sendSubmitLabel }}</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT ALERTS ============ -->
+  <sc-if value="{{ isSAlerts }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Alerts</div>
+        <div onClick="{{ markAllRead }}" style="font:600 11.5px 'DM Sans',sans-serif;color:#5B3FD1;cursor:pointer">Mark all read</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:16px">
+        <sc-for list="{{ notifications }}" as="n" hint-placeholder-count="4">
+          <div onClick="{{ n.onOpen }}" style="{{ n.cardStyle }}">
+            <div style="display:flex;gap:12px">
+              <div style="{{ n.iconStyle }}">{{ n.icon }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                  <div style="font:700 14px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ n.title }}</div>
+                  <div style="font:400 10px 'DM Mono',monospace;color:#B0A79A;flex:none">{{ n.time }}</div>
+                </div>
+                <div style="font:400 12px/1.45 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ n.body }}</div>
+                <sc-if value="{{ n.hasCta }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ n.ctaStyle }}">{{ n.cta }}</div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT RESCHEDULE ============ -->
+  <sc-if value="{{ isSReschedule }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div onClick="{{ goSHome }}" style="font:500 12.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">‹ My classes</div>
+      <div style="font:800 26px/1.05 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18;margin-top:12px">Ask to move a lesson</div>
+      <div style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:15px;margin-top:16px">
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Current slot</div>
+        <div style="font:700 17px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18;margin-top:8px">{{ reschedCurrent }}</div>
+        <div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ reschedClassName }}</div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Move to</div>
+      <div style="display:flex;gap:6px;margin-top:11px">
+        <sc-for list="{{ reschedDays }}" as="d" hint-placeholder-count="5">
+          <div onClick="{{ d.onPick }}" style="{{ d.style }}"><div style="font:500 9.5px 'DM Mono',monospace;opacity:.7">{{ d.dow }}</div><div style="font:700 15px/1 'Bricolage Grotesque',sans-serif;margin-top:5px">{{ d.num }}</div></div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px">
+        <sc-for list="{{ reschedTimes }}" as="t" hint-placeholder-count="6">
+          <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+        </sc-for>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:20px">Why (Iris reads this)</div>
+      <textarea onChange="{{ setReschedReason }}" value="{{ reschedReason }}" placeholder="Choir rehearsal moved to Thursday." style="width:100%;height:84px;margin-top:10px;border:1px solid #E7DFD3;border-radius:16px;padding:13px;font:400 13px/1.5 'DM Sans',sans-serif;background:#fff;color:#1E1B18;resize:none"></textarea>
+      <div onClick="{{ sendRequest }}" style="{{ sendRequestStyle }}">{{ sendRequestLabel }}</div>
+      <div style="font:400 11px/1.5 'DM Sans',sans-serif;color:#B0A79A;text-align:center;margin-top:12px">Your original slot stays booked until she says yes.</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT EVENTS ============ -->
+  <sc-if value="{{ isSEvents }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Events</div>
+      <div style="font:400 12.5px/1.5 'DM Sans',sans-serif;color:#8C8378;margin-top:8px">Everything on the studio page, plus what Iris sent you.</div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:24px">
+        <div style="font:800 18px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Upcoming Events</div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">{{ pubEventCount }}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px">
+        <sc-for list="{{ sEvents }}" as="e" hint-placeholder-count="2">
+          <div style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:15px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:44px;height:44px;border-radius:14px;background:#CFC4F5;color:#2A1F5C;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none"><div style="font:800 15px/1 'Bricolage Grotesque',sans-serif">{{ e.day }}</div><div style="font:500 8.5px 'DM Mono',monospace">{{ e.mon }}</div></div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 14.5px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ e.name }}</div>
+                <div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ e.place }}</div>
+              </div>
+              <div onClick="{{ e.onRsvp }}" style="{{ e.rsvpStyle }}">{{ e.rsvpLabel }}</div>
+            </div>
+            <div style="font:400 11.5px/1.5 'DM Sans',sans-serif;color:#8C8378;margin-top:11px">{{ e.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:26px">
+        <div style="font:800 18px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Iris 分享</div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378">Notes</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;margin-top:12px">
+        <sc-for list="{{ pubPosts }}" as="p" hint-placeholder-count="2">
+          <div onClick="{{ p.onOpen }}" style="background:#fff;border:1px solid #E7DFD3;border-radius:18px;padding:14px 15px;display:flex;align-items:center;gap:12px;cursor:pointer">
+            <div style="flex:1;min-width:0">
+              <div style="font:700 14.5px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ p.title }}</div>
+              <div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ p.kind }}</div>
+            </div>
+            <div style="font:500 11.5px 'DM Mono',monospace;color:#1E1B18;flex:none">{{ p.date }}</div>
+            <div style="font:400 15px 'DM Sans',sans-serif;color:#B0A79A;flex:none">›</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ STUDENT ME ============ -->
+  <sc-if value="{{ isSMe }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:14px 22px 24px">
+      <div style="font:800 28px/1 'Bricolage Grotesque',sans-serif;letter-spacing:-.025em;color:#1E1B18">Me</div>
+      <div style="background:#fff;border:1px solid #E7DFD3;border-radius:20px;padding:16px;margin-top:16px;display:flex;align-items:center;gap:14px">
+        <div style="width:52px;height:52px;border-radius:50%;background:#CFC4F5;color:#2A1F5C;display:flex;align-items:center;justify-content:center;font:700 18px 'Bricolage Grotesque',sans-serif;flex:none">CW</div>
+        <div><div style="font:700 18px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Chloe Wu</div><div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">Voice · Grade 4 · joined Mar 2024</div></div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Tuition</div>
+      <div style="background:#fff;border:1px solid #E7DFD3;border-radius:20px;padding:16px;margin-top:11px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font:700 22px/1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ myFeeAmount }}</div><div style="{{ myFeePillStyle }}">{{ myFeePill }}</div></div>
+        <div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:8px">Cycle 8 · 4 Aug – 31 Aug · 4 lessons</div>
+        <div style="display:flex;gap:6px;margin-top:14px">
+          <sc-for list="{{ myWeeks }}" as="w" hint-placeholder-count="4">
+            <div style="flex:1;text-align:center"><div style="{{ w.dotStyle }}">{{ w.mark }}</div><div style="font:400 9.5px 'DM Mono',monospace;color:#B0A79A;margin-top:6px">{{ w.label }}</div></div>
+          </sc-for>
+        </div>
+        <div onClick="{{ payNow }}" style="{{ payBtnStyle }}">{{ payBtnLabel }}</div>
+      </div>
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:22px">Coming up</div>
+      <div style="background:#fff;border:1px solid #E7DFD3;border-radius:20px;padding:16px;margin-top:11px;display:flex;align-items:center;gap:13px">
+        <div style="width:44px;height:44px;border-radius:14px;background:#CFC4F5;color:#2A1F5C;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none"><div style="font:800 15px/1 'Bricolage Grotesque',sans-serif">6</div><div style="font:500 8.5px 'DM Mono',monospace">SEP</div></div>
+        <div style="flex:1"><div style="font:700 14px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">Autumn Recital</div><div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">15:00 · Studio hall, 3F</div></div>
+      </div>
+      <div onClick="{{ logout }}" style="margin-top:22px;background:#fff;border:1px solid #E7DFD3;border-radius:20px;padding:16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+        <div><div style="font:700 14px/1.15 'Bricolage Grotesque',sans-serif;color:#D2542F">Log out</div><div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">Back to the studio page</div></div>
+        <div style="font:400 15px 'DM Sans',sans-serif;color:#B0A79A">›</div>
+      </div>
+    </div>
+  </sc-if>
+
+  </div>
+
+  <!-- ============ FEE ACTION BAR ============ -->
+  <sc-if value="{{ showFeeBar }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:14px;right:14px;bottom:96px;background:#1E1B18;color:#fff;border-radius:20px;padding:13px 15px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 26px rgba(30,27,24,.3);animation:toastIn .18s ease">
+      <div style="flex:1"><div style="font:700 13.5px/1.15 'Bricolage Grotesque',sans-serif">{{ feeBarTitle }}</div><div style="font:400 11px 'DM Sans',sans-serif;color:rgba(255,255,255,.6);margin-top:4px">{{ feeBarSub }}</div></div>
+      <div onClick="{{ openReminder }}" style="background:#C8FF6B;color:#1B1726;border-radius:20px;padding:10px 15px;font:700 12px 'DM Sans',sans-serif;cursor:pointer;flex:none">Remind</div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TAB BAR ============ -->
+  <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:none;height:80px;background:#fff;border-top:1px solid #E7DFD3;display:flex;align-items:flex-start;padding:11px 8px 0">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+        <div onClick="{{ t.onPick }}" style="flex:1;text-align:center;cursor:pointer">
+          <div style="{{ t.iconStyle }}"></div>
+          <div style="{{ t.labelStyle }}">{{ t.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <!-- ============ LOGIN DRAWER ============ -->
+  <sc-if value="{{ showDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.5);animation:fadeIn .16s ease">
+      <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;cursor:pointer"></div>
+      <div style="position:absolute;top:0;right:0;bottom:0;width:82%;background:#FDFBF7;box-shadow:-18px 0 44px rgba(23,19,34,.3);display:flex;flex-direction:column;padding:20px 24px 26px;animation:drawerIn .22s cubic-bezier(.2,.8,.3,1)">
+        <div style="display:flex;justify-content:flex-end">
+          <div onClick="{{ closeDrawer }}" style="width:36px;height:36px;border-radius:12px;border:1px solid #E7DFD3;background:#fff;display:flex;align-items:center;justify-content:center;font:400 17px/1 'DM Sans',sans-serif;color:#1E1B18;cursor:pointer">×</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:12px">
+          <div onClick="{{ loginAsTeacher }}" style="background:#2A1F5C;color:#fff;border-radius:20px;padding:20px;cursor:pointer">
+            <div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.6)">For Iris</div>
+            <div style="font:800 21px/1.05 'Bricolage Grotesque',sans-serif;margin-top:9px">Teacher Login</div>
+            <div style="font:400 11.5px/1.45 'DM Sans',sans-serif;color:rgba(255,255,255,.66);margin-top:7px">Students, homework, fees, events</div>
+          </div>
+          <div onClick="{{ loginAsStudent }}" style="background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:20px;padding:20px;cursor:pointer">
+            <div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.13em;text-transform:uppercase;color:#8C8378">For singers</div>
+            <div style="font:800 21px/1.05 'Bricolage Grotesque',sans-serif;margin-top:9px">Student Login</div>
+            <div style="font:400 11.5px/1.45 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">My classes, homework, alerts</div>
+          </div>
+        </div>
+        <div onClick="{{ closeDrawer }}" style="align-self:flex-end;display:flex;align-items:center;gap:7px;font:600 13px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer;padding:8px 2px">Hide<span style="font:500 13px 'DM Mono',monospace;letter-spacing:-.08em">»›</span></div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ RESCHEDULE MODAL (teacher) ============ -->
+  <sc-if value="{{ showRequestModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.55);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .16s ease">
+      <div style="width:100%;background:#FDFBF7;border-radius:26px;overflow:hidden;animation:popIn .2s ease;box-shadow:0 22px 50px rgba(0,0,0,.34)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 18px 16px;border-bottom:1px solid #EDE6DB">
+          <div style="display:flex;align-items:center;gap:11px;min-width:0">
+            <div style="width:40px;height:40px;border-radius:50%;background:#8C7BF0;color:#fff;display:flex;align-items:center;justify-content:center;font:700 14px 'Bricolage Grotesque',sans-serif;flex:none">{{ modalReq.initials }}</div>
+            <div style="min-width:0"><div style="font:800 17px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ modalReq.name }}</div><div style="font:400 11px 'DM Sans',sans-serif;color:#8C8378;margin-top:4px">{{ modalReq.grade }}</div></div>
+          </div>
+          <div style="text-align:right;flex:none">
+            <div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8C8378">Current class</div>
+            <div style="font:700 13.5px/1.2 'DM Mono',monospace;color:#1E1B18;margin-top:6px">{{ modalReq.currentDate }}</div>
+            <div style="font:700 13.5px/1.2 'DM Mono',monospace;color:#1E1B18;margin-top:2px">{{ modalReq.currentTime }}</div>
+          </div>
+        </div>
+
+        <div style="padding:20px 18px 8px;text-align:center">
+          <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.16em;text-transform:uppercase;color:#8C8378">Request Change below</div>
+        </div>
+
+        <div style="padding:6px 18px 0">
+          <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #EDE6DB;border-radius:18px;padding:15px">
+            <div style="flex:1;text-align:center;opacity:.45"><div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8C8378">From</div><div style="font:700 15px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18;margin-top:7px">{{ modalReq.fromShort }}</div></div>
+            <div style="font:400 18px 'DM Sans',sans-serif;color:#5B3FD1;flex:none">→</div>
+            <div style="flex:1;text-align:center"><div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#5B3FD1">To</div><div style="font:700 15px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18;margin-top:7px">{{ modalReq.toShort }}</div></div>
+          </div>
+          <div style="background:#F4F1EA;border-radius:16px;padding:13px 14px;margin-top:11px">
+            <div style="font:400 12.5px/1.5 'DM Sans',sans-serif;color:#1E1B18">“{{ modalReq.reason }}”</div>
+            <div style="font:400 10.5px 'DM Mono',monospace;color:#B0A79A;margin-top:8px">{{ modalReq.sentAt }} · {{ modalReq.clash }}</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:9px;padding:16px 18px 18px">
+          <div onClick="{{ declineRequest }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:14px;text-align:center;font:700 13px 'DM Sans',sans-serif;cursor:pointer">Can't do it</div>
+          <div onClick="{{ openOffer }}" style="flex:1.4;background:#5B3FD1;color:#fff;border-radius:16px;padding:14px;text-align:center;font:700 13px 'DM Sans',sans-serif;cursor:pointer">Offer new times</div>
+        </div>
+        <div onClick="{{ closeModal }}" style="text-align:center;padding:0 0 18px;font:500 11.5px 'DM Sans',sans-serif;color:#8C8378;cursor:pointer">Decide later</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ OFFER TIMES MODAL (teacher, step 2) ============ -->
+  <sc-if value="{{ showOfferModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.55);display:flex;align-items:flex-end;animation:fadeIn .16s ease">
+      <div style="width:100%;background:#FDFBF7;border-radius:26px 26px 0 0;padding:20px 20px 22px;animation:sheetUp .22s cubic-bezier(.2,.8,.3,1);max-height:100%;overflow:auto">
+        <div style="width:38px;height:4px;border-radius:4px;background:#E0D8CB;margin:0 auto 16px"></div>
+        <div style="font:800 20px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ offerHeading }}</div>
+        <div style="font:400 12px/1.45 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">Pick two or three slots that work for you. The student chooses one and both calendars update.</div>
+        <div style="background:#fff;border:1px solid #EDE6DB;border-radius:16px;padding:13px 14px;margin-top:14px;display:flex;align-items:center;gap:12px">
+          <div style="flex:1"><div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8C8378">Her class now</div><div style="font:700 14px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18;margin-top:6px">{{ offerCurrent }}</div></div>
+          <div style="flex:1"><div style="font:500 9.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8C8378">She asked for</div><div style="font:700 14px/1.2 'Bricolage Grotesque',sans-serif;color:#1E1B18;margin-top:6px">{{ offerAsked }}</div></div>
+        </div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:18px">Day</div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <sc-for list="{{ offerDays }}" as="d" hint-placeholder-count="5">
+            <div onClick="{{ d.onPick }}" style="{{ d.style }}"><div style="font:500 9.5px 'DM Mono',monospace;opacity:.7">{{ d.dow }}</div><div style="font:700 15px/1 'Bricolage Grotesque',sans-serif;margin-top:5px">{{ d.num }}</div></div>
+          </sc-for>
+        </div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:16px">Free times · tap to add</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px">
+          <sc-for list="{{ offerTimes }}" as="t" hint-placeholder-count="6">
+            <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+          </sc-for>
+        </div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#8C8378;margin-top:18px">{{ offerListLabel }}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+          <sc-for list="{{ offerSlots }}" as="o" hint-placeholder-count="2">
+            <div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #E7DFD3;border-radius:16px;padding:12px 14px">
+              <div style="width:22px;height:22px;border-radius:7px;flex:none;background:#E7E1F7;color:#2A1F5C;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Mono',monospace">{{ o.n }}</div>
+              <div style="flex:1;font:700 13.5px 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ o.label }}</div>
+              <div onClick="{{ o.onRemove }}" style="font:500 15px 'DM Sans',sans-serif;color:#B0A79A;cursor:pointer;flex:none">×</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:9px;margin-top:18px">
+          <div onClick="{{ backToReview }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Back</div>
+          <div onClick="{{ sendOffer }}" style="{{ sendOfferStyle }}">{{ sendOfferLabel }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ CHOOSE TIME MODAL (student, step 2) ============ -->
+  <sc-if value="{{ showChooseModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.55);display:flex;align-items:flex-end;animation:fadeIn .16s ease">
+      <div style="width:100%;background:#FDFBF7;border-radius:26px 26px 0 0;padding:20px 20px 22px;animation:sheetUp .22s cubic-bezier(.2,.8,.3,1)">
+        <div style="width:38px;height:4px;border-radius:4px;background:#E0D8CB;margin:0 auto 16px"></div>
+        <div style="font:800 20px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18">Iris offered new times</div>
+        <div style="font:400 12px/1.45 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">{{ chooseSub }}</div>
+        <div style="display:flex;flex-direction:column;gap:9px;margin-top:16px">
+          <sc-for list="{{ chooseOptions }}" as="o" hint-placeholder-count="3">
+            <div onClick="{{ o.onPick }}" style="{{ o.style }}">
+              <div style="{{ o.markStyle }}">{{ o.mark }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font:700 15px/1.15 'Bricolage Grotesque',sans-serif">{{ o.day }}</div>
+                <div style="font:400 11.5px 'DM Sans',sans-serif;color:#8C8378;margin-top:5px">{{ o.detail }}</div>
+              </div>
+              <div style="font:700 14px 'DM Mono',monospace;flex:none">{{ o.time }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:9px;margin-top:18px">
+          <div onClick="{{ closeChoose }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">None of these</div>
+          <div onClick="{{ confirmChoice }}" style="{{ confirmChoiceStyle }}">{{ confirmChoiceLabel }}</div>
+        </div>
+        <div style="font:400 11px/1.5 'DM Sans',sans-serif;color:#B0A79A;text-align:center;margin-top:12px">Whatever you pick replaces this week's lesson for both of you.</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ REMINDER SHEET ============ -->
+  <sc-if value="{{ showReminderSheet }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.5);display:flex;align-items:flex-end;animation:fadeIn .16s ease">
+      <div style="width:100%;background:#FDFBF7;border-radius:26px 26px 0 0;padding:20px 20px 24px;animation:sheetUp .22s cubic-bezier(.2,.8,.3,1)">
+        <div style="width:38px;height:4px;border-radius:4px;background:#E0D8CB;margin:0 auto 16px"></div>
+        <div style="font:800 20px/1.1 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ reminderHeading }}</div>
+        <div style="font:400 12px/1.4 'DM Sans',sans-serif;color:#8C8378;margin-top:7px">{{ reminderNames }}</div>
+        <div style="background:#E7F7DC;border-radius:18px;border-bottom-left-radius:6px;padding:14px;margin-top:16px">
+          <div style="font:400 13px/1.55 'DM Sans',sans-serif;color:#1E1B18">{{ reminderMessage }}</div>
+          <div style="font:400 10px 'DM Mono',monospace;color:#8C9E82;text-align:right;margin-top:8px">9:41 ✓✓</div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:14px">
+          <sc-for list="{{ reminderTones }}" as="t" hint-placeholder-count="3">
+            <div onClick="{{ t.onPick }}" style="{{ t.style }}">{{ t.label }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:9px;margin-top:18px">
+          <div onClick="{{ closeSheet }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Not now</div>
+          <div onClick="{{ sendReminders }}" style="flex:1.5;background:#1E1B18;color:#fff;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">{{ reminderCta }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ CONFIRM SHEET ============ -->
+  <sc-if value="{{ showConfirm }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(23,19,34,.5);display:flex;align-items:flex-end;animation:fadeIn .16s ease">
+      <div style="width:100%;background:#FDFBF7;border-radius:26px 26px 0 0;padding:22px 20px 24px;animation:sheetUp .22s cubic-bezier(.2,.8,.3,1)">
+        <div style="font:800 19px/1.15 'Bricolage Grotesque',sans-serif;color:#1E1B18">{{ confirmTitle }}</div>
+        <div style="font:400 12.5px/1.5 'DM Sans',sans-serif;color:#8C8378;margin-top:9px">{{ confirmBody }}</div>
+        <div style="display:flex;gap:9px;margin-top:20px">
+          <div onClick="{{ closeSheet }}" style="flex:1;background:#fff;border:1px solid #E7DFD3;color:#1E1B18;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">Keep it</div>
+          <div onClick="{{ confirmAction }}" style="flex:1;background:#D2542F;color:#fff;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:pointer">{{ confirmCta }}</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ TOAST ============ -->
+  <sc-if value="{{ showToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:16px;right:16px;bottom:96px;background:#1E1B18;color:#fff;border-radius:18px;padding:14px 16px;font:600 12.5px/1.4 'DM Sans',sans-serif;box-shadow:0 12px 30px rgba(30,27,24,.34);animation:toastIn .2s ease;display:flex;align-items:center;gap:11px">
+      <span style="width:20px;height:20px;border-radius:50%;background:#C8FF6B;color:#1B1726;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Sans',sans-serif;flex:none">✓</span>
+      <span>{{ toastText }}</span>
+    </div>
+  </sc-if>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:960}}">
+const VIOLET='#5B3FD1',INK='#1E1B18',CREAM='#F4F1EA',BORDER='#E7DFD3',MUTED='#8C8378',CORAL='#FF6B4A',RED='#D2542F',DEEP='#2A1F5C';
+const chip=(on)=>`padding:9px 14px;border-radius:20px;font:600 12px 'DM Sans',sans-serif;cursor:pointer;border:1px solid ${on?INK:BORDER};background:${on?INK:'#fff'};color:${on?'#fff':INK}`;
+const pill=(bg,fg)=>`display:inline-block;padding:4px 9px;border-radius:20px;font:600 10px 'DM Mono',monospace;letter-spacing:.04em;background:${bg};color:${fg}`;
+const TYPES={audio:['♪','#B9E3D0','#1E5540'],photo:['◧','#FFD9A0','#8A5A20']};
+const typeBox=(t)=>{const v=TYPES[t]||TYPES.audio;return `width:38px;height:38px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;font:600 15px 'DM Sans',sans-serif;background:${v[1]};color:${v[2]}`};
+const wave=(n,seed,color,dim)=>Array.from({length:n},(_,i)=>{const h=22+Math.abs(Math.sin((i+seed)*1.7))*78;return {style:`flex:1;min-width:2px;border-radius:2px;display:block;height:${h}%;background:${i>n*dim?color+'44':color}`}});
+
+class Component extends DCLogic {
+  state={
+    role:'teacher', screen:'p_home', stack:[], curId:1, revId:null, hwTab:'To review', evTab:'Upcoming',
+    drawer:false, loginRole:'teacher', loginUser:'', loginPass:'', rsvp:[],
+    studentFilter:'All', feeSel:[], sheet:null, modal:null, modalStep:'review', confirm:null, toast:'',
+    offerDay:'21', offerSlots:[], choose:null, chooseSlot:null,
+    playing:false, recording:false, recorded:false, stars:0, feedback:'', quick:[],
+    form:{}, editId:null, assignSel:[], submitType:'Audio', submitNote:'', submitFor:null,
+    reschedClass:null, reschedDay:'20', reschedTime:null, reschedReason:'', myClassPick:null, myClassDay:null, myClassNote:'',
+    reminderTone:'Warm',
+    students:[
+      {id:1,name:'Chloe Wu',initials:'CW',inst:'Soprano',grade:'Grade 4',day:'Wed',time:'10:00',len:45,room:'A',fee:3200,paid:[1,1,0,0],streak:12,phone:'0912…'},
+      {id:2,name:'Kenji Lin',initials:'KL',inst:'Tenor',grade:'Grade 2',day:'Wed',time:'11:00',len:30,room:'B',fee:2600,paid:[1,0,0,0],streak:5,phone:'0933…'},
+      {id:3,name:'Amelia Chen',initials:'AC',inst:'Alto',grade:'Grade 6',day:'Wed',time:'16:00',len:45,room:'A',fee:3600,paid:[1,1,1,1],streak:0,phone:'0921…'},
+      {id:4,name:'Mia Ho',initials:'MH',inst:'Soprano',grade:'Grade 3',day:'Thu',time:'17:00',len:45,room:'B',fee:3200,paid:[1,1,1,0],streak:8,phone:'0955…'},
+      {id:5,name:'Ryan Tsai',initials:'RT',inst:'Tenor',grade:'Grade 1',day:'Fri',time:'15:00',len:30,room:'A',fee:2600,paid:[0,0,0,0],streak:2,phone:'0987…'},
+      {id:6,name:'Sora Kim',initials:'SK',inst:'Alto',grade:'Grade 5',day:'Sat',time:'10:30',len:60,room:'Studio',fee:4000,paid:[1,1,1,1],streak:16,phone:'0918…'}
+    ],
+    homework:[
+      {id:1,sid:1,title:'Sirens + lip trills, full range',type:'audio',status:'submitted',meta:'sent 2h ago · 1:12',duration:'1:12'},
+      {id:2,sid:2,title:'Verse 1 — Fly Me to the Moon',type:'audio',status:'submitted',meta:'sent yesterday · 0:48',duration:'0:48'},
+      {id:3,sid:4,title:'Posture check — standing, side view',type:'photo',status:'submitted',meta:'sent yesterday',duration:'—'},
+      {id:4,sid:3,title:'Head voice slides, C4–G4',type:'audio',status:'assigned',meta:'due 22 Aug',duration:'—'},
+      {id:5,sid:5,title:'Breath count — 4 in, 12 out',type:'audio',status:'assigned',meta:'due 20 Aug',duration:'—'},
+      {id:6,sid:1,title:'Five-tone scale, ah vowel',type:'audio',status:'reviewed',meta:'reviewed 14 Aug',duration:'0:55',feedback:'Lovely open tone. Drop the jaw on the top note — you squeeze it shut right where it needs room.',stars:4}
+    ],
+    posts:[
+      {id:1,title:'How to warm up in five minutes',kind:'Practice note',date:'2026-08-21'},
+      {id:2,title:'What Grade 4 examiners listen for',kind:'Exam note',date:'2026-08-07'},
+      {id:3,title:'Autumn recital — song list is out',kind:'Studio news',date:'2026-07-30'}
+    ],
+    classes:[
+      {id:1,name:'Vocal · Grade 4',format:'1-on-1',day:'Wed',time:'10:00',len:45,room:'A',fee:3200,count:1},
+      {id:2,name:'Vocal · Beginners',format:'Group',day:'Wed',time:'11:00',len:30,room:'B',fee:2600,count:4},
+      {id:3,name:'Harmony Group',format:'Group',day:'Wed',time:'14:30',len:60,room:'Studio',fee:2400,count:4},
+      {id:4,name:'Vocal · Advanced',format:'1-on-1',day:'Fri',time:'15:00',len:45,room:'A',fee:3600,count:3}
+    ],
+    events:[
+      {id:1,name:'Autumn Recital',date:'6 Sep',time:'15:00',place:'Studio hall, 3F',scope:'Everyone',note:'Two songs each. Families welcome.',sent:false,past:false,rsvp:0},
+      {id:2,name:'Parent listening hour',date:'23 Aug',time:'11:00',place:'Room A',scope:'Piano classes',note:'Ten minutes per family.',sent:true,past:false,rsvp:9},
+      {id:3,name:'Summer open day',date:'12 Jul',time:'14:00',place:'Studio hall, 3F',scope:'Everyone',note:'',sent:true,past:true,rsvp:31}
+    ],
+    requests:[
+      {id:1,sid:2,from:'Wed 20 Aug · 11:00',to:'Thu 21 Aug · 17:30',reason:'Choir rehearsal moved to Wednesday this week.',sentAt:'2 days ago',clash:'Slot is free',status:'pending',options:[],chosen:null},
+      {id:2,sid:5,from:'Fri 22 Aug · 15:00',to:'Sat 23 Aug · 09:30',reason:'Family trip, we come back Friday night.',sentAt:'4 hours ago',clash:'Clashes with Sora Kim',status:'pending',options:[],chosen:null},
+      {id:3,sid:1,from:'Wed 20 Aug · 10:00',to:'Thu 21 Aug · 10:00',reason:'Choir rehearsal moved to Wednesday.',sentAt:'yesterday',clash:'Slot is free',status:'offered',options:['Thu 21 Aug · 17:30','Fri 22 Aug · 10:00','Sat 23 Aug · 09:30'],chosen:null}
+    ],
+    notifs:[
+      {id:0,kind:'time',title:'Iris offered 3 new times',body:'She can\u2019t do Thu 10:00, but any of these work. Pick one and your class moves.',time:'1h',cta:'Choose a time',read:false},
+      {id:1,kind:'fee',title:'Tuition due in 3 days',body:'Cycle 8 · NT$ 3,200 for four lessons. Iris sent this on WhatsApp too.',time:'2h',cta:'Pay now',read:false},
+      {id:2,kind:'hw',title:'New homework from Iris',body:'Sirens and lip trills, full range. Ten minutes a day, then send me one honest take.',time:'1d',cta:'Open',read:false},
+      {id:3,kind:'event',title:'Autumn Recital · 6 Sep',body:'15:00 at the studio hall. Two songs each, families welcome.',time:'2d',cta:'I\u2019ll be there',read:false},
+      {id:4,kind:'hw',title:'Iris reviewed your five-tone scale',body:'\u201cLovely open tone. Drop the jaw on the top note.\u201d ★★★★☆',time:'4d',cta:'',read:true}
+    ]
+  };
+
+  go=(s)=>this.setState(st=>({screen:s,stack:[...st.stack,st.screen]}));
+  swap=(s)=>this.setState({screen:s,stack:[]});
+  back=()=>this.setState(st=>({screen:st.stack.length?st.stack[st.stack.length-1]:'t_home',stack:st.stack.slice(0,-1)}));
+  toast=(t)=>{this.setState({toast:t});clearTimeout(this._t);this._t=setTimeout(()=>this.setState({toast:''}),2600)};
+  componentDidMount(){window.__iris=this}
+  componentWillUnmount(){clearTimeout(this._t)}
+  s=(id)=>this.state.students.find(x=>x.id===id)||this.state.students[0];
+  money=(n)=>'NT$ '+n.toLocaleString('en-US');
+  owed=(st)=>st.paid.filter(p=>!p).length*Math.round(st.fee/4);
+
+  renderVals(){
+    const S=this.state, T=S.role==='teacher';
+    const unpaidStudents=S.students.filter(s=>s.paid.some(p=>!p));
+    const unpaidSum=unpaidStudents.reduce((a,s)=>a+this.owed(s),0);
+    const total=S.students.reduce((a,s)=>a+s.fee,0);
+    const collected=total-unpaidSum;
+    const pendingReqs=S.requests.filter(r=>r.status==='pending');
+    const toReview=S.homework.filter(h=>h.status==='submitted');
+    const upcomingEvents=S.events.filter(e=>!e.past);
+    const PUB=S.screen==='p_home'||S.screen==='p_login';
+    const canLogin=!!S.loginUser.trim()&&!!S.loginPass.trim();
+    const cur=this.s(S.curId);
+    const rev=S.homework.find(h=>h.id===S.revId)||toReview[0]||S.homework[0];
+    const modalReqRaw=S.requests.find(r=>r.id===S.modal);
+    const myReq=S.requests.find(r=>r.sid===1&&r.status!=='declined');
+    const offeredReq=S.requests.find(r=>r.sid===1&&r.status==='offered');
+    const chooseReq=S.requests.find(r=>r.id===S.choose);
+    const DOW={'21':'Thu','22':'Fri','23':'Sat','25':'Mon','26':'Tue'};
+
+    const tabDefs=T?[['Home','t_home'],['Students','t_students'],['Homework','t_homework'],['Fees','t_fees'],['Studio','t_more']]
+                   :[['Classes','s_home'],['Homework','s_homework'],['Events','s_events'],['Alerts','s_alerts'],['Me','s_me']];
+    const activeRoot=S.screen.startsWith('t_student')?'t_students':S.screen.startsWith('t_h')?(S.screen==='t_homework'||S.screen==='t_review'||S.screen==='t_assign'?'t_homework':S.screen):
+      ['t_events','t_eventform','t_classes','t_classform','t_requests','t_more'].includes(S.screen)?'t_more':
+      ['s_home','s_classform','s_reschedule'].includes(S.screen)?'s_home':
+      ['s_homework','s_submit'].includes(S.screen)?'s_homework':S.screen;
+    const shapes={Home:'6px',Classes:'6px',Students:'50%',Homework:'4px',Fees:'11px 11px 4px 4px',Studio:'50%',Alerts:'50%',Me:'50%',Events:'3px'};
+
+    const v={
+      setPublic:()=>this.setState({screen:'p_home',stack:[],modal:null,sheet:null,drawer:false}),
+      publicTabStyle:`padding:7px 15px;border-radius:20px;font:600 12px 'DM Sans',sans-serif;cursor:pointer;background:${PUB?INK:'transparent'};color:${PUB?'#fff':MUTED}`,
+      setTeacher:()=>this.setState({role:'teacher',screen:'t_home',stack:[],modal:null,sheet:null,drawer:false}),
+      setStudent:()=>this.setState({role:'student',screen:'s_home',stack:[],modal:null,sheet:null,drawer:false}),
+      teacherTabStyle:`padding:7px 15px;border-radius:20px;font:600 12px 'DM Sans',sans-serif;cursor:pointer;background:${!PUB&&T?INK:'transparent'};color:${!PUB&&T?'#fff':MUTED}`,
+      studentTabStyle:`padding:7px 15px;border-radius:20px;font:600 12px 'DM Sans',sans-serif;cursor:pointer;background:${!PUB&&!T?INK:'transparent'};color:${!PUB&&!T?'#fff':MUTED}`,
+      roleHint:PUB?'First open in LINE — the public studio page, before anyone signs in.':T?'Iris — one teacher, 50 singers, NT$ fees, WhatsApp reminders.':'Chloe Wu — Voice Grade 4, Wednesdays at 10.',
+      statusBarStyle:`height:46px;flex:none;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 5px;font:500 13px 'DM Sans',sans-serif;color:${['t_home','t_student','s_home','t_review'].includes(S.screen)?'#fff':INK};background:${S.screen==='t_review'?INK:['t_home','t_student','s_home'].includes(S.screen)?DEEP:'transparent'}`,
+
+      isPHome:S.screen==='p_home',isPLogin:S.screen==='p_login',showTabs:!PUB,
+      showDrawer:S.drawer,
+      openDrawer:()=>this.setState({drawer:true}),
+      closeDrawer:()=>this.setState({drawer:false}),
+      goPHome:()=>this.setState({screen:'p_home',stack:[],drawer:false}),
+      loginAsTeacher:()=>this.setState({drawer:false,screen:'p_login',loginRole:'teacher',loginUser:'',loginPass:''}),
+      loginAsStudent:()=>this.setState({drawer:false,screen:'p_login',loginRole:'student',loginUser:'',loginPass:''}),
+      loginKicker:S.loginRole==='teacher'?'Teacher sign in':'Student sign in',
+      loginUserHint:S.loginRole==='teacher'?'iris.lin':'chloe.wu',
+      loginUser:S.loginUser,setLoginUser:(e)=>this.setState({loginUser:e.target.value}),
+      loginPass:S.loginPass,setLoginPass:(e)=>this.setState({loginPass:e.target.value}),
+      loginBtnStyle:`margin-top:28px;border-radius:18px;padding:17px;text-align:center;font:700 14px 'DM Sans',sans-serif;cursor:pointer;background:${canLogin?INK:'#E7DFD3'};color:${canLogin?'#fff':'#B0A79A'}`,
+      loginBtnLabel:canLogin?'Login':'Enter your details',
+      doLogin:()=>{if(!canLogin)return;
+        if(S.loginRole==='teacher')this.setState({role:'teacher',screen:'t_home',stack:[],loginPass:''});
+        else this.setState({role:'student',screen:'s_home',stack:[],loginPass:''});
+        this.toast(S.loginRole==='teacher'?'Welcome back, Iris':'Signed in — hi Chloe')},
+      switchLoginRole:()=>this.setState(st=>({loginRole:st.loginRole==='teacher'?'student':'teacher',loginUser:'',loginPass:''})),
+      switchLoginLabel:S.loginRole==='teacher'?'I’m a student instead':'I’m the teacher instead',
+
+      pubEventCount:`${upcomingEvents.length} coming up`,
+      pubEvents:upcomingEvents.slice(0,3).map(e=>({name:e.name,place:`${e.place} · ${e.time}`,date:e.date,
+        onOpen:()=>this.toast('Public event pages open outside the app')})),
+      pubPosts:S.posts.map(p=>({title:p.title,kind:p.kind,date:p.date,
+        onOpen:()=>this.toast('Iris’s note opens in the LINE browser')})),
+      pubSocials:[['LINE','LINE'],['YT','YouTube'],['f','Facebook'],['IG','Instagram']].map(([label,name])=>({label,
+        onOpen:()=>this.toast(`Opens the studio’s ${name}`)})),
+
+      isTHome:S.screen==='t_home',isTStudents:S.screen==='t_students',isTStudent:S.screen==='t_student',
+      isTHomework:S.screen==='t_homework',isTReview:S.screen==='t_review',isTAssign:S.screen==='t_assign',
+      isTFees:S.screen==='t_fees',isTMore:S.screen==='t_more',isTEvents:S.screen==='t_events',
+      isTEventForm:S.screen==='t_eventform',isTClasses:S.screen==='t_classes',isTClassForm:S.screen==='t_classform',
+      isTRequests:S.screen==='t_requests',isSHome:S.screen==='s_home',isSClassForm:S.screen==='s_classform',
+      isSHomework:S.screen==='s_homework',isSSubmit:S.screen==='s_submit',isSAlerts:S.screen==='s_alerts',
+      isSReschedule:S.screen==='s_reschedule',isSMe:S.screen==='s_me',isSEvents:S.screen==='s_events',
+      sEvents:upcomingEvents.map(e=>{const [day,mon]=e.date.split(' ');const going=S.rsvp.includes(e.id);
+        return {name:e.name,place:`${e.time} · ${e.place}`,day,mon:(mon||'').toUpperCase(),note:e.note||'Iris will share details closer to the day.',
+          rsvpLabel:going?'Going':'I’ll come',
+          rsvpStyle:`flex:none;border-radius:20px;padding:9px 14px;font:600 11.5px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;background:${going?'#B9E3D0':VIOLET};color:${going?'#1E5540':'#fff'}`,
+          onRsvp:()=>{const on=S.rsvp.includes(e.id);
+            this.setState(st=>({rsvp:on?st.rsvp.filter(x=>x!==e.id):[...st.rsvp,e.id]}));
+            this.toast(on?`Told Iris you can’t make ${e.name}`:`Iris knows you’re coming to ${e.name}`)}}}),
+      logout:()=>this.setState({confirm:{title:'Log out of Iris Studio?',body:'You’ll go back to the public studio page. Signing in again takes one tap in LINE.',cta:'Log out',run:()=>this.setState({screen:'p_home',stack:[],drawer:false,loginUser:'',loginPass:'',modal:null,sheet:null,confirm:null})}}),
+
+      back:this.back, goStudents:()=>this.swap('t_students'), goHomework:()=>this.swap('t_homework'),
+      goFees:()=>this.swap('t_fees'), goMore:()=>this.swap('t_more'), goEvents:()=>this.go('t_events'),
+      goClasses:()=>this.go('t_classes'), goRequests:()=>this.go('t_requests'),
+      goAssign:()=>{this.setState({assignSel:[S.curId],form:{}});this.go('t_assign')},
+      goSHome:()=>this.swap('s_home'), goSHomework:()=>this.swap('s_homework'), goAlerts:()=>this.swap('s_alerts'),
+
+      homeHeadline:pendingReqs.length?`${toReview.length+pendingReqs.length+unpaidStudents.length} things want you — three are urgent.`:'A quiet board. Enjoy it.',
+      unpaidTotal:this.money(unpaidSum), unpaidSub:`${unpaidStudents.length} students · ${unpaidStudents.filter(s=>s.paid.every(p=>!p)).length} not started`,
+      toReviewCount:toReview.length, requestCount:pendingReqs.length,
+      oldestRequest:pendingReqs.length?'OLDEST '+pendingReqs[0].sentAt.toUpperCase():'ALL CLEAR',
+      eventCount:upcomingEvents.length, nextEventLabel:upcomingEvents.length?upcomingEvents[0].name.split(' ')[0]+' · '+upcomingEvents[0].date:'none',
+      classCount:S.classes.length, studentCount:S.students.length,
+      collectedTotal:this.money(collected), collectedNote:`${S.students.filter(s=>s.paid.every(p=>p)).length} of ${S.students.length} fully paid`,
+      collectedBarStyle:`height:100%;border-radius:8px;background:#C8FF6B;width:${Math.round(collected/total*100)}%`,
+
+      upNext:S.students.slice(0,4).map((s,i)=>({time:s.time,name:s.name,sub:`${s.inst} · ${s.grade.replace('Grade ','G')}`,
+        cardStyle:`flex:none;width:118px;border-radius:16px;padding:12px;cursor:pointer;background:${i===0?INK:'#fff'};color:${i===0?'#fff':INK};border:1px solid ${i===0?INK:BORDER}`,
+        timeStyle:`font:500 11px 'DM Mono',monospace;color:${i===0?'rgba(255,255,255,.8)':MUTED}`,
+        subStyle:`font:400 10.5px 'DM Sans',sans-serif;margin-top:4px;color:${i===0?'rgba(255,255,255,.62)':MUTED}`,
+        onOpen:()=>{this.setState({curId:s.id});this.go('t_student')}})),
+
+      studentFilters:['All','Soprano','Alto','Tenor','Fee due','Cold'].map(f=>({label:f,style:chip(S.studentFilter===f),onPick:()=>this.setState({studentFilter:f})})),
+      studentRows:S.students.filter(s=>{const f=S.studentFilter;return f==='All'||f===s.inst||(f==='Fee due'&&s.paid.some(p=>!p))||(f==='Cold'&&s.streak<3)}).map(s=>{
+        const due=s.paid.some(p=>!p), hw=S.homework.filter(h=>h.sid===s.id&&h.status==='submitted').length;
+        return {initials:s.initials,name:s.name,sub:`${s.inst} · ${s.grade} · ${s.day} ${s.time}`,
+          avatarStyle:`width:42px;height:42px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:700 14px 'Bricolage Grotesque',sans-serif;background:${due?'#FFE2D8':'#E7E1F7'};color:${due?'#8A3320':DEEP}`,
+          pill:due?'FEE DUE':'PAID',pillStyle:pill(due?'#FFE2D8':'#E3F3E9',due?'#A73E1C':'#1E5540'),
+          hwLabel:hw?hw+' to review':s.streak+'d streak',
+          onOpen:()=>{this.setState({curId:s.id});this.go('t_student')}}}),
+
+      cur:{initials:cur.initials,name:cur.name,sub:`${cur.inst} · ${cur.grade} · ${cur.day} ${cur.time} · Room ${cur.room}`,
+        grade:cur.grade.replace('Grade ','G'),streak:cur.streak,
+        feeShort:this.owed(cur)?'DUE':'OK',feeValStyle:`font:700 16px/1 'Bricolage Grotesque',sans-serif;color:${this.owed(cur)?'#FF8F76':'#C8FF6B'}`,
+        className:`${cur.inst} · ${cur.grade}`,slot:`${cur.day} ${cur.time} · ${cur.len} min · Room ${cur.room}`,
+        feeAmount:this.owed(cur)?this.money(this.owed(cur))+' outstanding':this.money(cur.fee)+' settled',
+        feeNote:`${cur.paid.filter(p=>p).length} of 4 weeks paid`,
+        remindBtnStyle:`border-radius:20px;padding:10px 14px;font:700 11.5px 'DM Sans',sans-serif;cursor:pointer;background:${this.owed(cur)?INK:CREAM};color:${this.owed(cur)?'#fff':'#B0A79A'}`},
+      curHomework:S.homework.filter(h=>h.sid===cur.id).map(h=>({title:h.title,meta:h.meta,typeIcon:(TYPES[h.type]||TYPES.audio)[0],typeStyle:typeBox(h.type),
+        pill:h.status.toUpperCase(),pillStyle:pill(h.status==='submitted'?'#E7E1F7':h.status==='reviewed'?'#E3F3E9':'#F4F1EA',h.status==='submitted'?DEEP:h.status==='reviewed'?'#1E5540':MUTED),
+        onOpen:()=>{if(h.status==='submitted'){this.setState({revId:h.id,stars:0,feedback:'',quick:[],playing:false});this.go('t_review')}}})),
+      curWeeks:cur.paid.map((p,i)=>({mark:p?'✓':'·',label:'W'+(i+1),
+        dotStyle:`height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font:700 13px 'DM Sans',sans-serif;background:${p?'#E3F3E9':'#FBE9E2'};color:${p?'#1E5540':'#A73E1C'}`})),
+      remindCurrent:()=>{if(this.owed(cur)){this.setState({feeSel:[cur.id],sheet:'reminder'})}},
+
+      hwTabs:['To review','Assigned','Reviewed'].map(t=>({label:t+' '+S.homework.filter(h=>h.status===(t==='To review'?'submitted':t.toLowerCase())).length,style:chip(S.hwTab===t),onPick:()=>this.setState({hwTab:t})})),
+      hwRows:S.homework.filter(h=>h.status===(S.hwTab==='To review'?'submitted':S.hwTab.toLowerCase())).map((h,i)=>{
+        const st=this.s(h.sid);
+        return {student:st.name,title:h.title,meta:h.meta+' · '+st.grade,typeIcon:(TYPES[h.type]||TYPES.audio)[0],typeStyle:typeBox(h.type),
+          pill:h.status==='submitted'?'REVIEW':h.status==='assigned'?'WAITING':'DONE',
+          pillStyle:pill(h.status==='submitted'?'#E7E1F7':h.status==='assigned'?'#F4F1EA':'#E3F3E9',h.status==='submitted'?DEEP:h.status==='assigned'?MUTED:'#1E5540'),
+          showWave:h.status==='submitted'&&h.type==='audio',wave:wave(28,i*3,'#5B3FD1',.6),
+          onOpen:()=>{if(h.status==='submitted'){this.setState({revId:h.id,stars:0,feedback:'',quick:[],playing:false});this.go('t_review')}}}}),
+
+      rev:{student:this.s(rev.sid).name,title:rev.title,meta:rev.meta,duration:rev.duration},
+      isPhotoReview:rev.type==='photo', isAudioReview:rev.type!=='photo',
+      revFirstName:this.s(rev.sid).name.split(' ')[0].toUpperCase(),
+      revWave:wave(30,4,'#C8FF6B',S.playing?.55:.35),
+      playing:S.playing,playIcon:S.playing?'❚❚':'▶',playPos:S.playing?'0:26':'0:00',
+      togglePlay:()=>this.setState(st=>({playing:!st.playing})),
+      stars:[1,2,3,4,5].map(n=>({onPick:()=>this.setState({stars:n}),style:`width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;font:400 17px 'DM Sans',sans-serif;cursor:pointer;background:${n<=S.stars?'#FFEFC9':'#fff'};border:1px solid ${n<=S.stars?'#E8A33D':BORDER};color:${n<=S.stars?'#E8A33D':'#D8D0C4'}`})),
+      quickNotes:['Lovely tone','Watch the pitch','Breathe lower','Open the vowel','Nearly there'].map(q=>({label:q,style:chip(S.quick.includes(q)),
+        onPick:()=>this.setState(st=>{const has=st.quick.includes(q);const quick=has?st.quick.filter(x=>x!==q):[...st.quick,q];
+          return {quick,feedback:has?st.feedback:(st.feedback?st.feedback+' '+q+'.':q+'.')}})})),
+      feedbackText:S.feedback,setFeedback:(e)=>this.setState({feedback:e.target.value}),
+      recordReply:()=>this.toast('Voice reply recording — hold to talk'),
+      sendFeedback:()=>{this.setState(st=>({homework:st.homework.map(h=>h.id===rev.id?{...h,status:'reviewed',stars:st.stars,feedback:st.feedback,meta:'reviewed just now'}:h)}));this.back();this.toast('Feedback sent to '+this.s(rev.sid).name.split(' ')[0])},
+
+      assignPeople:S.students.map(s=>({name:s.name.split(' ')[0],style:chip(S.assignSel.includes(s.id)),
+        onToggle:()=>this.setState(st=>({assignSel:st.assignSel.includes(s.id)?st.assignSel.filter(x=>x!==s.id):[...st.assignSel,s.id]}))})),
+      formTitle:S.form.title||'',setFormTitle:(e)=>this.setState(st=>({form:{...st.form,title:e.target.value}})),
+      formDue:S.form.due||'',setFormDue:(e)=>this.setState(st=>({form:{...st.form,due:e.target.value}})),
+      formMins:S.form.mins||'',setFormMins:(e)=>this.setState(st=>({form:{...st.form,mins:e.target.value}})),
+      formNote:S.form.note||'',setFormNote:(e)=>this.setState(st=>({form:{...st.form,note:e.target.value}})),
+      submitTypes:['Audio','Photo'].map(t=>({label:t,style:chip(S.submitType===t),onPick:()=>this.setState({submitType:t})})),
+      assignCta:S.assignSel.length>1?`Give to ${S.assignSel.length} students`:'Give homework',
+      saveHomework:()=>{const t=S.form.title||'New practice task';const ids=S.assignSel.length?S.assignSel:[S.curId];
+        this.setState(st=>({homework:[...ids.map((sid,i)=>({id:Date.now()+i,sid,title:t,type:st.submitType.toLowerCase(),status:'assigned',meta:'due '+(st.form.due||'25 Aug'),duration:'—'})),...st.homework],form:{},assignSel:[]}));
+        this.swap('t_homework');this.toast(`Sent to ${ids.length} student${ids.length>1?'s':''} — they'll get a LINE alert`)},
+
+      feeRows:S.students.map(s=>{const owed=this.owed(s),sel=S.feeSel.includes(s.id);
+        return {name:s.name,amount:owed?this.money(owed):this.money(s.fee),
+          rowStyle:`background:#fff;border:1px solid ${sel?VIOLET:BORDER};border-radius:18px;padding:13px 14px;display:flex;align-items:center;gap:12px;cursor:${owed?'pointer':'default'};opacity:${owed?1:.6}`,
+          check:sel?'✓':'',checkStyle:`width:22px;height:22px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Sans',sans-serif;border:1.5px solid ${sel?VIOLET:'#DCD4C7'};background:${sel?VIOLET:'transparent'};color:#fff`,
+          weeks:s.paid.map(p=>({style:`width:16px;height:6px;border-radius:4px;display:block;background:${p?'#7FC79C':'#F0C3B4'}`})),
+          weekNote:s.paid.filter(p=>p).length+'/4',
+          pill:owed?(s.paid.every(x=>!x)?'OVERDUE':'PARTIAL'):'PAID',
+          pillStyle:pill(owed?(s.paid.every(x=>!x)?'#FBD9CE':'#FFF0DA'):'#E3F3E9',owed?(s.paid.every(x=>!x)?'#A73E1C':'#8A5A20'):'#1E5540')+';margin-top:6px',
+          onToggle:()=>{if(!owed)return;this.setState(st=>({feeSel:st.feeSel.includes(s.id)?st.feeSel.filter(x=>x!==s.id):[...st.feeSel,s.id]}))}}}),
+      selectAllUnpaid:()=>this.setState(st=>({feeSel:st.feeSel.length===unpaidStudents.length?[]:unpaidStudents.map(s=>s.id)})),
+      showFeeBar:S.screen==='t_fees'&&S.feeSel.length>0&&!S.sheet,
+      feeBarTitle:`${S.feeSel.length} selected · ${this.money(S.feeSel.reduce((a,id)=>a+this.owed(this.s(id)),0))}`,
+      feeBarSub:'Sends one WhatsApp each, in your words',
+      openReminder:()=>this.setState({sheet:'reminder'}),
+      showReminderSheet:S.sheet==='reminder',
+      reminderCount:S.feeSel.length,
+      reminderHeading:`Nudge ${S.feeSel.length} parent${S.feeSel.length===1?'':'s'} on WhatsApp`,
+      reminderCta:S.feeSel.length===1?'Send reminder':`Send ${S.feeSel.length} reminders`,
+      reminderNames:S.feeSel.map(id=>this.s(id).name).join(', '),
+      reminderTones:['Warm','Plain','Firm'].map(t=>({label:t,style:chip(S.reminderTone===t),onPick:()=>this.setState({reminderTone:t})})),
+      reminderMessage:S.reminderTone==='Warm'?`Hi! Just a gentle nudge — ${S.feeSel.length===1?this.s(S.feeSel[0]).name.split(' ')[0]+"'s":'your child\u2019s'} tuition for cycle 8 (4 Aug–31 Aug) is still open. NT$ ${S.feeSel.length===1?this.owed(this.s(S.feeSel[0])).toLocaleString():'—'} whenever it suits you. Thank you! — Iris`
+        :S.reminderTone==='Plain'?'Reminder: tuition for cycle 8 (4 Aug–31 Aug) is outstanding. Bank transfer or cash at the studio. Thank you. — Iris Studio'
+        :'Tuition for cycle 8 (4 Aug–31 Aug) is now overdue. Please settle before the next lesson so we can keep the slot. — Iris Studio',
+      sendReminders:()=>{const n=S.feeSel.length;this.setState({sheet:null,feeSel:[]});this.toast(`WhatsApp sent to ${n} parent${n>1?'s':''}`)},
+      closeSheet:()=>this.setState({sheet:null,confirm:null}),
+
+      moreRows:[
+        {title:'Events',sub:`${upcomingEvents.length} upcoming · ${S.events.filter(e=>e.past).length} in history`,icon:'◆',onOpen:()=>this.go('t_events'),iconStyle:'width:40px;height:40px;border-radius:13px;background:#CFC4F5;color:#2A1F5C;display:flex;align-items:center;justify-content:center;font:600 15px sans-serif;flex:none'},
+        {title:'Classes',sub:`${S.classes.length} running · ${S.students.length} students`,icon:'▤',onOpen:()=>this.go('t_classes'),iconStyle:'width:40px;height:40px;border-radius:13px;background:#B9E3D0;color:#1E5540;display:flex;align-items:center;justify-content:center;font:600 15px sans-serif;flex:none'},
+        {title:'Time changes',sub:pendingReqs.length?`${pendingReqs.length} waiting on you`:'Nothing waiting',icon:'⇄',onOpen:()=>this.go('t_requests'),iconStyle:`width:40px;height:40px;border-radius:13px;background:${pendingReqs.length?'#FFD9A0':'#F4F1EA'};color:#8A5A20;display:flex;align-items:center;justify-content:center;font:600 15px sans-serif;flex:none`},
+        {title:'Log out',sub:'Back to the public studio page',icon:'⏎',onOpen:()=>v.logout(),iconStyle:'width:40px;height:40px;border-radius:13px;background:#FBE9E2;color:#D2542F;display:flex;align-items:center;justify-content:center;font:600 16px "DM Sans",sans-serif;flex:none'},
+        {title:'Studio settings',sub:'Fees, cycle dates, LINE account',icon:'⚙',onOpen:()=>this.toast('Settings live in the LINE console'),iconStyle:'width:40px;height:40px;border-radius:13px;background:#F4F1EA;color:#8C8378;display:flex;align-items:center;justify-content:center;font:600 15px sans-serif;flex:none'}
+      ],
+
+      eventTabs:['Upcoming','History'].map(t=>({label:t,style:chip(S.evTab===t),onPick:()=>this.setState({evTab:t})})),
+      eventRows:S.events.filter(e=>S.evTab==='Upcoming'?!e.past:e.past).map(e=>{
+        const dark=!e.past&&!e.sent;
+        return {day:e.date.split(' ')[0],mon:e.date.split(' ')[1].toUpperCase(),title:e.name,sub:`${e.time} · ${e.place} · ${e.scope}`,
+          cardStyle:`border-radius:20px;padding:15px;background:${dark?INK:'#fff'};color:${dark?'#fff':INK};border:1px solid ${dark?INK:BORDER}`,
+          dateStyle:`width:52px;height:52px;border-radius:16px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${dark?'#C8FF6B':'#CFC4F5'};color:${dark?'#1B1726':DEEP}`,
+          subStyle:`font:400 11.5px/1.4 'DM Sans',sans-serif;margin-top:5px;color:${dark?'rgba(255,255,255,.62)':MUTED}`,
+          sentLabel:e.past?`${e.rsvp} attended`:e.sent?`Sent · ${e.rsvp} coming`:'Not announced yet',
+          sentStyle:`font:500 10px 'DM Mono',monospace;margin-top:7px;color:${dark?'#C8FF6B':e.past?'#B0A79A':'#1E5540'}`,
+          sendCta:e.sent?'Resend':'Send to all',
+          sendStyle:`border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;cursor:pointer;background:${dark?'#C8FF6B':CREAM};color:${dark?'#1B1726':INK}`,
+          ghostStyle:`border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;cursor:pointer;background:${dark?'rgba(255,255,255,.12)':CREAM};color:${dark?'#fff':INK}`,
+          onSend:()=>{this.setState(st=>({events:st.events.map(x=>x.id===e.id?{...x,sent:true,rsvp:x.rsvp||0}:x)}));this.toast(`“${e.name}” pushed to ${S.students.length} families`)},
+          onEdit:()=>{this.setState({editId:e.id,form:{name:e.name,date:e.date,time:e.time,place:e.place,note:e.note,scope:e.scope}});this.go('t_eventform')},
+          onDelete:()=>this.setState({confirm:{title:`Delete “${e.name}”?`,body:'Families who already said yes will get a cancellation notice.',cta:'Delete event',run:()=>{this.setState(st=>({events:st.events.filter(x=>x.id!==e.id),confirm:null}));this.toast('Event deleted')}}})}}),
+      newEvent:()=>{this.setState({editId:null,form:{scope:'Everyone'}});this.go('t_eventform')},
+      eventFormTitle:S.editId?'Edit event':'New event',
+      evName:S.form.name||'',setEvName:(e)=>this.setState(st=>({form:{...st.form,name:e.target.value}})),
+      evDate:S.form.date||'',setEvDate:(e)=>this.setState(st=>({form:{...st.form,date:e.target.value}})),
+      evTime:S.form.time||'',setEvTime:(e)=>this.setState(st=>({form:{...st.form,time:e.target.value}})),
+      evPlace:S.form.place||'',setEvPlace:(e)=>this.setState(st=>({form:{...st.form,place:e.target.value}})),
+      evNote:S.form.note||'',setEvNote:(e)=>this.setState(st=>({form:{...st.form,note:e.target.value}})),
+      inviteScopes:['Everyone','Solo students','Harmony Group'].map(i=>({label:i,style:chip((S.form.scope||'Everyone')===i),onPick:()=>this.setState(st=>({form:{...st.form,scope:i}}))})),
+      saveEvent:()=>{this._saveEvent(false)},saveAndSendEvent:()=>{this._saveEvent(true)},
+
+      classRows:S.classes.map(c=>({name:c.name,sub:`${c.day} ${c.time} · ${c.len} min · Room ${c.room} · ${this.money(c.fee)}/cycle`,
+        tag:c.format==='Group'?'GRP':'1:1',count:c.count+' in',
+        tagStyle:`padding:6px 9px;border-radius:10px;flex:none;font:700 10px 'DM Mono',monospace;background:${c.format==='Group'?'#CFC4F5':'#B9E3D0'};color:${c.format==='Group'?DEEP:'#1E5540'}`,
+        onEdit:()=>{this.setState({editId:c.id,form:{name:c.name,format:c.format,day:c.day,time:c.time,len:String(c.len),room:c.room,fee:String(c.fee)}});this.go('t_classform')},
+        onDelete:()=>this.setState({confirm:{title:`Delete ${c.name}?`,body:`${c.count} student${c.count>1?'s':''} will lose the slot and get a notification.`,cta:'Delete class',run:()=>{this.setState(st=>({classes:st.classes.filter(x=>x.id!==c.id),confirm:null}));this.toast('Class deleted')}}})})),
+      newClass:()=>{this.setState({editId:null,form:{format:'1-on-1',day:'Wed'}});this.go('t_classform')},
+      classFormTitle:S.editId?'Edit class':'New class',classCta:S.editId?'Save changes':'Create class',
+      clName:S.form.name||'',setClName:(e)=>this.setState(st=>({form:{...st.form,name:e.target.value}})),
+      clTime:S.form.time||'',setClTime:(e)=>this.setState(st=>({form:{...st.form,time:e.target.value}})),
+      clLen:S.form.len||'',setClLen:(e)=>this.setState(st=>({form:{...st.form,len:e.target.value}})),
+      clRoom:S.form.room||'',setClRoom:(e)=>this.setState(st=>({form:{...st.form,room:e.target.value}})),
+      clFee:S.form.fee||'',setClFee:(e)=>this.setState(st=>({form:{...st.form,fee:e.target.value}})),
+      classFormats:['1-on-1','Group'].map(f=>({label:f,style:chip((S.form.format||'1-on-1')===f),onPick:()=>this.setState(st=>({form:{...st.form,format:f}}))})),
+      dayChips:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>{
+        const on=T?(S.form.day||'Wed')===d:S.myClassDay===d;
+        return {label:d.slice(0,1)+d.slice(1,2),style:`flex:1;text-align:center;padding:10px 0;border-radius:12px;font:600 11.5px 'DM Sans',sans-serif;cursor:pointer;border:1px solid ${on?INK:BORDER};background:${on?INK:'#fff'};color:${on?'#fff':INK}`,
+          onPick:()=>T?this.setState(st=>({form:{...st.form,day:d}})):this.setState({myClassDay:d})}}),
+      saveClass:()=>{const f=S.form;
+        if(S.editId){this.setState(st=>({classes:st.classes.map(c=>c.id===st.editId?{...c,name:f.name||c.name,format:f.format||c.format,day:f.day||c.day,time:f.time||c.time,len:+(f.len||c.len),room:f.room||c.room,fee:+(f.fee||c.fee)}:c)}));this.toast('Class updated')}
+        else{this.setState(st=>({classes:[...st.classes,{id:Date.now(),name:f.name||'New class',format:f.format||'1-on-1',day:f.day||'Wed',time:f.time||'16:00',len:+(f.len||45),room:f.room||'A',fee:+(f.fee||3200),count:0}]}));this.toast('Class created')}
+        this.setState({form:{},editId:null});this.swap('t_classes')},
+
+      requestRows:S.requests.map(r=>{const st=this.s(r.sid);
+        const open=r.status==='pending', wait=r.status==='offered', done=r.status==='confirmed';
+        return {initials:st.initials,name:st.name,
+          line:done?`Moved · ${r.chosen}`:wait?`${r.options.length} times offered · ${st.name.split(' ')[0]} picks one`:`${r.from} → ${r.to}`,
+          cardStyle:`background:#fff;border:1px solid ${open?'#FFD9A0':wait?'#CFC4F5':BORDER};border-radius:18px;padding:14px;cursor:pointer;opacity:${open||wait?1:.6}`,
+          avatarStyle:`width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:700 13px 'Bricolage Grotesque',sans-serif;background:#E7E1F7;color:${DEEP}`,
+          pill:open?'OPEN':wait?'WAITING ON STUDENT':r.status.toUpperCase(),
+          pillStyle:pill(open?'#FFF0DA':wait?'#E7E1F7':done?'#E3F3E9':'#F4F1EA',open?'#8A5A20':wait?DEEP:done?'#1E5540':MUTED),
+          onOpen:()=>{if(open)this.setState({modal:r.id,modalStep:'review',offerSlots:[]});
+            else if(wait)this.toast(`${st.name.split(' ')[0]} still has to pick one of your ${r.options.length} times`);/*neutral*/
+            else if(done)this.toast('Both calendars already show '+r.chosen)}}}),
+      showRequestModal:!!modalReqRaw&&S.modalStep!=='offer',
+      modalReq:modalReqRaw?{initials:this.s(modalReqRaw.sid).initials,name:this.s(modalReqRaw.sid).name,grade:`${this.s(modalReqRaw.sid).inst} · ${this.s(modalReqRaw.sid).grade}`,
+        currentDate:modalReqRaw.from.split(' · ')[0],currentTime:modalReqRaw.from.split(' · ')[1],
+        fromShort:modalReqRaw.from.replace(' · ','\n'),toShort:modalReqRaw.to.replace(' · ','\n'),
+        reason:modalReqRaw.reason,sentAt:modalReqRaw.sentAt,clash:modalReqRaw.clash}:{},
+      closeModal:()=>this.setState({modal:null,modalStep:'review'}),
+      declineRequest:()=>{const r=modalReqRaw;this.setState(st=>({requests:st.requests.map(x=>x.id===r.id?{...x,status:'declined'}:x),modal:null,modalStep:'review'}));this.toast('Declined — she keeps her original slot')},
+
+      openOffer:()=>this.setState({modalStep:'offer',offerSlots:modalReqRaw?[modalReqRaw.to]:[],offerDay:'21'}),
+      backToReview:()=>this.setState({modalStep:'review'}),
+      showOfferModal:!!modalReqRaw&&S.modalStep==='offer',
+      offerHeading:modalReqRaw?`Offer ${this.s(modalReqRaw.sid).name.split(' ')[0]} some times`:'',
+      offerCurrent:modalReqRaw?modalReqRaw.from:'',
+      offerAsked:modalReqRaw?modalReqRaw.to:'',
+      offerDays:[['Thu','21'],['Fri','22'],['Sat','23'],['Mon','25'],['Tue','26']].map(([dow,num])=>({dow,num,
+        style:`flex:1;text-align:center;padding:10px 0;border-radius:14px;cursor:pointer;border:1px solid ${S.offerDay===num?INK:BORDER};background:${S.offerDay===num?INK:'#fff'};color:${S.offerDay===num?'#fff':INK}`,
+        onPick:()=>this.setState({offerDay:num})})),
+      offerTimes:['09:30','10:00','11:00','14:30','16:30','17:30'].map(t=>{const slot=`${DOW[S.offerDay]} ${S.offerDay} Aug · ${t}`;const on=S.offerSlots.includes(slot);
+        return {label:t,style:chip(on),onPick:()=>this.setState(st=>({offerSlots:on?st.offerSlots.filter(x=>x!==slot):st.offerSlots.length>=3?st.offerSlots:[...st.offerSlots,slot]}))}}),
+      offerListLabel:S.offerSlots.length?`Sending ${S.offerSlots.length} option${S.offerSlots.length>1?'s':''} · max 3`:'No times picked yet',
+      offerSlots:S.offerSlots.map((slot,i)=>({n:i+1,label:slot,onRemove:()=>this.setState(st=>({offerSlots:st.offerSlots.filter(x=>x!==slot)}))})),
+      sendOfferStyle:`flex:1.5;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:${S.offerSlots.length?'pointer':'default'};background:${S.offerSlots.length?VIOLET:'#E7DFD3'};color:${S.offerSlots.length?'#fff':'#B0A79A'}`,
+      sendOfferLabel:S.offerSlots.length?`Send ${S.offerSlots.length} time${S.offerSlots.length>1?'s':''}`:'Pick a time',
+      sendOffer:()=>{if(!S.offerSlots.length||!modalReqRaw)return;const r=modalReqRaw,n=this.s(r.sid).name.split(' ')[0];
+        this.setState(st=>({requests:st.requests.map(x=>x.id===r.id?{...x,status:'offered',options:st.offerSlots}:x),modal:null,modalStep:'review',offerSlots:[]}));
+        this.toast(`Sent to ${n} — one tap from ${n} and both calendars update`)},
+
+      studentHeadline:(()=>{const c=S.classes[0];const dayName={Mon:'Monday',Tue:'Tuesday',Wed:'Wednesday',Thu:'Thursday',Fri:'Friday',Sat:'Saturday',Sun:'Sunday'}[c.day]||c.day;return `Voice ${dayName} at ${c.time}, and one thing due Friday.`})(),
+      myStreak:12, alertDotStyle:`position:absolute;top:7px;right:8px;width:9px;height:9px;border-radius:50%;border:2px solid ${DEEP};background:${S.notifs.some(n=>!n.read)?CORAL:'transparent'}`,
+      myClasses:S.classes.slice(0,2).map((c,i)=>{
+        const mine=i===0?myReq:null;
+        const st=mine?mine.status:'none';
+        const label=st==='offered'?`Iris offered ${mine.options.length} times · pick one`:st==='pending'?'Change requested · waiting for Iris':st==='confirmed'?`Moved · ${mine.chosen}`:'Confirmed';
+        const warm=st==='offered'||st==='pending';
+        return {name:c.name,sub:`${c.day} ${c.time} · ${c.len} min · Room ${c.room} · Iris Lin`,tag:c.format==='Group'?'GRP':'1:1',
+          tagStyle:`padding:6px 9px;border-radius:10px;flex:none;font:700 10px 'DM Mono',monospace;background:${c.format==='Group'?'#CFC4F5':'#B9E3D0'};color:${c.format==='Group'?DEEP:'#1E5540'}`,
+          status:label,
+          statusStyle:`font:600 10.5px 'DM Mono',monospace;margin-top:8px;color:${st==='offered'?DEEP:st==='pending'?'#8A5A20':'#1E5540'}`,
+          reschedLabel:st==='offered'?'Choose new time':st==='pending'?'Waiting for Iris':'Change time',
+          reschedStyle:`background:${st==='offered'?VIOLET:st==='pending'?'#FFF0DA':VIOLET};color:${st==='pending'?'#8A5A20':'#fff'};border-radius:20px;padding:8px 14px;font:600 11.5px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap`,
+          onReschedule:()=>{if(st==='offered'){this.setState({choose:mine.id,chooseSlot:null});return}
+            if(st==='pending'){this.toast('Iris has your request — she\u2019ll send times back');return}
+            this.setState({reschedClass:c.id,reschedTime:null,reschedReason:''});this.go('s_reschedule')},
+          onEdit:()=>{this.setState({myClassPick:c.id,myClassDay:c.day,myClassNote:''});this.go('s_classform')},
+          onDelete:()=>this.setState({confirm:{title:`Leave ${c.name}?`,body:'Iris gets a note and the slot opens for someone on the waiting list.',cta:'Leave class',run:()=>{this.setState({confirm:null});this.toast('Iris has been told')}}})}}),
+      nextHwTitle:'Sirens + lip trills',nextHwDue:'DUE FRI',nextHwNote:'Full range, ten minutes a day. Send an audio when it feels easy.',
+
+      newMyClass:()=>{this.setState({myClassPick:null,myClassDay:null,myClassNote:''});this.go('s_classform')},
+      myClassFormTitle:S.myClassPick?'Edit my class':'Join a class',
+      myClassCta:S.myClassPick?'Send change to Iris':'Send join request',
+      joinableClasses:S.classes.map(c=>({name:c.name,sub:`${c.day} ${c.time} · ${c.len} min · ${this.money(c.fee)}/cycle`,mark:S.myClassPick===c.id?'✓':'',
+        style:`display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ${S.myClassPick===c.id?VIOLET:BORDER};border-radius:16px;padding:13px 14px;cursor:pointer;color:${INK}`,
+        subStyle:`font:400 11px 'DM Sans',sans-serif;color:${MUTED};margin-top:5px`,
+        markStyle:`width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Sans',sans-serif;background:${S.myClassPick===c.id?VIOLET:'#F4F1EA'};color:#fff`,
+        onPick:()=>this.setState({myClassPick:c.id})})),
+      myClassNote:S.myClassNote,setMyClassNote:(e)=>this.setState({myClassNote:e.target.value}),
+      saveMyClass:()=>{this.swap('s_home');this.toast(S.myClassPick?'Change request sent to Iris':'Join request sent — she usually replies same day')},
+
+      myHomework:[
+        {id:'a',title:'Sirens + lip trills',sub:'Full range · due Fri 22 Aug · 10 min a day',type:'audio',pill:'TO DO',state:'todo'},
+        {id:'b',title:'Posture check',sub:'Standing, side view · due Mon',type:'photo',pill:'TO DO',state:'todo'},
+        {id:'c',title:'Five-tone scale, ah vowel',sub:'Sent 14 Aug · 0:55',type:'audio',pill:'REVIEWED',state:'done',feedback:'Lovely open tone. Drop the jaw on the top note — you squeeze it shut right where it needs room.',starsText:'★★★★☆'}
+      ].map(h=>({title:h.title,sub:h.sub,typeIcon:(TYPES[h.type]||TYPES.audio)[0],typeStyle:typeBox(h.type),
+        cardStyle:`background:#fff;border:1px solid ${h.state==='todo'?BORDER:'#E3F3E9'};border-radius:20px;padding:15px;color:${INK}`,
+        subStyle:`font:400 11.5px/1.4 'DM Sans',sans-serif;color:${MUTED};margin-top:5px`,
+        pill:h.pill,pillStyle:pill(h.state==='todo'?'#FFF0DA':'#E3F3E9',h.state==='todo'?'#8A5A20':'#1E5540'),
+        hasFeedback:!!h.feedback,feedback:h.feedback||'',starsText:h.starsText||'',
+        canSubmit:h.state==='todo',submitCta:h.type==='photo'?'Take & send':'Record & send',onSubmit:()=>{this.setState({submitFor:h.title,submitType:h.type==='photo'?'Photo':'Audio',recorded:false,recording:false,submitNote:''});this.go('s_submit')}})),
+      submitTitle:S.submitFor||'Sirens + lip trills',
+      isPhotoSubmit:S.submitType==='Photo', isAudioSubmit:S.submitType!=='Photo',
+      submitSubhead:S.submitType==='Photo'?'One clear shot is enough. Good light, whole body in frame.':'One take is enough. Iris would rather hear the honest one.',
+      photoFrameStyle:`border-radius:16px;height:210px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px ${S.recorded?'solid rgba(255,255,255,.2)':'dashed rgba(255,255,255,.28)'};background:${S.recorded?'repeating-linear-gradient(135deg,rgba(255,255,255,.09) 0 10px,rgba(255,255,255,.04) 10px 20px)':'rgba(255,255,255,.04)'}`,
+      photoIconStyle:`width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;font:600 17px 'DM Sans',sans-serif;background:${S.recorded?'#FFD9A0':'rgba(255,255,255,.12)'};color:${S.recorded?'#8A5A20':'rgba(255,255,255,.5)'}`,
+      photoFrameLabel:S.recorded?'CAPTURED · 1 PHOTO':'CAMERA PREVIEW',
+      shutterStyle:`margin:18px auto 0;width:64px;height:64px;border-radius:50%;background:${S.recorded?'#fff':'#FFD9A0'};color:#1B1726;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Sans',sans-serif;cursor:pointer;border:4px solid rgba(255,255,255,.18)`,
+      shutterLabel:S.recorded?'RETAKE':'SNAP',
+      photoHint:S.recorded?'Looks good? Send it over.':'Stand side-on so Iris can see your posture',
+      takePhoto:()=>this.setState(st=>({recorded:!st.recorded})),
+      recWave:wave(26,7,'#C8FF6B',S.recorded?1:S.recording?.5:.001),
+      toggleRecord:()=>{if(S.recording){this.setState({recording:false,recorded:true})}else{this.setState({recording:true,recorded:false})}},
+      recBtnStyle:`margin:20px auto 0;width:${S.recording?'64px':'64px'};height:64px;border-radius:${S.recording?'18px':'50%'};background:${S.recording?'#FF6B4A':'#C8FF6B'};color:#1B1726;display:flex;align-items:center;justify-content:center;font:700 12px 'DM Sans',sans-serif;cursor:pointer;transition:border-radius .18s ease`,
+      recBtnLabel:S.recording?'STOP':S.recorded?'REDO':'REC',
+      recTimeLabel:S.recording?'recording… 0:14':S.recorded?'0:47 captured — listen back?':'Tap to record your take',
+      submitNote:S.submitNote,setSubmitNote:(e)=>this.setState({submitNote:e.target.value}),
+      sendSubmitStyle:`border-radius:16px;padding:16px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;margin-top:18px;cursor:${S.recorded?'pointer':'default'};background:${S.recorded?INK:'#E7DFD3'};color:${S.recorded?'#fff':'#B0A79A'}`,
+      sendSubmitLabel:S.recorded?(S.submitType==='Photo'?'Send photo to Iris':'Send to Iris'):(S.submitType==='Photo'?'Take a photo first':'Record something first'),
+      sendSubmission:()=>{if(!S.recorded)return;this.swap('s_homework');this.toast('Sent. Iris usually replies by the next lesson.')},
+
+      notifications:S.notifs.map(n=>{
+        const c={fee:['NT$','#FFE2D8','#A73E1C'],hw:['♪','#E7E1F7',DEEP],event:['◆','#B9E3D0','#1E5540'],time:['⇄','#FFF0DA','#8A5A20']}[n.kind];
+        return {title:n.title,body:n.body,time:n.time,icon:c[0],
+          iconStyle:`width:38px;height:38px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;font:700 ${n.kind==='fee'?'11':'15'}px 'DM Sans',sans-serif;background:${c[1]};color:${c[2]}`,
+          cardStyle:`background:#fff;border:1px solid ${n.read?BORDER:'#CFC4F5'};border-radius:18px;padding:14px;cursor:pointer;opacity:${n.read?.62:1}`,
+          hasCta:!!n.cta,cta:n.cta,
+          ctaStyle:`display:inline-block;margin-top:11px;background:${n.kind==='fee'?INK:CREAM};color:${n.kind==='fee'?'#fff':INK};border-radius:20px;padding:8px 14px;font:700 11.5px 'DM Sans',sans-serif`,
+          onOpen:()=>{this.setState(st=>({notifs:st.notifs.map(x=>x.id===n.id?{...x,read:true}:x)}));
+            if(n.kind==='time'){if(offeredReq)this.setState({choose:offeredReq.id,chooseSlot:null});else this.toast('That class is already settled')}
+            else if(n.kind==='hw'&&n.cta)this.swap('s_homework');else if(n.kind==='fee')this.swap('s_me');else if(n.cta)this.toast('Iris will see you there')}}}),
+      markAllRead:()=>this.setState(st=>({notifs:st.notifs.map(n=>({...n,read:true}))})),
+
+      showChooseModal:!!chooseReq,
+      chooseSub:chooseReq?`${(S.classes.find(c=>c.id===1)||S.classes[0]).name} · now ${chooseReq.from}`:'',
+      chooseOptions:chooseReq?chooseReq.options.map(slot=>{const [d,t]=slot.split(' · ');const on=S.chooseSlot===slot;
+        return {day:d,time:t,detail:'45 min · Room A · with Iris',mark:on?'✓':'',
+          style:`display:flex;align-items:center;gap:12px;background:#fff;border:1px solid ${on?VIOLET:BORDER};border-radius:18px;padding:14px;cursor:pointer;color:${INK}`,
+          markStyle:`width:24px;height:24px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font:700 11px 'DM Sans',sans-serif;background:${on?VIOLET:'#F4F1EA'};color:#fff`,
+          onPick:()=>this.setState({chooseSlot:slot})}}):[],
+      closeChoose:()=>{this.setState({choose:null,chooseSlot:null});this.toast('Told Iris none of those work — she\u2019ll send more')},
+      confirmChoiceStyle:`flex:1.4;border-radius:16px;padding:15px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;cursor:${S.chooseSlot?'pointer':'default'};background:${S.chooseSlot?INK:'#E7DFD3'};color:${S.chooseSlot?'#fff':'#B0A79A'}`,
+      confirmChoiceLabel:S.chooseSlot?'Confirm this time':'Pick a time',
+      confirmChoice:()=>{if(!S.chooseSlot||!chooseReq)return;const slot=S.chooseSlot,[datePart,time]=slot.split(' · '),dow=datePart.split(' ')[0];
+        this.setState(st=>({
+          requests:st.requests.map(r=>r.id===chooseReq.id?{...r,status:'confirmed',chosen:slot}:r),
+          classes:st.classes.map(c=>c.id===1?{...c,day:dow,time:time}:c),
+          students:st.students.map(s=>s.id===1?{...s,day:dow,time:time}:s),
+          choose:null,chooseSlot:null}));
+        this.toast(`Locked in — ${slot}. Iris\u2019s calendar updated too.`)},
+
+      reschedCurrent:(()=>{const c=S.classes.find(x=>x.id===S.reschedClass)||S.classes[0];return `${c.day} 20 Aug · ${c.time}`})(),
+      reschedClassName:(S.classes.find(x=>x.id===S.reschedClass)||S.classes[0]).name,
+      reschedDays:[['Thu','21'],['Fri','22'],['Sat','23'],['Mon','25'],['Tue','26']].map(([dow,num])=>({dow,num,
+        style:`flex:1;text-align:center;padding:10px 0;border-radius:14px;cursor:pointer;border:1px solid ${S.reschedDay===num?INK:BORDER};background:${S.reschedDay===num?INK:'#fff'};color:${S.reschedDay===num?'#fff':INK}`,
+        onPick:()=>this.setState({reschedDay:num})})),
+      reschedTimes:['09:30','10:00','11:00','15:00','16:30','17:30'].map(t=>({label:t,style:chip(S.reschedTime===t),onPick:()=>this.setState({reschedTime:t})})),
+      reschedReason:S.reschedReason,setReschedReason:(e)=>this.setState({reschedReason:e.target.value}),
+      sendRequestStyle:`border-radius:16px;padding:16px;text-align:center;font:700 13.5px 'DM Sans',sans-serif;margin-top:18px;cursor:${S.reschedTime?'pointer':'default'};background:${S.reschedTime?INK:'#E7DFD3'};color:${S.reschedTime?'#fff':'#B0A79A'}`,
+      sendRequestLabel:S.reschedTime?`Ask to move to ${S.reschedDay} Aug, ${S.reschedTime}`:'Pick a new time',
+      sendRequest:()=>{if(!S.reschedTime)return;
+        this.setState(st=>({requests:[{id:Date.now(),sid:1,from:'Wed 20 Aug · 10:00',to:`${st.reschedDay} Aug · ${st.reschedTime}`,reason:st.reschedReason||'No reason given.',sentAt:'just now',clash:'Slot is free',status:'pending',options:[],chosen:null},...st.requests]}));
+        this.swap('s_home');this.toast('Sent. Iris will send back times that work for her.')},
+
+      myFeeAmount:this.money(1600),myFeePill:'2 WEEKS DUE',myFeePillStyle:pill('#FBD9CE','#A73E1C'),
+      myWeeks:[1,1,0,0].map((p,i)=>({mark:p?'✓':'·',label:'W'+(i+1),
+        dotStyle:`height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font:700 13px 'DM Sans',sans-serif;background:${p?'#E3F3E9':'#FBE9E2'};color:${p?'#1E5540':'#A73E1C'}`})),
+      payBtnStyle:`background:${INK};color:#fff;border-radius:16px;padding:14px;text-align:center;font:700 13px 'DM Sans',sans-serif;margin-top:16px;cursor:pointer`,
+      payBtnLabel:'Pay NT$ 1,600 with LINE Pay',
+      payNow:()=>this.toast('Opening LINE Pay…'),
+
+      showConfirm:!!S.confirm,confirmTitle:S.confirm?S.confirm.title:'',confirmBody:S.confirm?S.confirm.body:'',
+      confirmCta:S.confirm?S.confirm.cta:'',confirmAction:()=>{if(S.confirm)S.confirm.run()},
+      showToast:!!S.toast,toastText:S.toast,
+
+      tabs:tabDefs.map(([label,scr])=>{const on=activeRoot===scr;
+        return {label,onPick:()=>this.swap(scr),
+          iconStyle:`width:22px;height:22px;margin:0 auto;border-radius:${shapes[label]||'6px'};background:${on?VIOLET:'transparent'};border:2px solid ${on?VIOLET:'#B0A79A'}`,
+          labelStyle:`font:500 9.5px 'DM Sans',sans-serif;margin-top:6px;color:${on?VIOLET:'#B0A79A'}`}})
+    };
+    return v;
+  }
+
+  _saveEvent(send){
+    const f=this.state.form,id=this.state.editId;
+    if(id){this.setState(st=>({events:st.events.map(e=>e.id===id?{...e,name:f.name||e.name,date:f.date||e.date,time:f.time||e.time,place:f.place||e.place,note:f.note||e.note,scope:f.scope||e.scope,sent:send||e.sent}:e)}))}
+    else{this.setState(st=>({events:[{id:Date.now(),name:f.name||'New event',date:f.date||'6 Sep',time:f.time||'15:00',place:f.place||'Studio hall, 3F',scope:f.scope||'Everyone',note:f.note||'',sent:send,past:false,rsvp:0},...st.events]}))}
+    this.setState({form:{},editId:null});
+    this.swap('t_events');
+    this.toast(send?'Event saved and pushed to all families':'Saved as a draft');
+  }
+}
+</script>
+</body>
+</html>
