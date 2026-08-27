@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/format'
 import { computeUnpaidCents } from '@/lib/fees'
 import StatCard from '@/components/StatCard'
-import type { Homework, RescheduleRequest, Event, Class, FeeCycle, FeePayment, ClassStudent } from '@/lib/types'
+import type { Homework, RescheduleRequest, Event, Class, FeeCycle, FeePayment, ClassStudent, Student } from '@/lib/types'
 
 async function getDashboardCounts(): Promise<{
   toReview: Homework[]
@@ -69,15 +69,18 @@ async function getUnpaidCents(): Promise<number> {
     if (!latestCycle) return 0
 
     const [
+      { data: students, error: studentsError },
       { data: payments, error: paymentsError },
       { data: classStudents, error: classStudentsError },
       { data: allClasses, error: classesError },
     ] = await Promise.all([
+      db.from('students').select('*').returns<Student[]>(),
       db.from('fee_payments').select('*').eq('cycle_id', latestCycle.id).returns<FeePayment[]>(),
       db.from('class_students').select('*').returns<ClassStudent[]>(),
       db.from('classes').select('*').returns<Class[]>(),
     ])
 
+    if (studentsError) console.error('Failed to load students:', studentsError)
     if (paymentsError) console.error('Failed to load fee payments:', paymentsError)
     if (classStudentsError) console.error('Failed to load class students:', classStudentsError)
     if (classesError) console.error('Failed to load classes:', classesError)
@@ -90,13 +93,30 @@ async function getUnpaidCents(): Promise<number> {
     for (const p of payments ?? []) {
       paymentsByStudent[p.student_id] = [...(paymentsByStudent[p.student_id] ?? []), p]
     }
-    const feeCentsByStudent = Object.fromEntries(
-      Object.keys(paymentsByStudent).map((studentId) => [
-        studentId,
-        classById[classIdByStudent[studentId]]?.fee_cents ?? 0,
+    // Build the roster from all students (not just those with existing payment rows) so a
+    // student with a class assignment but zero fee_payments rows this cycle is still counted
+    // as fully unpaid, rather than silently contributing 0. computeOutstandingCents counts
+    // explicit `paid: false` rows, so a student with no rows at all needs 4 synthetic unpaid
+    // rows rather than an empty array (an empty array would compute to 0 outstanding).
+    const fullyUnpaidCycleRows = (studentId: string): FeePayment[] =>
+      Array.from({ length: 4 }, (_, i) => ({
+        id: `synthetic-${studentId}-${i + 1}`,
+        student_id: studentId,
+        cycle_id: latestCycle.id,
+        week_number: i + 1,
+        paid: false,
+        paid_at: null,
+      }))
+    const paymentsByStudentForAllStudents: Record<string, FeePayment[]> = Object.fromEntries(
+      (students ?? []).map((s) => [
+        s.id,
+        paymentsByStudent[s.id] ?? fullyUnpaidCycleRows(s.id),
       ])
     )
-    return computeUnpaidCents(paymentsByStudent, feeCentsByStudent)
+    const feeCentsByStudent = Object.fromEntries(
+      (students ?? []).map((s) => [s.id, classById[classIdByStudent[s.id]]?.fee_cents ?? 0])
+    )
+    return computeUnpaidCents(paymentsByStudentForAllStudents, feeCentsByStudent)
   } catch (err) {
     console.error('Failed to load unpaid fee total:', err)
     return 0

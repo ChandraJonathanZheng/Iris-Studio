@@ -36,7 +36,7 @@ export default function GiveHomeworkPage() {
       return
     }
     setError(null)
-    await supabaseBrowser.from('homework').insert(
+    const { error: insertError } = await supabaseBrowser.from('homework').insert(
       studentIds.map((student_id) => ({
         student_id,
         title,
@@ -47,6 +47,10 @@ export default function GiveHomeworkPage() {
         status: 'assigned',
       }))
     )
+    if (insertError) {
+      setError('Could not give homework. Please try again.')
+      return
+    }
     router.push('/app/homework')
   }
 

@@ -9,6 +9,7 @@ import type { Class, ClassStudent } from '@/lib/types'
 export default function ClassesPage() {
   const [classes, setClasses] = useState<Class[]>([])
   const [studentCounts, setStudentCounts] = useState<Record<string, number>>({})
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -28,7 +29,12 @@ export default function ClassesPage() {
   }, [])
 
   async function handleDelete(id: string) {
-    await supabaseBrowser.from('classes').delete().eq('id', id)
+    const { error: deleteError } = await supabaseBrowser.from('classes').delete().eq('id', id)
+    if (deleteError) {
+      setError('Could not delete class. Please try again.')
+      return
+    }
+    setError(null)
     setClasses((prev) => prev.filter((c) => c.id !== id))
   }
 
@@ -41,6 +47,8 @@ export default function ClassesPage() {
           + Create
         </Link>
       </div>
+
+      {error && <p className="mt-3 text-sm text-coral">{error}</p>}
 
       <ul className="mt-5 space-y-3">
         {classes.map((c) => (

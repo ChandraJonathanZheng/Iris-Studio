@@ -2,7 +2,7 @@
 
 ## Iris Studio Teacher App
 
-Next.js + Supabase teacher-facing app. See `docs/superpowers/specs/2026-08-26-iris-studio-teacher-app-design.md` for the design.
+Next.js + Supabase teacher-facing app. See `Docs/superpowers/specs/2026-08-26-iris-studio-teacher-app-design.md` for the design.
 
 ### Setup
 

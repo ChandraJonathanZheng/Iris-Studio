@@ -48,10 +48,12 @@ export default function EditClassPage() {
     }
     setError(null)
     const payload = { name, format, day, time, duration_minutes: durationMinutes, room, fee_cents: feeCents }
-    if (isNew) {
-      await supabaseBrowser.from('classes').insert(payload)
-    } else {
-      await supabaseBrowser.from('classes').update(payload).eq('id', id)
+    const { error: saveError } = isNew
+      ? await supabaseBrowser.from('classes').insert(payload)
+      : await supabaseBrowser.from('classes').update(payload).eq('id', id)
+    if (saveError) {
+      setError('Could not save class. Please try again.')
+      return
     }
     router.push('/app/studio/classes')
   }

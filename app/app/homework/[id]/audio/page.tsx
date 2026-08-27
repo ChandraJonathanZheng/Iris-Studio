@@ -17,6 +17,7 @@ export default function AudioReviewPage() {
   const [rating, setRating] = useState(0)
   const [notes, setNotes] = useState<string[]>([])
   const [feedback, setFeedback] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     supabaseBrowser
@@ -32,10 +33,15 @@ export default function AudioReviewPage() {
   }
 
   async function handleSend() {
-    await supabaseBrowser
+    const { error: updateError } = await supabaseBrowser
       .from('homework')
       .update({ status: 'reviewed', rating, quick_notes: notes, feedback_text: feedback })
       .eq('id', id)
+    if (updateError) {
+      setError('Could not send feedback. Please try again.')
+      return
+    }
+    setError(null)
     router.push('/app/homework')
   }
 
@@ -70,6 +76,8 @@ export default function AudioReviewPage() {
           rows={4}
           className="mt-2 w-full rounded-2xl border border-black/10 bg-white px-5 py-4"
         />
+
+        {error && <p className="mt-3 text-sm text-coral">{error}</p>}
 
         <button
           type="button"

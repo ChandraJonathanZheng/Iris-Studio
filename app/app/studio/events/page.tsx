@@ -8,6 +8,7 @@ import type { Event } from '@/lib/types'
 export default function EventsPage() {
   const [tab, setTab] = useState<'upcoming' | 'history'>('upcoming')
   const [events, setEvents] = useState<Event[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -21,12 +22,22 @@ export default function EventsPage() {
   }, [tab])
 
   async function handleDelete(id: string) {
-    await supabaseBrowser.from('events').delete().eq('id', id)
+    const { error: deleteError } = await supabaseBrowser.from('events').delete().eq('id', id)
+    if (deleteError) {
+      setError('Could not delete event. Please try again.')
+      return
+    }
+    setError(null)
     setEvents((prev) => prev.filter((e) => e.id !== id))
   }
 
   async function handleSend(id: string) {
-    await supabaseBrowser.from('events').update({ status: 'sent' }).eq('id', id)
+    const { error: sendError } = await supabaseBrowser.from('events').update({ status: 'sent' }).eq('id', id)
+    if (sendError) {
+      setError('Could not send event. Please try again.')
+      return
+    }
+    setError(null)
     setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, status: 'sent' } : e)))
   }
 
@@ -54,6 +65,8 @@ export default function EventsPage() {
           </button>
         ))}
       </div>
+
+      {error && <p className="mt-3 text-sm text-coral">{error}</p>}
 
       <ul className="mt-5 space-y-3">
         {events.map((event) => {

@@ -52,10 +52,12 @@ function NewEventForm() {
       note,
       status,
     }
-    if (editId) {
-      await supabaseBrowser.from('events').update(payload).eq('id', editId)
-    } else {
-      await supabaseBrowser.from('events').insert(payload)
+    const { error: saveError } = editId
+      ? await supabaseBrowser.from('events').update(payload).eq('id', editId)
+      : await supabaseBrowser.from('events').insert(payload)
+    if (saveError) {
+      setError('Could not save event. Please try again.')
+      return
     }
     router.push('/app/studio/events')
   }

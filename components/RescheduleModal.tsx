@@ -3,6 +3,7 @@ import type { RescheduleRequest } from '@/lib/types'
 export interface RescheduleModalProps {
   request: RescheduleRequest
   studentName: string
+  error?: string | null
   onApprove: (id: string) => void
   onDecline: (id: string) => void
   onDismiss: () => void
@@ -13,7 +14,7 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString('en-US', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-export default function RescheduleModal({ request, studentName, onApprove, onDecline, onDismiss }: RescheduleModalProps) {
+export default function RescheduleModal({ request, studentName, error, onApprove, onDecline, onDismiss }: RescheduleModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/40">
       <div className="mx-auto w-full max-w-[480px] rounded-t-3xl bg-cream p-6">
@@ -45,6 +46,8 @@ export default function RescheduleModal({ request, studentName, onApprove, onDec
             <p>&ldquo;{request.reason}&rdquo;</p>
           </div>
         )}
+
+        {error && <p className="mt-3 text-sm text-coral">{error}</p>}
 
         <div className="mt-6 flex gap-3">
           <button

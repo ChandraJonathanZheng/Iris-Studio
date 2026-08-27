@@ -8,6 +8,7 @@ import type { RescheduleRequest, Student } from '@/lib/types'
 export default function ReschedulesPage() {
   const [requests, setRequests] = useState<(RescheduleRequest & { students: Student })[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function load() {
     const { data } = await supabaseBrowser
@@ -23,13 +24,29 @@ export default function ReschedulesPage() {
   }, [])
 
   async function handleApprove(id: string) {
-    await supabaseBrowser.from('reschedule_requests').update({ status: 'approved' }).eq('id', id)
+    const { error: approveError } = await supabaseBrowser
+      .from('reschedule_requests')
+      .update({ status: 'approved' })
+      .eq('id', id)
+    if (approveError) {
+      setError('Could not approve the request. Please try again.')
+      return
+    }
+    setError(null)
     setActiveId(null)
     load()
   }
 
   async function handleDecline(id: string) {
-    await supabaseBrowser.from('reschedule_requests').update({ status: 'declined' }).eq('id', id)
+    const { error: declineError } = await supabaseBrowser
+      .from('reschedule_requests')
+      .update({ status: 'declined' })
+      .eq('id', id)
+    if (declineError) {
+      setError('Could not decline the request. Please try again.')
+      return
+    }
+    setError(null)
     setActiveId(null)
     load()
   }
@@ -77,9 +94,13 @@ export default function ReschedulesPage() {
         <RescheduleModal
           request={active}
           studentName={active.students.name}
+          error={error}
           onApprove={handleApprove}
           onDecline={handleDecline}
-          onDismiss={() => setActiveId(null)}
+          onDismiss={() => {
+            setActiveId(null)
+            setError(null)
+          }}
         />
       )}
     </div>
