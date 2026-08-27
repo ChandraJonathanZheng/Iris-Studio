@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-cream text-ink;
+}
+
+.app-column {
+  @apply mx-auto w-full max-w-[480px] min-h-screen bg-cream;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
