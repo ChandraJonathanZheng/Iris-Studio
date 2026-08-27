@@ -1,7 +1,8 @@
 import { supabaseServer } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/format'
+import { computeOutstandingCents } from '@/lib/fees'
 import Pill from '@/components/Pill'
-import type { Student, Homework, FeePayment } from '@/lib/types'
+import type { Student, Homework, FeePayment, Class, ClassStudent } from '@/lib/types'
 
 async function getStudent(studentId: string): Promise<Student | null> {
   try {
@@ -83,11 +84,46 @@ async function getCurrentCyclePayments(studentId: string): Promise<FeePayment[]>
   }
 }
 
+async function getStudentFeeCents(studentId: string): Promise<number> {
+  try {
+    const db = supabaseServer()
+    const { data: classStudent, error: classStudentError } = await db
+      .from('class_students')
+      .select('*')
+      .eq('student_id', studentId)
+      .maybeSingle<ClassStudent>()
+
+    if (classStudentError) {
+      console.error('Failed to load class for student:', classStudentError)
+      return 0
+    }
+
+    if (!classStudent) return 0
+
+    const { data: klass, error: classError } = await db
+      .from('classes')
+      .select('*')
+      .eq('id', classStudent.class_id)
+      .maybeSingle<Class>()
+
+    if (classError) {
+      console.error('Failed to load class fee:', classError)
+      return 0
+    }
+
+    return klass?.fee_cents ?? 0
+  } catch (err) {
+    console.error('Failed to load student fee:', err)
+    return 0
+  }
+}
+
 export default async function StudentDetail({ params }: { params: { id: string } }) {
-  const [student, homeworkHistory, payments] = await Promise.all([
+  const [student, homeworkHistory, payments, feeCents] = await Promise.all([
     getStudent(params.id),
     getHomeworkHistory(params.id),
     getCurrentCyclePayments(params.id),
+    getStudentFeeCents(params.id),
   ])
 
   if (!student) {
@@ -153,8 +189,7 @@ export default async function StudentDetail({ params }: { params: { id: string }
             ))}
           </div>
           <p className="mt-4 text-2xl font-extrabold">
-            {/* TODO(Task 9): compute outstanding cents from class fee_cents and unpaid weeks */}
-            {formatCurrency(0)} outstanding
+            {formatCurrency(computeOutstandingCents(payments, feeCents))} outstanding
           </p>
           <p className="text-sm text-black/40">{paidCount} of 4 weeks paid</p>
         </section>

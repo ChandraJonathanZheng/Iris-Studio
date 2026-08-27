@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { supabaseServer } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/format'
+import { computeUnpaidCents } from '@/lib/fees'
 import StatCard from '@/components/StatCard'
-import type { Homework, RescheduleRequest, Event, Class, FeePayment } from '@/lib/types'
+import type { Homework, RescheduleRequest, Event, Class, FeeCycle, FeePayment, ClassStudent } from '@/lib/types'
 
 async function getDashboardCounts(): Promise<{
   toReview: Homework[]
@@ -50,16 +51,15 @@ async function getDashboardCounts(): Promise<{
   }
 }
 
-// TODO(Task 9): replace with shared fees total helper
 async function getUnpaidCents(): Promise<number> {
   try {
     const db = supabaseServer()
     const { data: latestCycle, error: latestCycleError } = await db
       .from('fee_cycles')
-      .select('id')
+      .select('*')
       .order('cycle_number', { ascending: false })
       .limit(1)
-      .maybeSingle()
+      .maybeSingle<FeeCycle>()
 
     if (latestCycleError) {
       console.error('Failed to load latest fee cycle:', latestCycleError)
@@ -68,19 +68,35 @@ async function getUnpaidCents(): Promise<number> {
 
     if (!latestCycle) return 0
 
-    const { data: payments, error: paymentsError } = await db
-      .from('fee_payments')
-      .select('*, students(id)')
-      .eq('cycle_id', latestCycle.id)
-      .eq('paid', false)
-      .returns<FeePayment[]>()
+    const [
+      { data: payments, error: paymentsError },
+      { data: classStudents, error: classStudentsError },
+      { data: allClasses, error: classesError },
+    ] = await Promise.all([
+      db.from('fee_payments').select('*').eq('cycle_id', latestCycle.id).returns<FeePayment[]>(),
+      db.from('class_students').select('*').returns<ClassStudent[]>(),
+      db.from('classes').select('*').returns<Class[]>(),
+    ])
 
-    if (paymentsError) {
-      console.error('Failed to load unpaid fee payments:', paymentsError)
-      return 0
+    if (paymentsError) console.error('Failed to load fee payments:', paymentsError)
+    if (classStudentsError) console.error('Failed to load class students:', classStudentsError)
+    if (classesError) console.error('Failed to load classes:', classesError)
+
+    const classById = Object.fromEntries((allClasses ?? []).map((c) => [c.id, c]))
+    const classIdByStudent = Object.fromEntries(
+      (classStudents ?? []).map((cs) => [cs.student_id, cs.class_id])
+    )
+    const paymentsByStudent: Record<string, FeePayment[]> = {}
+    for (const p of payments ?? []) {
+      paymentsByStudent[p.student_id] = [...(paymentsByStudent[p.student_id] ?? []), p]
     }
-
-    return (payments ?? []).length * 0 // placeholder overwritten below
+    const feeCentsByStudent = Object.fromEntries(
+      Object.keys(paymentsByStudent).map((studentId) => [
+        studentId,
+        classById[classIdByStudent[studentId]]?.fee_cents ?? 0,
+      ])
+    )
+    return computeUnpaidCents(paymentsByStudent, feeCentsByStudent)
   } catch (err) {
     console.error('Failed to load unpaid fee total:', err)
     return 0
