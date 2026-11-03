@@ -1,0 +1,10 @@
+node_modules/
+client/dist/
+client/dist-ssr/
+server/IrisStudio.Api/wwwroot/
+server/**/bin/
+server/**/obj/
+server/IrisStudio.Api/App_Data/
+*.user
+.env
+.DS_Store
