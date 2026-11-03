@@ -23,14 +23,18 @@ export function Login() {
 
   if (me.data) return <Navigate to={home(me.data)} replace />;
 
-  const done = (u: Me) => { qc.setQueryData(qk.me, u); nav(loc.state?.from ?? home(u), { replace: true, viewTransition: true }); };
+  // Re-read /api/me after signing in so every page gets the full, fresh profile (not just the login reply).
+  const done = async () => {
+    const u = await qc.fetchQuery({ queryKey: qk.me, queryFn: () => api.get<Me | null>('/api/me'), staleTime: 0 });
+    if (u) nav(loc.state?.from ?? home(u), { replace: true, viewTransition: true });
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setError(null);
-    try { done(await api.post<Me>('/api/auth/login', { email, password })); }
+    try { await api.post('/api/auth/login', { email, password }); await done(); }
     catch (x) { setError((x as Error).message); }
     finally { setBusy(false); }
   };
-  const mockLine = async (as: string) => { setBusy(true); try { done(await api.post<Me>('/api/auth/line/mock', { as })); } finally { setBusy(false); } };
+  const mockLine = async (as: string) => { setBusy(true); try { await api.post('/api/auth/line/mock', { as }); await done(); } finally { setBusy(false); } };
 
   return (
     <div className="auth">
