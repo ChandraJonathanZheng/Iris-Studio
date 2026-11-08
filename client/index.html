@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover + env(safe-area-inset-*) in styles.css keeps content clear of notches and home bars (#14) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FFFCF5" />
+    <title>Iris 聲樂工作室 · 一對一聲樂課</title>
+    <meta name="description" content="Iris 一對一聲樂課：呼吸、發聲到舞台表現。線上預約免費諮詢。" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script>
+      // Sandboxed hosts (e.g. a shared prototype page) throw on ANY access to localStorage/sessionStorage.
+      // Libraries that touch storage at load time would crash the app, so swap in an in-memory stand-in first.
+      (function () {
+        function mem() { var d = {}; return { getItem: function (k) { return k in d ? d[k] : null; }, setItem: function (k, v) { d[k] = String(v); },
+          removeItem: function (k) { delete d[k]; }, clear: function () { d = {}; }, key: function (i) { return Object.keys(d)[i] || null; },
+          get length() { return Object.keys(d).length; } }; }
+        ['localStorage', 'sessionStorage'].forEach(function (name) {
+          try { window[name].getItem('x'); }
+          catch (e) { try { Object.defineProperty(window, name, { value: mem(), configurable: true }); } catch (e2) {} }
+        });
+        // crypto.randomUUID only exists in secure contexts; idempotency keys need it.
+        if (window.crypto && typeof crypto.randomUUID !== 'function' && crypto.getRandomValues) {
+          crypto.randomUUID = function () { var b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+            var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20); };
+        }
+        // document.cookie throws in the same sandbox; the mock API reads it on every request.
+        try { void document.cookie; }
+        catch (e) { var jar = ''; try { Object.defineProperty(document, 'cookie', { get: function () { return jar; }, set: function () {}, configurable: true }); } catch (e2) {} }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"><!--app-html--></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
