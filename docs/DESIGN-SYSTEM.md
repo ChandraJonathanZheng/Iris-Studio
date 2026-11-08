@@ -117,7 +117,7 @@ Backdrops: sheet `rgba(20,22,20,.32)`; modal `rgba(12,14,12,.62)` + `blur(6px)`.
 
 | | Phone (< 900 px) | Desktop (≥ 900 px) |
 |---|---|---|
-| Navigation | Frosted floating bottom bar, 68 px, 5 tabs (student and teacher: 首頁 / 行事曆 / 學生 / 收件匣 / 更多); active = sage tint + **filled icon**; grouped tabs stay active on member pages; teacher 收件匣 badge = amber count pill, student 通知 = dot | Frosted sidebar 240 px with the same 5 items; ⌘K search |
+| Navigation | Frosted floating bottom bar, 68 px, 5 tabs (teacher: 首頁 / 行事曆 / 學生 / 收件匣 / 更多; student has its own 5); active = sage tint + **filled icon**; grouped tabs stay active on member pages; teacher 收件匣 badge = amber count pill, student 通知 = dot | Frosted sidebar 240 px with the same 5 items; ⌘K search |
 | Content width | full, 16–20 px side padding | max 720 px for task pages, 960–1080 for dashboards & landing |
 | Bottom padding | `bnav height + 8 + 24 + safe-area` (+64 when a floating CTA is shown) | 48 px |
 

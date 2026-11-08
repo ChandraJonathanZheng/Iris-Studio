@@ -226,6 +226,15 @@ When a booking (by the student or by Iris) leaves the student with **0 credits**
 ### 4.10 Free consult
 `POST /api/public/consults` {name, contactType line|email, contact, preferredTime, topic} — rate-limited 5 / min / IP → appears in 諮詢 + counter on Iris's home → `POST /consults/{id}/contacted`.
 
+### 4.11 Consents and privacy requests
+1. Sign-up (email): `POST /api/auth/register` carries `consents`; user + consent rows are saved in one transaction.
+2. Sign-up (LINE): choices wait in sessionStorage during the LINE redirect; `/pending` sends `POST /api/me/consents`.
+3. 我的 → 同意設定: switching media / marketing writes a NEW row (version, time, scope, source). Withdrawing is always allowed; a minor turning one ON needs the guardian's tick.
+4. Iris sees the latest media state on 學生詳細 before posting photos.
+5. 個人資料權利申請 (`/legal/privacy-request`, no account needed) → `PrivacyRequests` → 更多 → 個資權利申請 with due date (15 d access/copy, 30 d others; 個資法 §13). Handling note required.
+Cookie settings live in localStorage (`iris-cookie-prefs`); nothing optional runs today, `allowsAnalytics()` gates anything added later.
+
+
 ---
 
 ## 5. API reference
@@ -277,21 +286,12 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 
 ---
 
-### 4.11 Consents and privacy requests
-1. Sign-up (email): `POST /api/auth/register` carries `consents`; user + consent rows are saved in one transaction.
-2. Sign-up (LINE): choices wait in sessionStorage during the LINE redirect; `/pending` sends `POST /api/me/consents`.
-3. 我的 → 同意設定: switching media / marketing writes a NEW row (version, time, scope, source). Withdrawing is always allowed; a minor turning one ON needs the guardian's tick.
-4. Iris sees the latest media state on 學生詳細 before posting photos.
-5. 個人資料權利申請 (`/legal/privacy-request`, no account needed) → `PrivacyRequests` → 更多 → 個資權利申請 with due date (15 d access/copy, 30 d others; 個資法 §13). Handling note required.
-Cookie settings live in localStorage (`iris-cookie-prefs`); nothing optional runs today, `allowsAnalytics()` gates anything added later.
-
 ## 6. Background work
 | Job | When | Does |
 |---|---|---|
 | `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (in-app only today; LINE / email adapters plug in) → sets `DeliveredAtUtc` |
 | `RetentionService` | every 6 h | deletes expired data: idempotency 24 h, consults 12 mo, read alerts 12 mo, handled privacy requests 3 y (`Studio:Retention`, proposed values) |
 | `AttendanceSettler` | every minute (inside `AlertDispatcher`) | Booked lessons whose end time has passed → **Attended**; open change requests on them → Declined |
-| Idempotency cleanup | (to add) daily | delete `IdempotencyRecords` older than 24 h |
 
 ---
 
