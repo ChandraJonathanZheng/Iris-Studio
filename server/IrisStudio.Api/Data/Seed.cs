@@ -20,7 +20,7 @@ public static class Seed
         var email = o.TeacherEmail.Trim().ToLowerInvariant();
         if (!await db.Users.AnyAsync(u => u.Role == Role.Teacher))
         {
-            var t = new User { Name = o.TeacherName, Role = Role.Teacher, Status = UserStatus.Active, Email = email };
+            var t = new User { Name = o.TeacherName, Role = Role.Teacher, Status = UserStatus.Active, Email = email, EmailVerified = true }; // set by the owner in config
             t.PasswordHash = hasher.HashPassword(t, o.TeacherPassword);
             db.Users.Add(t);
         }

@@ -16,6 +16,7 @@ public class StudioOptions
     public string TeacherEmail { get; set; } = "";
     public string TeacherPassword { get; set; } = "";
     public string ReceiptsFolder { get; set; } = "App_Data/receipts";
+    public string AvatarsFolder { get; set; } = "App_Data/avatars";
 
     public TimeSpan UndoWindow => TimeSpan.FromSeconds(UndoSeconds);
 }

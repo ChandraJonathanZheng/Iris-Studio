@@ -15,6 +15,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DateOverride> DateOverrides => Set<DateOverride>();
     public DbSet<CreditLog> CreditLogs => Set<CreditLog>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+    public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -26,14 +28,40 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Properties<ChangeStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<PaymentStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<AlertKind>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<ChangeBy>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<TeacherStatus>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<ConsentKind>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<ConsentSource>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<PrivacyRequestType>().HaveConversion<string>().HaveMaxLength(16);
     }
 
     protected override void OnModelCreating(ModelBuilder m)
     {
+        m.Entity<ConsentRecord>(e =>
+        {
+            e.Property(x => x.Version).HasMaxLength(40);
+            e.Property(x => x.Scope).HasMaxLength(100);
+            e.Property(x => x.GuardianName).HasMaxLength(80);
+            e.Property(x => x.GuardianRelation).HasMaxLength(20);
+            e.Property(x => x.GuardianContact).HasMaxLength(120);
+            e.HasIndex(x => new { x.UserId, x.Kind, x.CreatedAtUtc });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); // proof outlives casual edits
+        });
+        m.Entity<PrivacyRequest>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.Contact).HasMaxLength(120);
+            e.Property(x => x.Detail).HasMaxLength(1000);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.HasIndex(x => new { x.Done, x.CreatedAtUtc });
+        });
         m.Entity<User>(e =>
         {
             e.Property(x => x.Name).HasMaxLength(80);
             e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.LineId).HasMaxLength(30);
+            e.Property(x => x.StatusLabel).HasMaxLength(12);
+            e.Property(x => x.StatusMessage).HasMaxLength(60);
             e.HasIndex(x => x.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
             e.HasIndex(x => x.LineUserId).IsUnique().HasFilter("\"LineUserId\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_User_Credits", "\"Credits\" >= 0"));

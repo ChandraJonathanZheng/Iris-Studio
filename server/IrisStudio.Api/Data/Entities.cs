@@ -38,7 +38,21 @@ public class User
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     /// <summary>When Iris approved/declined the application (for the undo window).</summary>
     public DateTime? DecidedAtUtc { get; set; }
+
+    // ---- teacher profile (教師個人資料). Only used on the teacher account. ----
+    /// <summary>Login email is confirmed. Changing it sets this back to false until the link is clicked.</summary>
+    public bool EmailVerified { get; set; }
+    /// <summary>Show LineId (the contact ID) to students. Separate from LineUserId, which is only for signing in.</summary>
+    public bool LineIdPublic { get; set; }
+    public TeacherStatus TeacherStatus { get; set; } = TeacherStatus.Normal;
+    /// <summary>Own label when TeacherStatus = Custom (e.g. 比賽準備中).</summary>
+    public string? StatusLabel { get; set; }
+    /// <summary>Short note students see, e.g. 放假中，明天回覆.</summary>
+    public string? StatusMessage { get; set; }
 }
+
+/// <summary>What students see about Iris right now: 正常上課 / 放假中 / 暫停接新學生 / 自訂.</summary>
+public enum TeacherStatus { Normal, Vacation, NoNewStudents, Custom }
 
 public class Lesson
 {
@@ -179,4 +193,46 @@ public class DateOverride
     public bool Closed { get; set; }
     public string Ranges { get; set; } = "";
     public string Note { get; set; } = "";
+}
+
+/// <summary>What a consent record is about. Terms/Privacy = read & agreed at sign-up; Media/Marketing = optional; Guardian = a minor's legal representative agreed.</summary>
+public enum ConsentKind { Terms, Privacy, Media, Marketing, Guardian }
+public enum ConsentSource { Register, Profile, Request }
+
+/// <summary>
+/// Append-only consent log (never updated, never deleted with the account's normal edits): each change is a new row.
+/// The latest row per (user, kind) is the current state; the rows before it prove what was agreed, when, to which version.
+/// </summary>
+public class ConsentRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public ConsentKind Kind { get; set; }
+    public bool Granted { get; set; }
+    /// <summary>Version of the text the person saw (lib/legal.ts CONSENT_VERSION).</summary>
+    public required string Version { get; set; }
+    /// <summary>What it covers, e.g. "photo,video,voice" or "line,email".</summary>
+    public string Scope { get; set; } = "";
+    public ConsentSource Source { get; set; }
+    public string? GuardianName { get; set; }
+    public string? GuardianRelation { get; set; }
+    public string? GuardianContact { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>個資法 §3 rights (+ withdrawing an optional consent). §13: 15 days (Access/Copy) or 30 days (others) to decide.</summary>
+public enum PrivacyRequestType { Access, Copy, Correct, Stop, Delete, Withdraw }
+
+public class PrivacyRequest
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required string Name { get; set; }
+    public required string Contact { get; set; }
+    public PrivacyRequestType Type { get; set; }
+    public string Detail { get; set; } = "";
+    public bool Done { get; set; }
+    public string? Note { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? HandledAtUtc { get; set; }
+    public static int DaysFor(PrivacyRequestType t) => t is PrivacyRequestType.Access or PrivacyRequestType.Copy ? 15 : 30;
 }

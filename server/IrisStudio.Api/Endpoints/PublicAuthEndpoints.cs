@@ -15,8 +15,20 @@ public static class PublicAuthEndpoints
     {
         var pub = app.MapGroup("/api/public");
 
-        pub.MapGet("/studio", async (IOptions<StudioOptions> o, AvailabilityService availability, CancellationToken ct) =>
-            TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.Packages, o.Value.Bank)));
+        pub.MapGet("/studio", async (IOptions<StudioOptions> o, AvailabilityService availability, AppDbContext db, CancellationToken ct) =>
+        {
+            var t = await db.Users.AsNoTracking().FirstAsync(u => u.Role == Role.Teacher, ct);
+            var teacher = new TeacherPublicDto(t.Name, t.AvatarUrl, t.TeacherStatus.Camel(), t.StatusLabel, t.StatusMessage, t.LineIdPublic ? t.LineId : null);
+            return TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.Packages, o.Value.Bank, teacher));
+        });
+        // avatars are public on purpose (students and the website show them); file names are random
+        pub.MapGet("/avatars/{name}", (string name, IOptions<StudioOptions> o, IWebHostEnvironment env, HttpContext http) =>
+        {
+            var path = Path.Combine(env.ContentRootPath, o.Value.AvatarsFolder, Path.GetFileName(name));
+            http.Response.Headers.CacheControl = "public, max-age=86400";
+            var type = Path.GetExtension(path) switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+            return File.Exists(path) ? Results.File(path, type) : Results.NotFound();
+        });
 
         pub.MapPost("/consults", async (ConsultRequest r, AppDbContext db, CancellationToken ct) =>
         {
@@ -73,8 +85,9 @@ public static class PublicAuthEndpoints
 
         // PRD AUTH-1: create an account. It starts as Pending; the student is signed in at once and sees /pending
         // until Iris approves (student endpoints check Status from the DB on every call).
-        auth.MapPost("/auth/register", async (RegisterRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, CancellationToken ct) =>
+        auth.MapPost("/auth/register", async (RegisterRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, ConsentService consents, CancellationToken ct) =>
         {
+            if (await consents.ValidateAsync(null, r.Consents, ct) is { } bad) return Problems.Of(400, "consent_required", bad);
             var name = (r.Name ?? "").Trim();
             var email = (r.Email ?? "").Trim().ToLowerInvariant();
             if (name.Length is 0 or > 80 || !System.Net.Mail.MailAddress.TryCreate(email, out _)) return Problems.Of(400, "validation", "請填寫姓名和正確的 Email。");
@@ -83,6 +96,7 @@ public static class PublicAuthEndpoints
             var u = new User { Name = name, Email = email, Phone = string.IsNullOrWhiteSpace(r.Phone) ? null : r.Phone.Trim() };
             u.PasswordHash = hasher.HashPassword(u, r.Password!);
             db.Users.Add(u);
+            await consents.RecordAsync(u.Id, r.Consents!, ct); // one SaveChanges = one transaction: no account without its consent record
             await db.SaveChangesAsync(ct);
             await http.SignInAsync(Claims.Scheme, Claims.For(u));
             return Results.Created("/api/me", new { u.Id, u.Name, Status = u.Status.ToString() });

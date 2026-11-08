@@ -21,7 +21,7 @@ public record NextLessonDto(string Date, string Time);
 public record StudentSummaryDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType);
 public record StudentDetailDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType,
     string? Email, string? Phone, string? Grade, string? Goal, int Attended, int PackageSize, LessonDto[] Upcoming, LessonDto[] Past, PaymentDto[] Payments,
-    string? RemindChannel, DateTime? LastRemindedAt);
+    string? RemindChannel, DateTime? LastRemindedAt, StudentConsentDto Consent);
 public record RemindRequest(string Message);
 public record RemindResult(Guid Id, string Channel);
 public record ChangeRequestDto(Guid Id, Guid LessonId, Guid StudentId, string StudentName, string FromDate, string FromTime, string ToDate, string ToTime, string Reason, bool SlotFree, DateTime CreatedAt);
@@ -34,14 +34,29 @@ public record ProposeRequest(string Date, string Time, string? Message);
 public record CountsDto(int Receipts, int ReceiptsAmount, int Changes, int Applications, int Consults);
 public record OverviewDto(LessonDto[] Today, CountsDto Counts, StudentSummaryDto[] OutOfQuota);
 public record ConsultDto(Guid Id, string Name, string ContactType, string Contact, string PreferredTime, string Topic, DateTime CreatedAt, bool Contacted);
-public record StudioDto(int LessonMinutes, int CancelHours, int MoveHours, PackageOption[] Packages, BankOption Bank);
+public record StudioDto(int LessonMinutes, int CancelHours, int MoveHours, PackageOption[] Packages, BankOption Bank, TeacherPublicDto Teacher);
+/// <summary>What students may see about Iris. LineId only when she chose to show it.</summary>
+public record TeacherPublicDto(string Name, string? AvatarUrl, string Status, string? StatusLabel, string? StatusMessage, string? LineId);
+public record TeacherProfileDto(string Name, string? Email, bool EmailVerified, bool LineLinked, bool HasPassword, string? LineId, bool LineIdPublic,
+    string? AvatarUrl, string Status, string? StatusLabel, string? StatusMessage);
+public record TeacherProfileRequest(string Name, string? LineId, bool LineIdPublic, string Status, string? StatusLabel, string? StatusMessage);
+public record ChangeEmailRequest(string Email, string Password);
 public record BookResultDto(LessonDto Lesson, int CreditsLeft);
 public record CancelResultDto(bool Refunded, int CreditsLeft, DateTime UndoUntil);
 public record CreditsDto(int Credits);
 
 // requests
 public record LoginRequest(string Email, string Password);
-public record RegisterRequest(string Name, string Email, string? Phone, string Password);
+public record RegisterRequest(string Name, string Email, string? Phone, string Password, ConsentInput? Consents);
+public record GuardianInput(string Name, string Relation, string Contact, bool Agreed);
+public record ConsentInput(string Version, bool Terms, bool Media, bool Marketing, bool Minor, GuardianInput? Guardian);
+public record ConsentStateDto(bool Granted, DateTime? At);
+public record ConsentRecordDto(string Kind, bool Granted, string Version, DateTime At, string Source);
+public record MyConsentsDto(ConsentStateDto Media, ConsentStateDto Marketing, bool Minor, string? GuardianName, ConsentRecordDto[] History);
+public record StudentConsentDto(bool Media, DateTime? MediaAt, bool MediaWithdrawn, bool Marketing, bool Minor);
+public record PrivacyRequestInput(string Name, string Contact, string Type, string? Detail);
+public record PrivacyRequestDto(Guid Id, string Name, string Contact, string Type, string Detail, string Status, DateTime CreatedAt, DateTime DueAt, DateTime? HandledAt, string? Note);
+public record NoteRequest(string Note);
 public record BookRequest(string Date, string Time);
 public record MoveRequest(string Date, string Time, string? Reason);
 public record ReadRequest(Guid[] Ids, bool Read);
