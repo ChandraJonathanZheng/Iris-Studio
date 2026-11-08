@@ -5,7 +5,7 @@
 | Product | Iris Studio — public website + booking & admin app for Iris's singing studio |
 | Owner | Chandra (developer) · Iris (studio owner, primary user) |
 | Status | Clickable prototype done (React + mock API); .NET 10 server written, not yet compiled |
-| Version | v2.1 — 8 Nov 2026: Iris's 13 answers built in (see §10). Sprint 1 scope locked. |
+| Version | v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
 | Related docs | `FEATURES.md` · `DESIGN-SYSTEM.md` · `SCHEMA.md` · `FLOW.md` |
 
 ---
@@ -66,12 +66,15 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | WEB-6 | Events: 1 featured photo + 2 thumbnails per event, 查看更多照片 opens the rest. |
 | WEB-7 | `/consult`: name, contact (LINE / Email switch), preferred time (平日白天 · 平日晚上 · 週末 · 都可以), topic (optional). CTA 和 Iris 聊聊. Rate-limited 5 / min / IP. |
 | WEB-8 | All photos, bio and testimonials are placeholders until Iris provides real, consented content. |
+| WEB-9 | Footer (blends into the page, max 65rem): IRIS 聲樂工作室 + 陪你找到自己的聲音。, 服務資訊 (服務條款 · 預約與取消政策 · 付款與退款政策 · 聯絡我們) and 隱私與權益 (隱私權政策 · Cookie 政策 · 肖像與影音授權 · 個人資料權利申請), ©, privacy contact. |
+| WEB-10 | 7 legal pages at `/legal/:slug`, versioned, **draft until reviewed by a Taiwan lawyer** (banner on every page, 【待填】 placeholders, list of open legal questions). Details: `LEGAL.md`. |
 
 ### 4.2 Accounts (P0)
 | ID | Requirement |
 |---|---|
 | AUTH-1 | Login screen: 使用 LINE 登入 (primary), 使用 Email 登入, 老師登入 →, 建立帳號 →. Demo accounts only in demo builds. |
 | AUTH-2 | Register: 3-step indicator 建立帳號 → Iris 確認 → 開始預約. LINE register, or name + email + password (≥ 8, show/hide). |
+| AUTH-6 | Consents at sign-up (both ways): terms + privacy notice **required**; photo/video/voice promotion and marketing **optional, unchecked**; 我未滿 18 歲 → guardian name, relation, contact + guardian's checkbox. Stored as an append-only consent log with version + time. |
 | AUTH-3 | New accounts are **Pending** and see only the 等待 Iris 確認 screen (polls every 10 s, enters the app automatically once approved). |
 | AUTH-4 | Session = HttpOnly, SameSite cookie, 30 days sliding. Wrong email or password give the same message. Login rate-limited 10 / min / IP. |
 | AUTH-5 | LINE Login (OIDC) issues the same cookie; the LINE `sub` is stored as `LineUserId` (also used for LINE push). |
@@ -87,20 +90,24 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | ST-5 | **行事曆**: month view with shaped marks (● upcoming ○ done ◆ changing) + list view with filters. |
 | ST-6 | **堂數與付款**: credit boxes, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. A 體驗 student who hasn't tried yet sees only the 體驗課 package. |
 | ST-7 | **通知**: alerts list, unread dot (not a number). |
-| ST-8 | **我的**: profile (name, email, phone, LINE ID, voice type, goal), logout. |
+| ST-8 | **我的**: profile (name, email, phone, LINE ID, voice type, goal), **同意設定** (media + marketing switches, withdraw any time, consent history), logout. |
+| ST-9 | Home shows Iris's status card (放假中 / 暫停接新學生 / 自訂 + message, public LINE ID) when it isn't 正常上課. |
 
 ### 4.4 Teacher app (P0)
 | ID | Requirement |
 |---|---|
-| T-1 | **首頁**: 今天的課 (下一堂 highlighted, finished lessons grouped and muted), 4 action counters, 堂數用完 list with 收據待確認 chip. |
+| T-1 | **首頁**: Header → **今日待辦** 2×2 (改時間申請 · 待確認收據 / 新學生 · 諮詢; amber edge + ◆ when > 0, quiet at 0) → 今天的課 (下一堂 highlighted, finished muted) → 堂數用完. |
+| T-0 | **Navigation**: 5 tabs 首頁 / 行事曆 / 學生 / **收件匣** / **更多**. 收件匣 = 申請 · 付款 · 諮詢 tabs, ONE count badge (only items Iris must act on). 更多 = 教師個人資料, 可預約時段, 課程方案, 設定, 個資權利申請, 法律文件, 登出. Old routes unchanged. |
 | T-2 | **行事曆**: compact month grid + day list (改時間 → propose, 取消 opens a sheet that states the refund + notification policy). Link to 可預約時段. |
 | T-3 | **學生**: search, filter chips, compact rows; only exceptions show a status (快用完 / 用完 / 確認中). |
-| T-4 | **學生詳細**: profile + quick actions (LINE 聯絡 · 調整堂數 · 編輯), 課程狀態, **通知學生繳學費**, upcoming lessons with **＋ 預約課程** (book for the student, −1 堂) and **提議改時間** per lesson, latest payment, history. |
-| T-5 | **申請**: 改時間 (old → new time, reason, availability; 同意 disabled on conflict; 婉拒 or **婉拒並提議其他時間**), 你的提議 (等待學生回覆 + 收回 / answered in the last 7 days), and 新學生 (確認 / 婉拒). |
-| T-6 | **付款**: receipt opens in a modal over a dimmed page; 確認，加 N 堂 / 退回 (reason required). |
+| T-4 | **學生詳細**: profile + quick actions (LINE 聯絡 · 調整堂數 · 編輯) + **media-consent line** (● 同意 / ○ 未同意 / ◆ 已撤回 — 請移除), 課程狀態, **通知學生繳學費**, then ONE lessons container: 下一堂 (sage wash, one action) · 後續課程 (＋ 預約課程) · 上過的課 (3 + 查看全部), latest payment. |
+| T-5 | **申請** (in 收件匣): sub-tabs 改時間 · 新學生 · 等學生回覆 (URL `?tab=`). 改時間: old → new, reason, availability, 同意 disabled on conflict, 婉拒 or 婉拒並提議其他時間. 等學生回覆: open proposals + 收回, answers of the last 7 days. Compact cards, friendly empty states. |
+| T-6 | **付款**: card action 查看收據並確認 → modal; credits only after ticking 我已核對：金額… (button disabled until then, guarded against double submit + idempotency key); 退回 (reason required). |
 | T-7 | **諮詢**: website requests with contact type + preferred time; mark as contacted. |
 | T-8 | **可預約時段**: tabs 每週時段 / 特殊日期 / 預約設定 (see §5). |
 | T-9 | **通知學生繳學費**: editable message, channel shown (LINE or Email), 24 h repeat warning, sent after 10 s with 復原. |
+| T-11 | **教師個人資料**: name, contact LINE ID + "show to students" switch, avatar (≤ 2 MB), 目前狀態 + 狀態訊息 with live preview of the student card, 儲存; separate 登入方式 card (email change needs password, LINE unlink only if another login exists). |
+| T-12 | **個資權利申請**: list with due date (15 / 30 days, overdue red); 標為已處理 needs a note. |
 | T-10 | Every decision (approve, decline, confirm, cancel, adjust, remind) has **undo**; the student's alert is held back 10 s so a reversed decision is never seen. |
 
 ## 5. Business rules
@@ -193,3 +200,5 @@ Still open: real content (photos, bio, testimonials with consent), the real 體�
 - [ ] Confirm the 體驗課 price with Iris (`Studio:Packages`)
 - [ ] Backups for PostgreSQL and the receipts folder
 - [ ] Remove demo accounts (mock build only)
+- [ ] Lawyer review of the 7 legal pages + fill every 【待填】 (`LEGAL.md` §4–5)
+- [ ] Self-host the web font; choose a host with encryption at rest

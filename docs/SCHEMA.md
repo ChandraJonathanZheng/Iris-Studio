@@ -252,3 +252,14 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Re-apply after decline | **pending decision** — today `Users.Declined` blocks it |
 | New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the Initial migration (none exists yet) |
 | Phase 2 | `Homework`, `HomeworkSubmissions`, `Events`, `EventInvites` |
+
+## 8. Added 8 Nov (later): teacher profile, consents, privacy requests
+
+| Table / column | Notes |
+|---|---|
+| `Users.EmailVerified`, `LineIdPublic`, `TeacherStatus` (Normal/Vacation/NoNewStudents/Custom), `StatusLabel` (12), `StatusMessage` (60) | teacher profile; `LineId` max 30 |
+| `ConsentRecords` (Id, UserId FK restrict, Kind Terms/Privacy/Media/Marketing/Guardian, Granted, Version 40, Scope 100, Source Register/Profile/Request, GuardianName/Relation/Contact, CreatedAtUtc) | **append-only** consent log; index (UserId, Kind, CreatedAtUtc) |
+| `PrivacyRequests` (Id, Name 80, Contact 120, Type Access/Copy/Correct/Stop/Delete/Withdraw, Detail 1000, Done, Note 500, CreatedAtUtc, HandledAtUtc) | 個資法 §13: due = created + 15 d (Access/Copy) or 30 d |
+| Enum conversions added | `ChangeBy`, `TeacherStatus`, `ConsentKind`, `ConsentSource`, `PrivacyRequestType` stored as text |
+
+Retention job (`RetentionService`, every 6 h, `Studio:Retention`): idempotency 24 h · consults 12 mo · read alerts 12 mo · handled privacy requests 3 y. See `LEGAL.md`.

@@ -117,7 +117,7 @@ Backdrops: sheet `rgba(20,22,20,.32)`; modal `rgba(12,14,12,.62)` + `blur(6px)`.
 
 | | Phone (< 900 px) | Desktop (≥ 900 px) |
 |---|---|---|
-| Navigation | Frosted floating bottom bar, 68 px, 5 tabs (student) / 6 tabs (teacher); active = sage tint + **filled icon** | Frosted sidebar 240 px; ⌘K search; extra items (可預約時段) |
+| Navigation | Frosted floating bottom bar, 68 px, 5 tabs (student and teacher: 首頁 / 行事曆 / 學生 / 收件匣 / 更多); active = sage tint + **filled icon**; grouped tabs stay active on member pages; teacher 收件匣 badge = amber count pill, student 通知 = dot | Frosted sidebar 240 px with the same 5 items; ⌘K search |
 | Content width | full, 16–20 px side padding | max 720 px for task pages, 960–1080 for dashboards & landing |
 | Bottom padding | `bnav height + 8 + 24 + safe-area` (+64 when a floating CTA is shown) | 48 px |
 
@@ -207,6 +207,13 @@ Primary + destructive pairs are **asymmetric**: primary wider (flex 1.4–1.6).
 - **Proposal card** (student home, top): amber 4 px inner edge + ivory-warm fill `#FFFBF0`, overline with ↻ icon 老師想調整上課時間, old time struck through → **new time 18/600**, 老師：「message」, one-line consequence, buttons 不方便 (secondary) · 可以，改到這個時間 (primary, 1.6× wider). The only card on home that waits for the student.
 - **Proposal row** (teacher 申請 → 你的提議): name, old → **new**, status ◆ 等待學生回覆 (amber) / ● 學生已接受 / ✕ 學生不方便, action 收回 or 再提議.
 
+- **今日待辦 card** (teacher home, 2×2): icon + title 14.5, number 28/600, one-line detail 13; > 0 → 3 px amber inner edge + `◆ 待處理` pill; 0 → grey number, no mark.
+- **Lessons container** (學生詳細): one off-white `#FFFEFB` block, radius 22, padding 22 × 20, parts split by dashed hairlines; 下一堂 on sage wash `#EFF3EC` radius 16 with one pill action; rows = time 17/600 + one status line; no date tiles, no nested cards.
+- **Teacher status card** (`TeacherStatusCard`, shared by student home and the 教師個人資料 preview): avatar 48, name, `● 正常上課` / `◆ status`, message, LINE ID if public; warm fill when not normal.
+- **Consent checkbox** (`.au-ck`): 20 px native checkbox, sage accent, text 14.5/22; required ones end with （必填）; optional group under 以下為選擇性同意.
+- **Legal page**: max 760, crumb chips for all documents, draft banner (amber), TOC card, body 16/27, `mark.lg-todo` for 【待填】, dashed review box at the end.
+- **Footer**: no card — same ivory as the page, max 65rem, top hairline, brand + tagline, two link columns (40 px rows), © + privacy contact.
+
 ### 8.5 Navigation
 Page head (large title, optional overline + back + right action) · tabs with 3 px sage underline · bottom bar · sidebar · ⌘K command menu · breadcrumbs not used.
 
@@ -228,6 +235,9 @@ Frosted navbar 56 px · hero text + 4:3 photo · trust strip (3 columns, hairlin
 | Loading | Skeleton blocks shaped like the content; no spinners on pages |
 | Idempotency | Money / credit actions send an `Idempotency-Key`; double taps act once |
 | Reminders | 24 h repeat warning before sending another 繳費提醒; the automatic one respects the same 24 h |
+| Review before money | Credits are added only from inside the receipt viewer, after ticking 我已核對 |
+| Optional means unchecked | Consents for media / marketing start off and never block the main task |
+| Draft is visible | Unverified text is marked (【待填】, draft banner), never styled as final |
 
 ---
 

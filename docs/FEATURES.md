@@ -90,3 +90,17 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | E11 | LINE push / email delivery | 🟡 | `IAlertChannel` adapter to add |
 | E12 | PWA install | ⬜ | P2 |
 | E13 | Homework, recordings, events RSVP | ⬜ | P2 |
+
+## F. Legal & privacy (draft — see `LEGAL.md`)
+
+| # | Feature | Pri | Status | Acceptance criteria |
+|---|---|---|---|---|
+| F1 | Footer | P0 | ✅ | brand + tagline, 服務資訊 / 隱私與權益 (8 links), ©, privacy contact (【待填】) |
+| F2 | 7 legal pages | P0 | 🟡 | `/legal/:slug`, versioned, draft banner, placeholders marked, lawyer questions listed |
+| F3 | Sign-up consents | P0 | ✅ | terms required; media + marketing optional, unchecked; minor → guardian fields + guardian checkbox |
+| F4 | Consent log + 同意設定 | P0 | ✅ | append-only records (version, time, scope); student can withdraw any time; history visible |
+| F5 | Teacher sees media consent | P0 | ✅ | 學生詳細: ● 同意 / ○ 未同意 / ◆ 已撤回 + 請移除 |
+| F6 | 個人資料權利申請 | P0 | ✅ | public form → 更多 → 個資權利申請 with 15/30-day due dates, handling note |
+| F7 | Cookie settings | P1 | ✅ | essential always on; analytics off by default; stored with version |
+| F8 | Retention job | P1 | ✅ | proposed periods, configurable |
+| F9 | Teacher profile (教師個人資料) | P0 | ✅ | name, contact LINE ID + visibility, avatar, status + message, live preview, login bindings |
