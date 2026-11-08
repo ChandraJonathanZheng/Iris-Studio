@@ -4,13 +4,15 @@ import { Icon } from '../components/Icon';
 import { useCurrentUser } from '../components/Shell';
 import { RouteSheet } from '../components/Sheet';
 import { SlotPicker } from '../components/SlotPicker';
+import { TeacherStatusCard } from '../components/TeacherStatus';
+import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
 import { useToast } from '../components/Toast';
 import { DateBox, Empty, ErrorCard, ListSkeleton, PageHead, PageSkeleton, Quota, Tag } from '../components/ui';
 import { ApiError, newIdempotencyKey } from '../lib/api';
 import { compareSlot, fmtDate, fmtMoney, fmtRelative, fmtSlot, monthGrid, studioToday, dayNum, initialOf, fmtDuration, LESSON_TYPE_LABEL } from '../lib/date';
 import { monthRange } from '../lib/prefetch';
 import {
-  useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useDays, useLessons, useMarkAllRead, useMyPayments, useStudio,
+  useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useDays, useLessons, useMarkAllRead, useMyConsents, useMyPayments, useSaveConsents, useStudio,
   useLogout, useUpdateProfile, useUploadReceipt, useWithdrawMove,
 } from '../lib/queries';
 import type { AlertKind, Lesson, Me } from '../lib/types';
@@ -110,6 +112,7 @@ export function StudentHome() {
   const next = upcoming[0];
   const others = upcoming.slice(1); // the next class is already the hero — don't list it twice
   const proposals = upcoming.filter((l) => l.change?.by === 'teacher');
+  const studioInfo = useStudio();
   const { canMove: nextCanMove } = useCanMove(next);
 
   return (
@@ -120,6 +123,8 @@ export function StudentHome() {
         <div className="sh">
           {/* 0. Iris is waiting for an answer */}
           {proposals.map((l) => <ProposalCard key={l.id} l={l} />)}
+          {/* Iris's status (放假中 / 暫停接新學生 …) — only when there is something to know */}
+          {studioInfo.data && (studioInfo.data.teacher.status !== 'normal' || studioInfo.data.teacher.statusMessage) && <TeacherStatusCard t={studioInfo.data.teacher} />}
           {/* 1. next class */}
           <section className="sh-card sh-next" aria-labelledby="next-t">
             <p className="overline" id="next-t">下一堂課</p>
@@ -559,8 +564,54 @@ export function Profile() {
         <div className="field"><label htmlFor="p-goal">學習目標</label><textarea id="p-goal" className="input" value={f.goal} onChange={set('goal')} maxLength={300} /></div>
         <button className="btn primary block" disabled={save.isPending}>{save.isPending ? '儲存中…' : '儲存'}</button>
       </form>
+      <ConsentSettings />
       <button className="btn ghost block mobile-only" onClick={() => { nav('/'); logout.mutate(); }}><Icon name="logout" size={18} />登出</button>
     </>
+  );
+}
+
+const KIND_LABEL = { terms: '服務條款', privacy: '隱私權政策（告知）', media: '肖像影音宣傳', marketing: '行銷訊息', guardian: '法定代理人同意' } as const;
+
+/**
+ * 同意設定: the two OPTIONAL consents, changeable any time. Every change becomes a new record (never an edit),
+ * so the history below is the proof of what was agreed, when, and to which version.
+ */
+function ConsentSettings() {
+  const q = useMyConsents();
+  const save = useSaveConsents();
+  const toast = useToast();
+  const [guardianOk, setGuardianOk] = useState(false);
+  if (!q.data) return null;
+  const d = q.data;
+  const change = (k: 'media' | 'marketing', on: boolean) => {
+    if (on && d.minor && !guardianOk) { toast({ text: '未滿 18 歲，請先由法定代理人勾選確認。', kind: 'error' }); return; }
+    save.mutateAsync({ version: CONSENT_VERSION, terms: true, media: k === 'media' ? on : d.media.granted, marketing: k === 'marketing' ? on : d.marketing.granted, minor: false,
+      guardian: d.minor && on ? { name: d.guardianName ?? '', relation: '法定代理人', contact: '-', agreed: true } : null })
+      .then(() => toast({ text: on ? '已同意，可隨時在這裡撤回' : k === 'media' ? '已撤回。IRIS 不會再使用你的照片、影片或聲音，已公開的內容會盡快移除。' : '已取消，不會再收到行銷訊息' }))
+      .catch((e) => toast({ text: (e as Error).message, kind: 'error' }));
+  };
+  const row = (k: 'media' | 'marketing', title: string, text: string) => (
+    <div className="cn-row">
+      <div><p className="t" id={`cn-${k}`}>{title}</p><p className="caption" id={`cn-${k}-d`}>{text}</p>
+        <p className={`cn-state ${d[k].granted ? 'on' : ''}`}>{d[k].granted ? '● 已同意' : '○ 未同意'}{d[k].at ? ` · ${new Date(d[k].at!).toLocaleDateString('zh-TW')}` : ''}</p></div>
+      <button className="switch" role="switch" aria-checked={d[k].granted} aria-labelledby={`cn-${k}`} aria-describedby={`cn-${k}-d`} disabled={save.isPending} onClick={() => change(k, !d[k].granted)} />
+    </div>
+  );
+  return (
+    <section className="card cn-card" aria-labelledby="cn-h">
+      <h2 className="h3" id="cn-h">同意設定</h2>
+      <p className="caption">以下都是選擇性同意，不同意也能正常上課。</p>
+      {row('media', '肖像影音宣傳', CONSENT_TEXT.media)}
+      {row('marketing', '行銷訊息', CONSENT_TEXT.marketing)}
+      {d.minor && (
+        <label className="au-ck cn-guardian"><input type="checkbox" checked={guardianOk} onChange={(e) => setGuardianOk(e.target.checked)} />
+          <span>我是法定代理人{d.guardianName ? `（${d.guardianName}）` : ''}，同意開啟上方項目。<em>撤回不需要確認。</em></span></label>
+      )}
+      <details className="cn-hist"><summary>同意紀錄 · {d.history.length}</summary>
+        <ul>{d.history.map((h, i) => <li key={i}><span>{KIND_LABEL[h.kind]}：{h.granted ? '同意' : '撤回／不同意'}</span><span>{new Date(h.at).toLocaleString('zh-TW')} · 版本 {h.version}</span></li>)}</ul>
+      </details>
+      <p className="caption">要查詢、更正或刪除你的資料，請到<Link to="/legal/privacy-request">個人資料權利申請</Link>。</p>
+    </section>
   );
 }
 

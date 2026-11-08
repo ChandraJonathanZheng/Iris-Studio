@@ -20,6 +20,8 @@ export const routes: RouteObject[] = [
   { path: '/login', Component: Login },
   { path: '/register', Component: Register },
   { path: '/pending', Component: Pending },
+  // legal & privacy documents (+ cookie settings, 個資權利申請) — public, their own chunk
+  { path: '/legal/:slug', lazy: async () => ({ Component: (await import('./pages/Legal')).LegalPage }) },
   {
     path: '/app', element: <Shell role="Student" />,
     children: [
@@ -43,6 +45,10 @@ export const routes: RouteObject[] = [
       { path: 'requests', lazy: lazy(teacher, 'RequestsPage'), children: [{ path: ':id/decline', lazy: lazy(teacher, 'DeclineSheet') }] },
       { path: 'payments', lazy: lazy(teacher, 'PaymentsPage'), children: [{ path: ':id/reject', lazy: lazy(teacher, 'RejectSheet') }] },
       { path: 'consults', lazy: lazy(teacher, 'ConsultsPage') },
+      { path: 'inbox', lazy: lazy(teacher, 'InboxIndex') },
+      { path: 'profile', lazy: lazy(teacher, 'TeacherProfilePage') },
+      { path: 'privacy-requests', lazy: lazy(teacher, 'PrivacyRequestsPage') },
+      { path: 'more', lazy: lazy(teacher, 'TeacherMore'), children: [{ path: 'packages', lazy: lazy(teacher, 'PackagesSheet') }] },
       { path: 'availability', lazy: lazy(availability, 'AvailabilityPage'), children: [{ path: 'range/:weekday/:idx', lazy: lazy(availability, 'RangeSheet') }, { path: 'date/:date', lazy: lazy(availability, 'OverrideSheet') }] },
     ],
   },

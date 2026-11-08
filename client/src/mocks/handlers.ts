@@ -1,3 +1,4 @@
+import type { MConsent, MPrivacyRequest } from './db';
 import { delay, http, HttpResponse } from 'msw';
 import { addDays, compareSlot, fmtSlot, studioToday } from '../lib/date';
 import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
@@ -46,7 +47,7 @@ function meDto(u: MUser): Me {
   const mine = db.lessons.filter((l) => l.studentId === u.id);
   return {
     id: u.id, name: u.name, role: u.role, status: u.status, email: u.email, phone: u.phone, lineId: u.lineId, lineLinked: u.lineLinked,
-    voiceType: u.voiceType, goal: u.goal, grade: u.grade, avatarUrl: null, credits: u.credits,
+    voiceType: u.voiceType, goal: u.goal, grade: u.grade, avatarUrl: u.avatarUrl ?? null, credits: u.credits,
     booked: mine.filter((l) => l.status === 'Booked').length, attended: mine.filter((l) => l.status === 'Attended').length,
     packageSize: u.packageSize,
     unreadAlerts: db.alerts.filter((a) => a.userId === u.id && !a.read && a.sendAfter <= Date.now()).length,
@@ -71,6 +72,50 @@ function autoRemind(u: MUser, lessonId: string) {
   if (db.alerts.some((a) => a.userId === u.id && a.kind === 'reminder' && Date.parse(a.createdAt) > since)) return;
   addAlert(u.id, 'reminder', '繳費提醒', '你的堂數已經用完了。想繼續上課的話，請到「堂數與付款」上傳匯款證明。', `auto-remind:${lessonId}`);
 }
+/* ---------- consent records (append-only) ---------- */
+const latestConsent = (userId: string, kind: MConsent['kind']) => db.consents.filter((c) => c.userId === userId && c.kind === kind).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+const consentSummary = (userId: string) => {
+  const m = latestConsent(userId, 'media'), k = latestConsent(userId, 'marketing');
+  return { media: !!m?.granted, mediaAt: m?.at ?? null, mediaWithdrawn: !!m && !m.granted && db.consents.some((c) => c.userId === userId && c.kind === 'media' && c.granted),
+    marketing: !!k?.granted, minor: !!latestConsent(userId, 'guardian')?.granted };
+};
+type ConsentBody = { version: string; terms: boolean; media: boolean; marketing: boolean; minor: boolean; guardian: { name: string; relation: string; contact: string; agreed: boolean } | null };
+/** same checks as ConsentService.cs: terms required once, a minor needs a guardian who agreed */
+function consentProblem(b: ConsentBody, first: boolean) {
+  if (!b || typeof b.version !== 'string' || !b.version) return '缺少同意版本。';
+  if (first && !b.terms) return '請閱讀並同意服務條款與隱私權政策。';
+  if (first && b.minor && (!b.guardian?.agreed || !b.guardian.name?.trim() || !b.guardian.relation?.trim() || !b.guardian.contact?.trim())) return '未滿 18 歲需填寫法定代理人資料並由其同意。';
+  return null;
+}
+/** later changes by a minor: switching an optional consent ON needs the guardian's confirmation (withdrawing never does) */
+function minorChangeProblem(userId: string, b: ConsentBody) {
+  if (!latestConsent(userId, 'guardian')?.granted) return null;
+  const turnsOn = (b.media && !latestConsent(userId, 'media')?.granted) || (b.marketing && !latestConsent(userId, 'marketing')?.granted);
+  return turnsOn && !b.guardian?.agreed ? '未滿 18 歲，開啟此同意需由法定代理人確認。' : null;
+}
+function recordConsents(userId: string, b: ConsentBody, source: MConsent['source']) {
+  const at = new Date().toISOString();
+  const add = (kind: MConsent['kind'], granted: boolean, scope = '') => db.consents.push({ id: newId(), userId, kind, granted, version: b.version, scope, source, at,
+    guardian: b.minor && b.guardian ? { name: b.guardian.name.trim(), relation: b.guardian.relation.trim(), contact: b.guardian.contact.trim() } : undefined });
+  if (b.terms && !latestConsent(userId, 'terms')) { add('terms', true); add('privacy', true); }
+  if (b.minor) add('guardian', true);
+  // only write a record when the choice changes (or on first sign-up), so the log stays meaningful
+  if (!latestConsent(userId, 'media') ? source === 'register' : latestConsent(userId, 'media')!.granted !== b.media) add('media', b.media, 'photo,video,voice');
+  if (!latestConsent(userId, 'marketing') ? source === 'register' : latestConsent(userId, 'marketing')!.granted !== b.marketing) add('marketing', b.marketing, 'line,email');
+}
+const myConsentsDto = (userId: string) => {
+  const m = latestConsent(userId, 'media'), k = latestConsent(userId, 'marketing'), g = latestConsent(userId, 'guardian');
+  return { media: { granted: !!m?.granted, at: m?.at ?? null }, marketing: { granted: !!k?.granted, at: k?.at ?? null }, minor: !!g?.granted, guardianName: g?.guardian?.name ?? null,
+    history: db.consents.filter((c) => c.userId === userId).sort((a, b) => b.at.localeCompare(a.at)).map((c) => ({ kind: c.kind, granted: c.granted, version: c.version, at: c.at, source: c.source })) };
+};
+const PRIV_DAYS: Record<MPrivacyRequest['type'], number> = { access: 15, copy: 15, correct: 30, stop: 30, delete: 30, withdraw: 30 };
+const privDto = (p: MPrivacyRequest) => ({ ...p, dueAt: new Date(Date.parse(p.createdAt) + PRIV_DAYS[p.type] * 864e5).toISOString() });
+
+const teacherProfileDto = (u: MUser) => ({
+  name: u.name, email: u.email, emailVerified: !!u.emailVerified, lineLinked: u.lineLinked, hasPassword: !!u.password,
+  lineId: u.lineId, lineIdPublic: !!u.lineIdPublic, avatarUrl: u.avatarUrl ?? null,
+  status: u.teacherStatus ?? 'normal', statusLabel: u.statusLabel ?? null, statusMessage: u.statusMessage ?? null,
+});
 const payDto = (p: (typeof db.payments)[number]) => ({ ...p, studentName: userById(p.studentId)?.name ?? '' });
 
 export const handlers = [
@@ -81,7 +126,64 @@ export const handlers = [
     return undefined;
   }),
   // ---------- public ----------
-  http.get('/api/public/studio', () => HttpResponse.json({ ...STUDIO, lessonMinutes: availability.settings.lessonMinutes })),
+  http.get('/api/public/studio', () => {
+    const t = db.users.find((u) => u.role === 'Teacher')!;
+    const teacher = { name: t.name, avatarUrl: t.avatarUrl ?? null, status: t.teacherStatus ?? 'normal', statusLabel: t.statusLabel ?? null, statusMessage: t.statusMessage ?? null, lineId: t.lineIdPublic ? t.lineId : null };
+    return HttpResponse.json({ ...STUDIO, lessonMinutes: availability.settings.lessonMinutes, teacher });
+  }),
+  // ---- 教師個人資料 (same rules as TeacherProfileEndpoints.cs) ----
+  http.get('/api/teacher/profile', async () => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    return HttpResponse.json(teacherProfileDto(r.u));
+  }),
+  http.put('/api/teacher/profile', async ({ request }) => {
+    await delay(500);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const b = (await request.json()) as { name: string; lineId: string | null; lineIdPublic: boolean; status: string; statusLabel: string | null; statusMessage: string | null };
+    const name = (b.name ?? '').trim(), label = (b.statusLabel ?? '').trim(), msg = (b.statusMessage ?? '').trim(), line = (b.lineId ?? '').trim();
+    if (!name || name.length > 40) return problem(400, '請填寫教師名稱（最多 40 字）。', 'validation');
+    if (!['normal', 'vacation', 'noNewStudents', 'custom'].includes(b.status)) return problem(400, '請選擇目前狀態。', 'validation');
+    if (b.status === 'custom' && (!label || label.length > 12)) return problem(400, '自訂狀態請填 1–12 個字。', 'validation');
+    if (msg.length > 60) return problem(400, '狀態訊息最多 60 字。', 'validation');
+    if (line.length > 30) return problem(400, 'LINE ID 最多 30 字。', 'validation');
+    Object.assign(r.u, { name, lineId: line || null, lineIdPublic: b.lineIdPublic && !!line, teacherStatus: b.status, statusLabel: b.status === 'custom' ? label : null, statusMessage: msg || null });
+    return HttpResponse.json(teacherProfileDto(r.u));
+  }),
+  http.post('/api/teacher/profile/avatar', async ({ request }) => {
+    await delay(600);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const f = (await request.formData()).get('avatar');
+    if (!(f instanceof File) || f.size === 0) return problem(400, '請選擇照片。', 'validation');
+    if (f.size > 2 * 1024 * 1024) return problem(400, '照片不能超過 2 MB。', 'too_large');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) return problem(400, '只接受 JPG、PNG 或 WEBP 圖片。', 'bad_image');
+    r.u.avatarUrl = URL.createObjectURL(f);
+    return HttpResponse.json({ avatarUrl: r.u.avatarUrl });
+  }),
+  http.delete('/api/teacher/profile/avatar', async () => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    r.u.avatarUrl = null;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.put('/api/teacher/account/email', async ({ request }) => {
+    await delay(500);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const b = (await request.json()) as { email: string; password: string };
+    const email = (b.email ?? '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return problem(400, '請填寫正確的 Email。', 'validation');
+    if (!r.u.password || b.password !== r.u.password) return problem(403, '密碼不正確。', 'wrong_password');
+    if (db.users.some((u) => u.email === email && u.id !== r.u.id)) return problem(409, '這個 Email 已經被其他帳號使用。', 'email_taken');
+    if (r.u.email !== email) { r.u.email = email; r.u.emailVerified = false; }
+    return HttpResponse.json(teacherProfileDto(r.u));
+  }),
+  http.delete('/api/teacher/account/line', async () => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    if (!r.u.password || !r.u.email) return problem(409, '這是你唯一的登入方式，請先設定 Email 和密碼。', 'last_login_method');
+    r.u.lineLinked = false;
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.post('/api/public/consults', async ({ request }) => {
     await lag();
     const b = (await request.json()) as { name: string; contactType: 'line' | 'email'; contact: string; preferredTime: 'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any'; topic: string };
@@ -114,7 +216,8 @@ export const handlers = [
   // PRD AUTH-1: new account starts as Pending; the session starts right away so the user lands on /pending.
   http.post('/api/auth/register', async ({ request }) => {
     await lag();
-    const b = (await request.json()) as { name: string; email: string; phone: string | null; password: string };
+    const b = (await request.json()) as { name: string; email: string; phone: string | null; password: string; consents: ConsentBody };
+    const cp = consentProblem(b.consents, true); if (cp) return problem(400, cp, 'consent_required');
     const email = b.email?.trim().toLowerCase();
     if (!b.name?.trim() || !email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return problem(400, '請填寫姓名和正確的 Email。', 'validation');
     if ((b.password ?? '').length < 8) return problem(400, '密碼至少 8 個字元。', 'validation');
@@ -122,8 +225,50 @@ export const handlers = [
     const u: MUser = { id: newId(), name: b.name.trim(), role: 'Student', status: 'Pending', email, password: b.password, phone: b.phone, lineId: null, lineLinked: false,
       voiceType: null, goal: null, grade: null, credits: 0, packageSize: 0, createdAt: new Date().toISOString(), classType: 'trial' };
     db.users.push(u);
+    recordConsents(u.id, b.consents, 'register');
     store.setItem(SESSION, u.id);
     return HttpResponse.json(meDto(u), { status: 201 });
+  }),
+  // consents: LINE sign-up sends them right after the redirect; 同意設定 sends changes. Always a new record.
+  http.get('/api/me/consents', async () => {
+    await lag();
+    const r = requireUser('Student'); if (r.err) return r.err;
+    return HttpResponse.json(myConsentsDto(r.u.id));
+  }),
+  http.post('/api/me/consents', async ({ request }) => {
+    await lag();
+    const id = store.getItem(SESSION); const u = id ? userById(id) : undefined;
+    if (!u || u.role !== 'Student') return problem(401, '請先登入。');
+    const b = (await request.json()) as ConsentBody;
+    const first = !latestConsent(u.id, 'terms');
+    const cp = consentProblem(b, first) ?? (first ? null : minorChangeProblem(u.id, b)); if (cp) return problem(400, cp, 'consent_required');
+    recordConsents(u.id, { ...b, minor: first ? b.minor : false }, first ? 'register' : 'profile');
+    return HttpResponse.json(myConsentsDto(u.id));
+  }),
+  // 個人資料權利申請 — public (works without an account), rate-limited on the server
+  http.post('/api/public/privacy-requests', async ({ request }) => {
+    await delay(500);
+    const b = (await request.json()) as { name: string; contact: string; type: MPrivacyRequest['type']; detail: string };
+    if (!b.name?.trim() || !b.contact?.trim()) return problem(400, '請填寫姓名和聯絡方式。', 'validation');
+    if (!(b.type in PRIV_DAYS)) return problem(400, '請選擇申請項目。', 'validation');
+    if ((b.detail ?? '').length > 1000) return problem(400, '說明最多 1000 字。', 'validation');
+    const p: MPrivacyRequest = { id: newId(), name: b.name.trim().slice(0, 80), contact: b.contact.trim().slice(0, 120), type: b.type, detail: (b.detail ?? '').trim(), status: 'open', createdAt: new Date().toISOString(), handledAt: null, note: null };
+    db.privacyRequests.push(p);
+    return HttpResponse.json({ id: p.id, dueAt: privDto(p).dueAt }, { status: 201 });
+  }),
+  http.get('/api/teacher/privacy-requests', async () => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    return HttpResponse.json([...db.privacyRequests].sort((a, b) => (a.status === b.status ? a.createdAt.localeCompare(b.createdAt) : a.status === 'open' ? -1 : 1)).map(privDto));
+  }),
+  http.post('/api/teacher/privacy-requests/:id/done', async ({ params, request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const p = db.privacyRequests.find((x) => x.id === params.id); if (!p) return problem(404, '找不到申請。');
+    const b = (await request.json()) as { note: string };
+    if (!b.note?.trim()) return problem(400, '請簡單記錄處理結果。', 'validation');
+    Object.assign(p, { status: 'done', handledAt: new Date().toISOString(), note: b.note.trim().slice(0, 500) });
+    return HttpResponse.json(privDto(p));
   }),
   // Mock of "LINE Login for a new user": the real server creates a Pending user from the LINE profile.
   http.post('/api/auth/line/mock-register', async () => {
@@ -391,6 +536,7 @@ export const handlers = [
       payments: db.payments.filter((p) => p.studentId === u.id).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).map(payDto),
       remindChannel: u.lineLinked ? 'line' : u.email ? 'email' : null,
       lastRemindedAt: db.alerts.filter((a) => a.userId === u.id && a.kind === 'reminder').map((a) => a.createdAt).sort().at(-1) ?? null,
+      consent: consentSummary(u.id),
     };
     return HttpResponse.json(d);
   }),

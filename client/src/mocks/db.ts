@@ -13,7 +13,7 @@ export const availability: Availability = {
   overrides: [],
 };
 
-export const STUDIO: Omit<StudioInfo, 'lessonMinutes'> = {
+export const STUDIO: Omit<StudioInfo, 'lessonMinutes' | 'teacher'> = {
   cancelHours: 24,
   moveHours: 12,
   packages: [{ size: 1, price: 800, trial: true }, { size: 4, price: 3200 }, { size: 8, price: 6200 }],
@@ -30,11 +30,16 @@ export interface MUser {
   email: string | null; password?: string; phone: string | null; lineId: string | null; lineLinked: boolean;
   voiceType: string | null; goal: string | null; grade: string | null;
   credits: number; packageSize: number; createdAt: string; declined?: boolean; classType?: 'private' | 'group' | 'trial';
+  // teacher profile (教師個人資料)
+  avatarUrl?: string | null; emailVerified?: boolean; lineIdPublic?: boolean;
+  teacherStatus?: 'normal' | 'vacation' | 'noNewStudents' | 'custom'; statusLabel?: string | null; statusMessage?: string | null;
 }
 export interface MChange { id: string; lessonId: string; toDate: string; toTime: string; reason: string; status: 'Open' | 'Approved' | 'Declined' | 'Withdrawn'; decidedAt?: number; prev?: { date: string; time: string }; by?: 'student' | 'teacher'; createdAt?: number }
 export interface MLesson { id: string; studentId: string; date: string; time: string; status: 'Booked' | 'Attended' | 'Cancelled'; type?: 'private' | 'group' | 'trial'; minutes?: number; cancelledAt?: number; refunded?: boolean; byTeacher?: boolean }
 export interface MAlert extends AlertItem { userId: string; sendAfter: number; source?: string }
 export interface MPayment extends Omit<Payment, 'studentName'> { decidedAt?: number }
+export interface MConsent { id: string; userId: string; kind: 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian'; granted: boolean; version: string; scope: string; source: 'register' | 'profile' | 'request'; at: string; guardian?: { name: string; relation: string; contact: string } }
+export interface MPrivacyRequest { id: string; name: string; contact: string; type: 'access' | 'copy' | 'correct' | 'stop' | 'delete' | 'withdraw'; detail: string; status: 'open' | 'done'; createdAt: string; handledAt: string | null; note: string | null }
 export interface MConsult { id: string; name: string; contactType: 'line' | 'email'; contact: string; preferredTime: 'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any'; topic: string; createdAt: string; contacted: boolean }
 
 const id = () => crypto.randomUUID();
@@ -48,7 +53,8 @@ export const ALERT_DELAY_MS = 10_000;
 
 function seed() {
   const users: MUser[] = [
-    { id: 't1', name: 'Iris', role: 'Teacher', status: 'Active', email: 'iris@studio.local', password: 'change-me-now', phone: null, lineId: null, lineLinked: false, voiceType: null, goal: null, grade: null, credits: 0, packageSize: 0, createdAt: nowIso() },
+    { id: 't1', name: 'Iris', role: 'Teacher', status: 'Active', email: 'iris@studio.local', password: 'change-me-now', phone: null, lineId: 'iris.voice', lineLinked: false, voiceType: null, goal: null, grade: null, credits: 0, packageSize: 0, createdAt: nowIso(),
+      emailVerified: true, lineIdPublic: true, teacherStatus: 'normal', statusLabel: null, statusMessage: null, avatarUrl: null },
     { id: 's1', name: '王小明', role: 'Student', status: 'Active', email: 'xiaoming@demo.local', password: 'demo1234', phone: '0912-345-678', lineId: 'xiaoming_w', lineLinked: true, voiceType: '男高音', goal: '想在年底婚禮上唱一首歌，高音更穩定。', grade: 'Grade 4', credits: 5, packageSize: 8, createdAt: nowIso() },
     { id: 's2', name: '林佳穎', role: 'Student', status: 'Active', email: 'jiaying@demo.local', password: 'demo1234', phone: null, lineId: 'jiaying', lineLinked: true, voiceType: '女高音', goal: null, grade: 'Grade 2', credits: 3, packageSize: 4, createdAt: nowIso() },
     { id: 's3', classType: 'group', name: '陳雅婷', role: 'Student', status: 'Active', email: 'yating@demo.local', password: 'demo1234', phone: null, lineId: 'yating', lineLinked: true, voiceType: '女中音', goal: null, grade: 'Grade 3', credits: 1, packageSize: 4, createdAt: nowIso() },
@@ -92,7 +98,16 @@ function seed() {
     { id: 'p3', studentId: 's1', packageSize: 4, amount: 3200, status: 'Confirmed', uploadedAt: new Date(Date.now() - 30 * 864e5).toISOString(), note: null, rejectReason: null, receiptUrl: '', lqip: null },
   ];
   const consults: MConsult[] = [];
-  return { users, lessons, changes, alerts, payments, consults };
+  // demo: 王小明 agreed to media use at sign-up, 陳雅婷 agreed and later withdrew (Iris sees both on the student page)
+  const v = '2026-11-08.v0.1-draft', ago = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
+  const consents: MConsent[] = [
+    ...['s1', 's2', 's3', 's4', 's5'].flatMap((u) => (['terms', 'privacy'] as const).map((k) => ({ id: `ct-${u}-${k}`, userId: u, kind: k, granted: true, version: v, scope: '', source: 'register' as const, at: ago(40) }))),
+    { id: 'cm-s1', userId: 's1', kind: 'media', granted: true, version: v, scope: 'photo,video,voice', source: 'register', at: ago(40) },
+    { id: 'cm-s2a', userId: 's2', kind: 'media', granted: true, version: v, scope: 'photo,video,voice', source: 'register', at: ago(40) },
+    { id: 'cm-s2b', userId: 's2', kind: 'media', granted: false, version: v, scope: 'photo,video,voice', source: 'profile', at: ago(3) },
+  ];
+  const privacyRequests: MPrivacyRequest[] = [];
+  return { users, lessons, changes, alerts, payments, consults, consents, privacyRequests };
 }
 
 export const db = seed();

@@ -1,3 +1,4 @@
+import { FOOTER_LINKS } from '../lib/legal';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { Icon } from '../components/Icon';
@@ -224,7 +225,7 @@ function EventBlock({ ev }: { ev: LpEvent }) {
 }
 
 /** Site top bar. 免費諮詢 is the primary action, 登入 the quiet secondary one. */
-function SiteHeader({ home }: { home?: boolean }) {
+export function SiteHeader({ home }: { home?: boolean }) {
   return (
     <header className="topbar lp-bar">
       {home ? <a href="#hero" className="brand" aria-label="Iris 聲樂工作室 首頁"><b>IRIS</b><span>聲樂教練</span></a>
@@ -239,12 +240,24 @@ function SiteHeader({ home }: { home?: boolean }) {
   );
 }
 
-function SiteFooter() {
+/**
+ * Site footer: brand + one line, then two link groups (服務資訊 · 隱私與權益), then © and the
+ * personal-data contact. Quiet on purpose — it is reference material, not a call to action.
+ */
+export function SiteFooter() {
   return (
-    <footer className="foot">
-      <p className="row" style={{ margin: 0 }}><b style={{ letterSpacing: '.24em', fontWeight: 400, fontSize: 20 }}>IRIS</b><span className="overline">聲樂工作室</span></p>
-      <p className="caption">[地址] · LINE [@官方帳號] · [Email]</p>
-      <p className="caption"><Link to="/consult">預約免費諮詢</Link> · 已經是學生了？ <Link to="/login">登入</Link></p>
+    <footer className="foot ft">
+      <div className="ft-card">
+        <p className="ft-brand"><b>IRIS</b><span>聲樂工作室</span></p>
+        <p className="ft-tag">陪你找到自己的聲音。</p>
+        <nav className="ft-cols" aria-label="服務與隱私資訊">
+          <div><h2 className="ft-h">服務資訊</h2><ul>{FOOTER_LINKS.service.map((l) => <li key={l.to}><Link to={l.to} viewTransition>{l.label}</Link></li>)}</ul></div>
+          <div><h2 className="ft-h">隱私與權益</h2><ul>{FOOTER_LINKS.privacy.map((l) => <li key={l.to}><Link to={l.to} viewTransition>{l.label}</Link></li>)}</ul></div>
+        </nav>
+        <p className="ft-small">© 2026 IRIS Studio. All rights reserved.</p>
+        {/* no real address yet: shown as an open item instead of a made-up one */}
+        <p className="ft-small">個人資料保護聯絡窗口：<span className="ft-todo">【待填：正式聯絡信箱】</span></p>
+      </div>
     </footer>
   );
 }

@@ -25,7 +25,9 @@ async function request<T>(method: string, url: string, body?: unknown, opts: Opt
   let res: Response;
   try {
     res = await fetch(url, { method, headers, body: payload, credentials: 'same-origin', signal: opts.signal });
-  } catch {
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
+    console.error('[api]', method, url, e);
     throw new ApiError(0, 'network', '連線失敗，請檢查網路後再試一次。');
   }
   if (res.status === 204) return undefined as T;

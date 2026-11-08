@@ -2,7 +2,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/re
 import { api } from './api';
 import type {
   AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, Overview, Payment, PaymentStatus,
-  Requests, Slot, StudentDetail, StudentSummary, StudioInfo,
+  Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType,
 } from './types';
 
 /**
@@ -21,6 +21,7 @@ export function makeQueryClient() {
 export const qk = {
   me: ['me'] as const,
   studio: ['studio'] as const,
+  teacherProfile: ['teacher-profile'] as const,
   lessons: (scope: 'student' | 'teacher', from: string, to: string) => ['lessons', scope, from, to] as const,
   days: (from: string) => ['days', from] as const,
   slots: (date: string) => ['slots', date] as const,
@@ -379,5 +380,55 @@ export function useAnswerProposal() {
   return useMutation({
     mutationFn: (v: { id: string; accept: boolean }) => api.post(`/api/student/change-requests/${v.id}/${v.accept ? 'accept' : 'decline'}`),
     onSettled: () => { qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: ['days'] }); },
+  });
+}
+
+/* ---------- 教師個人資料 ---------- */
+export const useTeacherProfile = () => useQuery({ queryKey: qk.teacherProfile, queryFn: () => api.get<TeacherProfile>('/api/teacher/profile') });
+/** after any profile change: me (name in the sidebar) + studio (what students see) are stale too */
+function useProfileInvalidate() {
+  const qc = useQueryClient();
+  return () => { qc.invalidateQueries({ queryKey: qk.teacherProfile }); qc.invalidateQueries({ queryKey: qk.me }); qc.invalidateQueries({ queryKey: qk.studio }); };
+}
+export function useSaveTeacherProfile() {
+  const inv = useProfileInvalidate();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: Pick<TeacherProfile, 'name' | 'lineId' | 'lineIdPublic' | 'status' | 'statusLabel' | 'statusMessage'>) => api.put<TeacherProfile>('/api/teacher/profile', v),
+    onSuccess: (r) => qc.setQueryData(qk.teacherProfile, r), // the form compares against this right away
+    onSettled: inv,
+  });
+}
+export function useTeacherAvatar() {
+  const inv = useProfileInvalidate();
+  const upload = useMutation({ mutationFn: (f: File) => { const fd = new FormData(); fd.append('avatar', f); return api.post<{ avatarUrl: string }>('/api/teacher/profile/avatar', fd); }, onSettled: inv });
+  const remove = useMutation({ mutationFn: () => api.del('/api/teacher/profile/avatar'), onSettled: inv });
+  return { upload, remove };
+}
+export function useTeacherAccount() {
+  const inv = useProfileInvalidate();
+  const changeEmail = useMutation({ mutationFn: (v: { email: string; password: string }) => api.put<TeacherProfile>('/api/teacher/account/email', v), onSettled: inv });
+  const unlinkLine = useMutation({ mutationFn: () => api.del('/api/teacher/account/line'), onSettled: inv });
+  return { changeEmail, unlinkLine };
+}
+
+/* ---------- consents & 個資權利申請 ---------- */
+export const useMyConsents = () => useQuery({ queryKey: ['my-consents'], queryFn: () => api.get<MyConsents>('/api/me/consents') });
+export function useSaveConsents() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: ConsentInput) => api.post<MyConsents>('/api/me/consents', v),
+    onSuccess: (r) => qc.setQueryData(['my-consents'], r),
+  });
+}
+export const useSendPrivacyRequest = () => useMutation({
+  mutationFn: (v: { name: string; contact: string; type: PrivacyRequestType; detail: string }) => api.post<{ id: string; dueAt: string }>('/api/public/privacy-requests', v),
+});
+export const usePrivacyRequests = () => useQuery({ queryKey: ['privacy-requests'], queryFn: () => api.get<PrivacyRequest[]>('/api/teacher/privacy-requests') });
+export function useMarkPrivacyDone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; note: string }) => api.post<PrivacyRequest>(`/api/teacher/privacy-requests/${v.id}/done`, { note: v.note }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['privacy-requests'] }),
   });
 }
