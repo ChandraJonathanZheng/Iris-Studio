@@ -4,12 +4,10 @@ namespace IrisStudio.Api.Services;
 public class StudioOptions
 {
     public string TimeZone { get; set; } = "Asia/Taipei";
-    public string[] Slots { get; set; } = [];
-    public int[] ClosedWeekdays { get; set; } = [0];
-    public int LessonMinutes { get; set; } = 45;
     public string Room { get; set; } = "A 教室";
-    public int BookAheadDays { get; set; } = 60;
     public int CancelHours { get; set; } = 24;
+    /// <summary>改時間 is only possible this many hours (or more) before the lesson starts.</summary>
+    public int MoveHours { get; set; } = 12;
     public int UndoSeconds { get; set; } = 30;
     public int AlertDelaySeconds { get; set; } = 10;
     public PackageOption[] Packages { get; set; } = [];
@@ -19,10 +17,10 @@ public class StudioOptions
     public string TeacherPassword { get; set; } = "";
     public string ReceiptsFolder { get; set; } = "App_Data/receipts";
 
-    public TimeOnly[] SlotTimes => Slots.Select(TimeOnly.Parse).ToArray();
     public TimeSpan UndoWindow => TimeSpan.FromSeconds(UndoSeconds);
 }
-public class PackageOption { public int Size { get; set; } public int Price { get; set; } }
+/// <summary>Trial = the one-time 體驗課 (1 lesson) that only 體驗 students can buy, once.</summary>
+public class PackageOption { public int Size { get; set; } public int Price { get; set; } public bool Trial { get; set; } }
 public class BankOption { public string Name { get; set; } = ""; public string Account { get; set; } = ""; public string Holder { get; set; } = ""; }
 
 /// <summary>

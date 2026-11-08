@@ -25,6 +25,15 @@ public static class Seed
             db.Users.Add(t);
         }
 
+        // Default 可預約時段 (Iris edits it in the app): Mon–Sat 09:30–12:30 + 14:00–20:30, Sunday off; 60 min + 30 min break, 30 days ahead.
+        if (!await db.WeeklyAvailability.AnyAsync())
+        {
+            db.BookingSettings.Add(new BookingSettings());
+            for (var w = 0; w < 7; w++)
+                db.WeeklyAvailability.Add(new WeeklyAvailability { Weekday = w, Enabled = w != 0, Ranges = w == 0 ? "" : "09:30-12:30;14:00-20:30" });
+            await db.SaveChangesAsync();
+        }
+
         if (demo && !await db.Users.AnyAsync(u => u.Role == Role.Student))
         {
             (string name, string mail, int credits, int pkg, string voice)[] people =
@@ -34,7 +43,7 @@ public static class Seed
             ];
             var students = people.Select(p =>
             {
-                var u = new User { Name = p.name, Email = $"{p.mail}@demo.local", Status = UserStatus.Active, Credits = p.credits, PackageSize = p.pkg, VoiceType = p.voice, LineId = p.mail, Grade = "Grade 2" };
+                var u = new User { Name = p.name, Email = $"{p.mail}@demo.local", Status = UserStatus.Active, ClassType = p.mail == "yating" ? LessonType.Group : LessonType.Private, Credits = p.credits, PackageSize = p.pkg, VoiceType = p.voice, LineId = p.mail, Grade = "Grade 2" };
                 u.PasswordHash = hasher.HashPassword(u, "demo1234");
                 return u;
             }).ToList();
@@ -43,8 +52,9 @@ public static class Seed
             db.Users.AddRange(students);
             db.Users.Add(pending);
 
-            DateOnly Open(int n) { var d = clock.Today.AddDays(n); while (o.ClosedWeekdays.Contains((int)d.DayOfWeek)) d = d.AddDays(1); return d; }
-            var slot = o.SlotTimes;
+            DateOnly Open(int n) { var d = clock.Today.AddDays(n); while (d.DayOfWeek == DayOfWeek.Sunday) d = d.AddDays(1); return d; }
+            // the default weekday grid: 09:30, 11:00, 14:00, 15:30, 17:00, 18:30
+            TimeOnly[] slot = [new(9, 30), new(11, 0), new(14, 0), new(15, 30), new(17, 0), new(18, 30)];
             db.Lessons.AddRange(
                 new Lesson { Student = students[0], Date = clock.Today.AddDays(-2), Time = slot[3], Status = LessonStatus.Attended },
                 new Lesson { Student = students[0], Date = Open(2), Time = slot[5] },

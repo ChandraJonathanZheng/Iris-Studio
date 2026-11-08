@@ -10,6 +10,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<Consult> Consults => Set<Consult>();
+    public DbSet<BookingSettings> BookingSettings => Set<BookingSettings>();
+    public DbSet<WeeklyAvailability> WeeklyAvailability => Set<WeeklyAvailability>();
+    public DbSet<DateOverride> DateOverrides => Set<DateOverride>();
     public DbSet<CreditLog> CreditLogs => Set<CreditLog>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
@@ -19,6 +22,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Properties<Role>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<UserStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<LessonStatus>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<LessonType>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<ChangeStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<PaymentStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<AlertKind>().HaveConversion<string>().HaveMaxLength(16);
@@ -43,6 +47,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(x => x.Student).WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        m.Entity<BookingSettings>(e => { e.HasKey(x => x.Id); e.Property(x => x.Id).ValueGeneratedNever(); });
+        m.Entity<WeeklyAvailability>(e => { e.HasKey(x => x.Weekday); e.Property(x => x.Weekday).ValueGeneratedNever(); e.Property(x => x.Ranges).HasMaxLength(200); });
+        m.Entity<DateOverride>(e => { e.HasKey(x => x.Date); e.Property(x => x.Ranges).HasMaxLength(200); e.Property(x => x.Note).HasMaxLength(60); });
+        m.Entity<Consult>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(80);
+            e.Property(x => x.ContactType).HasMaxLength(10);
+            e.Property(x => x.Contact).HasMaxLength(120);
+            e.Property(x => x.PreferredTime).HasMaxLength(20);
+            e.Property(x => x.Topic).HasMaxLength(1000);
+        });
         m.Entity<ChangeRequest>(e =>
         {
             e.Property(x => x.Reason).HasMaxLength(300);

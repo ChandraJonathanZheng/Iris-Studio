@@ -14,33 +14,42 @@ public static class StudentEndpoints
         // ---------- slots (any signed-in user) ----------
         var slots = app.MapGroup("/api/slots").RequireAuthorization();
 
-        slots.MapGet("/days", async (string from, int? count, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
+        // Days and slots are generated from Iris's 可預約時段 (AvailabilityService), minus anything already booked.
+        slots.MapGet("/days", async (string from, int? count, AppDbContext db, StudioClock clock, AvailabilityService availability, CancellationToken ct) =>
         {
             if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", out var start)) return Problems.Of(400, "validation", "日期格式不正確。");
             var n = Math.Clamp(count ?? 15, 1, 62);
             var end = start.AddDays(n - 1);
-            var taken = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && l.Date >= start && l.Date <= end)
-                .Select(l => new { l.Date, l.Time }).ToListAsync(ct);
-            var times = o.Value.SlotTimes;
+            var av = await availability.GetAsync(ct);
+            var booked = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && l.Date >= start && l.Date <= end)
+                .Select(l => new { l.Date, l.Time, l.DurationMinutes }).ToListAsync(ct);
+            bool Taken(DateOnly d, TimeOnly t) => booked.Any(b => b.Date == d && AvailabilityService.Overlaps(t, av.Settings.LessonMinutes, b.Time, b.DurationMinutes, av.Settings.GapMinutes));
+            var lastDay = clock.Today.AddDays(av.Settings.AdvanceDays);
             var days = Enumerable.Range(0, n).Select(i =>
             {
                 var d = start.AddDays(i);
                 if (d < clock.Today) return new DayDto(Map.D(d), "past");
-                if (o.Value.ClosedWeekdays.Contains((int)d.DayOfWeek)) return new DayDto(Map.D(d), "closed");
+                if (d > lastDay) return new DayDto(Map.D(d), "later");
+                var times = av.SlotTimesFor(d);
+                if (times.Count == 0) return new DayDto(Map.D(d), "closed");
                 var open = times.Where(t => !clock.IsPast(d, t)).ToArray();
                 if (open.Length == 0) return new DayDto(Map.D(d), "past");
-                return new DayDto(Map.D(d), open.All(t => taken.Any(x => x.Date == d && x.Time == t)) ? "full" : "open");
+                return new DayDto(Map.D(d), open.All(t => Taken(d, t)) ? "full" : "open");
             }).ToArray();
             return TypedResults.Ok(days);
         });
 
         // Students only see free/taken, never who booked (PRD §9 Q6).
-        slots.MapGet("", async (string date, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
+        slots.MapGet("", async (string date, AppDbContext db, StudioClock clock, AvailabilityService availability, CancellationToken ct) =>
         {
             if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return Problems.Of(400, "validation", "日期格式不正確。");
-            if (o.Value.ClosedWeekdays.Contains((int)d.DayOfWeek)) return TypedResults.Ok(Array.Empty<SlotDto>());
-            var taken = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && l.Date == d).Select(l => l.Time).ToListAsync(ct);
-            return TypedResults.Ok(o.Value.SlotTimes.Select(t => new SlotDto(Map.T(t), clock.IsPast(d, t) ? "past" : taken.Contains(t) ? "full" : "free")).ToArray());
+            var av = await availability.GetAsync(ct);
+            if (d > clock.Today.AddDays(av.Settings.AdvanceDays)) return TypedResults.Ok(Array.Empty<SlotDto>());
+            var booked = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && l.Date == d).Select(l => new { l.Time, l.DurationMinutes }).ToListAsync(ct);
+            return TypedResults.Ok(av.SlotTimesFor(d).Select(t => new SlotDto(Map.T(t),
+                clock.IsPast(d, t) ? "past"
+                : booked.Any(b => AvailabilityService.Overlaps(t, av.Settings.LessonMinutes, b.Time, b.DurationMinutes, av.Settings.GapMinutes)) ? "full"
+                : "free")).ToArray());
         });
 
         // ---------- student ----------
@@ -89,10 +98,14 @@ public static class StudentEndpoints
         s.MapPost("/change-requests/{id:guid}/withdraw", async (Guid id, HttpContext http, AppDbContext db, CancellationToken ct) =>
         {
             var me = http.User.UserId();
-            var n = await db.ChangeRequests.Where(c => c.Id == id && c.Status == ChangeStatus.Open && c.Lesson.StudentId == me)
+            var n = await db.ChangeRequests.Where(c => c.Id == id && c.Status == ChangeStatus.Open && c.ProposedBy == ChangeBy.Student && c.Lesson.StudentId == me)
                 .ExecuteUpdateAsync(x => x.SetProperty(c => c.Status, ChangeStatus.Withdrawn), ct);
             return n == 0 ? Problems.Of(404, "not_found", "找不到申請。") : Results.NoContent();
         });
+
+        // answer to Iris's proposal (老師提議改時間)
+        s.MapPost("/change-requests/{id:guid}/accept", async (Guid id, HttpContext http, BookingService b, CancellationToken ct) => { await b.AnswerProposalAsync(http.User.UserId(), id, true, ct); return Results.NoContent(); });
+        s.MapPost("/change-requests/{id:guid}/decline", async (Guid id, HttpContext http, BookingService b, CancellationToken ct) => { await b.AnswerProposalAsync(http.User.UserId(), id, false, ct); return Results.NoContent(); });
 
         s.MapGet("/alerts", async (HttpContext http, AlertService alerts, CancellationToken ct) =>
             TypedResults.Ok((await alerts.Visible(http.User.UserId()).AsNoTracking().OrderByDescending(a => a.CreatedAtUtc).Take(100).ToListAsync(ct)).Select(Map.Alert).ToArray()));
@@ -134,9 +147,12 @@ public static class StudentEndpoints
         {
             var me = http.User.UserId();
             var u = await db.Users.FirstAsync(x => x.Id == me, ct);
-            if (u.Credits > 0) return Problems.Of(409, "has_credits", "還有堂數可以用，用完後才能購買新方案。");
+            // Buy any time (decided 8 Nov): credits are simply added on confirmation.
+            // Still one receipt waiting at a time, so a double upload can't make the student pay twice.
             if (await db.Payments.AnyAsync(p => p.StudentId == me && p.Status == PaymentStatus.Pending, ct)) return Problems.Of(409, "pending_exists", "已經有一張收據在等老師確認。");
             if (!int.TryParse(form["packageSize"], out var size) || o.Value.Packages.FirstOrDefault(p => p.Size == size) is not { } pkg) return Problems.Of(400, "validation", "請選擇方案。");
+            if (pkg.Trial && (u.ClassType != LessonType.Trial || await db.Payments.AnyAsync(p => p.StudentId == me && p.IsTrial && p.Status != PaymentStatus.Rejected, ct)))
+                return Problems.Of(409, "trial_not_available", "體驗課只限第一次上課的學生購買一次。");
             var file = form.Files["receipt"];
             if (file is null || file.Length == 0) return Problems.Of(400, "validation", "請上傳收據圖片。");
             if (file.Length > ImageService.MaxBytes) return Problems.Of(400, "too_large", "圖片不能超過 5 MB。");
@@ -153,7 +169,7 @@ public static class StudentEndpoints
             await File.WriteAllBytesAsync(Path.Combine(folder, name), mem.ToArray(), ct);
 
             var note = form["note"].ToString().Trim();
-            var p = new Payment { StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
+            var p = new Payment { StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, IsTrial = pkg.Trial, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
             db.Payments.Add(p);
             await db.SaveChangesAsync(ct);
             p.Student = u;

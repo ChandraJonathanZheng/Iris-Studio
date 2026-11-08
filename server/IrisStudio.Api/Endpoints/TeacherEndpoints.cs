@@ -21,7 +21,7 @@ public static class TeacherEndpoints
             var pending = await db.Payments.Where(p => p.Status == PaymentStatus.Pending).Select(p => p.Amount).ToListAsync(ct);
             var counts = new CountsDto(
                 pending.Count, pending.Sum(),
-                await db.ChangeRequests.CountAsync(c => c.Status == ChangeStatus.Open, ct),
+                await db.ChangeRequests.CountAsync(c => c.Status == ChangeStatus.Open && c.ProposedBy == ChangeBy.Student, ct),
                 await db.Users.CountAsync(u => u.Role == Role.Student && u.Status == UserStatus.Pending && !u.Declined, ct),
                 await db.Consults.CountAsync(c => !c.Contacted, ct));
             var outIds = await db.Users.Where(u => u.Role == Role.Student && u.Status == UserStatus.Active && u.Credits == 0).Select(u => u.Id).ToListAsync(ct);
@@ -73,15 +73,49 @@ public static class TeacherEndpoints
             var open = await db.ChangeRequests.AsNoTracking().Where(c => c.Lesson.StudentId == id && c.Status == ChangeStatus.Open).ToListAsync(ct);
             var pays = await db.Payments.AsNoTracking().Include(p => p.Student).Where(p => p.StudentId == id).OrderByDescending(p => p.UploadedAtUtc).ToListAsync(ct);
             LessonDto M(Lesson l) => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id));
-            return TypedResults.Ok(new StudentDetailDto(s.Id, s.Name, s.Status, s.Credits, s.Booked, s.NextLesson, s.PaymentPending, s.LineId, s.VoiceType,
+            return TypedResults.Ok(new StudentDetailDto(s.Id, s.Name, s.Status, s.ClassType, s.Credits, s.Booked, s.NextLesson, s.PaymentPending, s.LineId, s.VoiceType,
                 u.Email, u.Phone, u.Grade, u.Goal, lessons.Count(l => l.Status == LessonStatus.Attended), u.PackageSize,
                 lessons.Where(l => l.Status == LessonStatus.Booked && !clock.IsPast(l.Date, l.Time)).Select(M).ToArray(),
                 lessons.Where(l => l.Status == LessonStatus.Attended).Reverse().Select(M).ToArray(),
-                pays.Select(Map.Payment).ToArray()));
+                pays.Select(Map.Payment).ToArray(),
+                RemindChannel(u),
+                await db.Alerts.Where(a => a.UserId == id && a.Kind == AlertKind.Reminder).MaxAsync(a => (DateTime?)a.CreatedAtUtc, ct) is { } last
+                    ? DateTime.SpecifyKind(last, DateTimeKind.Utc) : null));
+        });
+
+        // 通知學生繳學費 — manual payment reminder. It goes through the normal alert outbox: queued for the usual
+        // delay (so 復原 works), then the IAlertChannel delivers it (LINE push if the student signed in with LINE,
+        // otherwise email) and it also shows in the student's in-app 通知.
+        static string? RemindChannel(User u) => u.LineUserId is not null ? "line" : u.Email is not null ? "email" : null;
+
+        t.MapPost("/students/{id:guid}/remind", async (Guid id, RemindRequest r, AppDbContext db, AlertService alerts, CancellationToken ct) =>
+        {
+            var u = await db.Users.FirstOrDefaultAsync(x => x.Id == id && x.Role == Role.Student, ct);
+            if (u is null) return Problems.Of(404, "not_found", "找不到學生。");
+            var text = (r.Message ?? "").Trim();
+            if (text.Length is 0 or > 500) return Problems.Of(400, "validation", "訊息需要 1–500 個字。");
+            if (RemindChannel(u) is not { } channel) return Problems.Of(409, "no_channel", "這位學生沒有 LINE 或 Email，無法通知。");
+            var rid = Guid.NewGuid();
+            alerts.Add(u.Id, AlertKind.Reminder, "繳費提醒", text, source: $"remind:{rid}");
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new RemindResult(rid, channel));
+        });
+
+        t.MapDelete("/reminders/{rid:guid}", async (Guid rid, AlertService alerts, CancellationToken ct) =>
+        {
+            await alerts.DropQueuedAsync($"remind:{rid}", ct);
+            return Results.Ok();
         });
 
         t.MapPost("/students/{id:guid}/credits", async (Guid id, DeltaRequest r, HttpContext http, BookingService booking, CancellationToken ct) =>
-            TypedResults.Ok(new CreditsDto(await booking.AdjustCreditsAsync(id, r.Delta, http.User.UserId(), ct))));
+            TypedResults.Ok(new CreditsDto(await booking.AdjustCreditsAsync(id, r.Delta, r.Reason, http.User.UserId(), ct))));
+
+        t.MapPatch("/students/{id:guid}/class-type", async (Guid id, ClassTypeRequest r, AppDbContext db, CancellationToken ct) =>
+        {
+            if (!Enum.TryParse<LessonType>(r.ClassType, ignoreCase: true, out var type)) return Problems.Of(400, "validation", "類型不正確。");
+            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.ClassType, type), ct);
+            return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
+        });
 
         t.MapPatch("/students/{id:guid}/grade", async (Guid id, string grade, AppDbContext db, CancellationToken ct) =>
         {
@@ -89,19 +123,37 @@ public static class TeacherEndpoints
             return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
         });
 
-        t.MapGet("/requests", async (AppDbContext db, StudioClock clock, CancellationToken ct) =>
+        t.MapGet("/requests", async (AppDbContext db, StudioClock clock, AvailabilityService availability, CancellationToken ct) =>
         {
             var open = await db.ChangeRequests.AsNoTracking().Include(c => c.Lesson).ThenInclude(l => l.Student)
-                .Where(c => c.Status == ChangeStatus.Open).OrderBy(c => c.CreatedAtUtc).ToListAsync(ct);
-            var taken = await db.Lessons.Where(l => l.Status == LessonStatus.Booked).Select(l => new { l.Id, l.Date, l.Time }).ToListAsync(ct);
+                .Where(c => c.Status == ChangeStatus.Open && c.ProposedBy == ChangeBy.Student).OrderBy(c => c.CreatedAtUtc).ToListAsync(ct);
+            var gap = (await availability.GetAsync(ct)).Settings.GapMinutes;
+            var dates = open.Select(c => c.ToDate).Distinct().ToList();
+            var taken = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && dates.Contains(l.Date)).Select(l => new { l.Id, l.Date, l.Time, l.DurationMinutes }).ToListAsync(ct);
             var changes = open.Select(c => new ChangeRequestDto(c.Id, c.LessonId, c.Lesson.StudentId, c.Lesson.Student.Name,
                 Map.D(c.Lesson.Date), Map.T(c.Lesson.Time), Map.D(c.ToDate), Map.T(c.ToTime), c.Reason,
-                SlotFree: !clock.IsPast(c.ToDate, c.ToTime) && !taken.Any(x => x.Date == c.ToDate && x.Time == c.ToTime && x.Id != c.LessonId),
+                SlotFree: !clock.IsPast(c.ToDate, c.ToTime) && !taken.Any(x => x.Date == c.ToDate && x.Id != c.LessonId && AvailabilityService.Overlaps(c.ToTime, c.Lesson.DurationMinutes, x.Time, x.DurationMinutes, gap)),
                 DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc))).ToArray();
             var apps = await db.Users.AsNoTracking().Where(u => u.Role == Role.Student && u.Status == UserStatus.Pending && !u.Declined)
                 .OrderBy(u => u.CreatedAtUtc).Select(u => new ApplicationDto(u.Id, u.Name, u.Email, u.CreatedAtUtc)).ToArrayAsync(ct);
-            return TypedResults.Ok(new RequestsDto(changes, apps));
+            var week = clock.UtcNow.AddDays(-7);
+            var props = await db.ChangeRequests.AsNoTracking().Include(c => c.Lesson).ThenInclude(l => l.Student)
+                .Where(c => c.ProposedBy == ChangeBy.Teacher && (c.Status == ChangeStatus.Open || (c.Status != ChangeStatus.Withdrawn && c.DecidedAtUtc > week)))
+                .OrderByDescending(c => c.CreatedAtUtc).ToListAsync(ct);
+            var proposals = props.Select(c => new ProposalDto(c.Id, c.LessonId, c.Lesson.StudentId, c.Lesson.Student.Name,
+                Map.D(c.PrevDate ?? c.Lesson.Date), Map.T(c.PrevTime ?? c.Lesson.Time), Map.D(c.ToDate), Map.T(c.ToTime), c.Reason, c.Status.Camel(),
+                DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc), c.DecidedAtUtc is { } x ? DateTime.SpecifyKind(x, DateTimeKind.Utc) : null)).ToArray();
+            return TypedResults.Ok(new RequestsDto(changes, apps, proposals));
         });
+
+        // 老師提議改時間: Iris suggests a new slot, the lesson only moves when the student accepts.
+        t.MapPost("/lessons/{id:guid}/proposals", async (Guid id, ProposeRequest r, BookingService b, CancellationToken ct) =>
+        {
+            if (!Map.TryParseSlot(r.Date, r.Time, out var d, out var tm)) return Problems.Of(400, "validation", "日期或時間格式不正確。");
+            var c = await b.ProposeMoveAsync(id, d, tm, r.Message, ct);
+            return Results.Created($"/api/teacher/proposals/{c.Id}", new { c.Id });
+        });
+        t.MapPost("/proposals/{id:guid}/withdraw", async (Guid id, BookingService b, CancellationToken ct) => { await b.WithdrawProposalAsync(id, ct); return Results.NoContent(); });
 
         t.MapPost("/change-requests/{id:guid}/approve", async (Guid id, BookingService b, CancellationToken ct) => { await b.DecideChangeAsync(id, true, null, ct); return Results.NoContent(); });
         t.MapPost("/change-requests/{id:guid}/decline", async (Guid id, MessageRequest r, BookingService b, CancellationToken ct) => { await b.DecideChangeAsync(id, false, r.Message, ct); return Results.NoContent(); });
@@ -149,9 +201,95 @@ public static class TeacherEndpoints
         t.MapPost("/payments/{id:guid}/undo", async (Guid id, HttpContext http, BookingService b, CancellationToken ct) =>
         { await b.UndoPaymentAsync(id, http.User.UserId(), ct); return Results.NoContent(); });
 
+        // ---------- 可預約時段 (availability) ----------
+        static TimeRangeDto[] Dto(IEnumerable<TimeRange> rs) => rs.Select(r => new TimeRangeDto(Map.T(r.Start), Map.T(r.End))).ToArray();
+        static async Task<AvailabilityDto> Load(AvailabilityService availability, CancellationToken ct)
+        {
+            availability.Invalidate();
+            var av = await availability.GetAsync(ct);
+            var weekly = Enumerable.Range(0, 7).Select(w => av.Weekly.TryGetValue(w, out var d)
+                ? new WeeklyDayDto(w, d.Enabled, Dto(AvailabilityService.ParseRanges(d.Ranges)))
+                : new WeeklyDayDto(w, false, [])).ToArray();
+            var overrides = av.Overrides.Values.OrderBy(o => o.Date)
+                .Select(o => new DateOverrideDto(Map.D(o.Date), o.Closed, Dto(AvailabilityService.ParseRanges(o.Ranges)), o.Note)).ToArray();
+            var s = av.Settings;
+            return new AvailabilityDto(new BookingSettingsDto(s.LessonMinutes, s.GapMinutes, s.AdvanceDays), weekly, overrides);
+        }
+        /// <summary>null = invalid input (bad time format).</summary>
+        static TimeRange[]? Parse(TimeRangeDto[]? rs)
+        {
+            var list = new List<TimeRange>();
+            foreach (var r in rs ?? [])
+            {
+                if (!TimeOnly.TryParseExact(r.Start, "HH:mm", out var a) || !TimeOnly.TryParseExact(r.End, "HH:mm", out var b)) return null;
+                list.Add(new TimeRange(a, b));
+            }
+            return list.ToArray();
+        }
+
+        t.MapGet("/availability", async (AvailabilityService availability, CancellationToken ct) => TypedResults.Ok(await Load(availability, ct)));
+
+        t.MapPut("/availability/settings", async (BookingSettingsDto r, AppDbContext db, AvailabilityService availability, CancellationToken ct) =>
+        {
+            if (!AvailabilityService.LessonMinuteOptions.Contains(r.LessonMinutes) || !AvailabilityService.GapMinuteOptions.Contains(r.GapMinutes)
+                || !AvailabilityService.AdvanceDayOptions.Contains(r.AdvanceDays))
+                return Problems.Of(400, "validation", "設定值不正確。");
+            var s = await db.BookingSettings.FirstOrDefaultAsync(ct);
+            if (s is null) { s = new BookingSettings(); db.BookingSettings.Add(s); }
+            s.LessonMinutes = r.LessonMinutes; s.GapMinutes = r.GapMinutes; s.AdvanceDays = r.AdvanceDays;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await Load(availability, ct));
+        });
+
+        t.MapPut("/availability/weekly", async (WeeklyDayDto[] r, AppDbContext db, AvailabilityService availability, CancellationToken ct) =>
+        {
+            if (r.Length != 7 || r.Select(d => d.Weekday).Distinct().Count() != 7 || r.Any(d => d.Weekday is < 0 or > 6))
+                return Problems.Of(400, "validation", "資料格式不正確。");
+            var lessonMinutes = (await availability.GetAsync(ct)).Settings.LessonMinutes;
+            var rows = await db.WeeklyAvailability.ToDictionaryAsync(w => w.Weekday, ct);
+            foreach (var d in r)
+            {
+                var ranges = Parse(d.Ranges);
+                if (ranges is null) return Problems.Of(400, "validation", "時間格式不正確。");
+                if (d.Enabled && AvailabilityService.RangeProblems(ranges, lessonMinutes) is [var first, ..]) return Problems.Of(400, "invalid_range", first);
+                if (!rows.TryGetValue(d.Weekday, out var row)) { row = new WeeklyAvailability { Weekday = d.Weekday }; db.WeeklyAvailability.Add(row); }
+                row.Enabled = d.Enabled;
+                row.Ranges = AvailabilityService.FormatRanges(ranges); // kept while OFF, so switching a day back on restores its hours
+            }
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await Load(availability, ct));
+        });
+
+        t.MapPut("/availability/overrides/{date}", async (string date, OverrideRequest r, AppDbContext db, StudioClock clock, AvailabilityService availability, CancellationToken ct) =>
+        {
+            if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d) || d < clock.Today) return Problems.Of(400, "validation", "請選擇今天以後的日期。");
+            var ranges = Parse(r.Ranges);
+            if (ranges is null) return Problems.Of(400, "validation", "時間格式不正確。");
+            if (!r.Closed)
+            {
+                if (ranges.Length == 0) return Problems.Of(400, "validation", "請至少加一個時段，或改成全天休息。");
+                if (AvailabilityService.RangeProblems(ranges, (await availability.GetAsync(ct)).Settings.LessonMinutes) is [var first, ..]) return Problems.Of(400, "invalid_range", first);
+            }
+            var row = await db.DateOverrides.FirstOrDefaultAsync(o => o.Date == d, ct);
+            if (row is null) { row = new DateOverride { Date = d }; db.DateOverrides.Add(row); }
+            row.Closed = r.Closed;
+            row.Ranges = r.Closed ? "" : AvailabilityService.FormatRanges(ranges);
+            var note = (r.Note ?? "").Trim();
+            row.Note = note[..Math.Min(60, note.Length)];
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(await Load(availability, ct));
+        });
+
+        t.MapDelete("/availability/overrides/{date}", async (string date, AppDbContext db, AvailabilityService availability, CancellationToken ct) =>
+        {
+            if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out var d)) return Problems.Of(400, "validation", "日期格式不正確。");
+            await db.DateOverrides.Where(o => o.Date == d).ExecuteDeleteAsync(ct);
+            return Results.Ok(await Load(availability, ct));
+        });
+
         t.MapGet("/consults", async (AppDbContext db, CancellationToken ct) =>
             TypedResults.Ok(await db.Consults.AsNoTracking().OrderByDescending(c => c.CreatedAtUtc).Take(200)
-                .Select(c => new ConsultDto(c.Id, c.Name, c.Contact, c.PreferredDate.ToString("yyyy-MM-dd"), c.Topic, c.CreatedAtUtc, c.Contacted)).ToArrayAsync(ct)));
+                .Select(c => new ConsultDto(c.Id, c.Name, c.ContactType, c.Contact, c.PreferredTime, c.Topic, c.CreatedAtUtc, c.Contacted)).ToArrayAsync(ct)));
         t.MapPost("/consults/{id:guid}/contacted", async (Guid id, ContactedRequest r, AppDbContext db, CancellationToken ct) =>
         {
             var n = await db.Consults.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.Contacted, r.Contacted), ct);
@@ -172,7 +310,7 @@ public static class TeacherEndpoints
         {
             var mine = upcoming.Where(l => l.StudentId == u.Id && !clock.IsPast(l.Date, l.Time)).OrderBy(l => l.Date).ThenBy(l => l.Time).ToList();
             var next = mine.FirstOrDefault();
-            return new StudentSummaryDto(u.Id, u.Name, u.Status.ToString(), u.Credits, mine.Count,
+            return new StudentSummaryDto(u.Id, u.Name, u.Status.ToString(), u.ClassType.Camel(), u.Credits, mine.Count,
                 next is null ? null : new NextLessonDto(Map.D(next.Date), Map.T(next.Time)), paying.Contains(u.Id), u.LineId, u.VoiceType);
         }).ToArray();
     }

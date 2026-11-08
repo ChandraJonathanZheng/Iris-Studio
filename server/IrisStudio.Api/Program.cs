@@ -19,6 +19,7 @@ builder.Services.Configure<StudioOptions>(cfg.GetSection("Studio"));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<StudioClock>();
 builder.Services.AddScoped<AlertService>();
+builder.Services.AddScoped<AvailabilityService>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddSingleton<PasswordHasher<User>>();
 builder.Services.AddSingleton<IAlertChannel, InAppOnlyChannel>(); // swap for a LINE push channel later
@@ -62,6 +63,10 @@ if (!string.IsNullOrWhiteSpace(lineId))
         o.SignInScheme = Claims.Scheme;
         o.Scope.Clear(); o.Scope.Add("openid"); o.Scope.Add("profile");
         o.MapInboundClaims = false;
+        // bot_prompt=aggressive (decided 8 Nov): LINE shows "add Iris Studio as a friend" right on the login screen.
+        // Only friends of the Official Account can receive LINE push messages, so this is what makes LINE alerts work.
+        // Needs the Official Account linked to this LINE Login channel in the LINE Developers console.
+        o.Events.OnRedirectToIdentityProvider = ctx => { ctx.ProtocolMessage.SetParameter("bot_prompt", "aggressive"); return Task.CompletedTask; };
         o.Events.OnRemoteFailure = ctx => { ctx.Response.Redirect("/login?error=line"); ctx.HandleResponse(); return Task.CompletedTask; };
         o.Events.OnTicketReceived = async ctx =>
         {

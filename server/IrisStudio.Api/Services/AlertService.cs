@@ -45,6 +45,7 @@ public class AlertDispatcher(IServiceScopeFactory scopes, ILogger<AlertDispatche
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        var tick = 0;
         while (await timer.WaitForNextTickAsync(stop))
         {
             try
@@ -62,6 +63,9 @@ public class AlertDispatcher(IServiceScopeFactory scopes, ILogger<AlertDispatche
                     a.DeliveredAtUtc = clock.UtcNow;
                 }
                 if (due.Count > 0) await db.SaveChangesAsync(stop);
+
+                // auto 已上課, about once a minute (12 ticks × 5 s)
+                if (++tick % 12 == 1) await AttendanceSettler.RunAsync(db, clock, stop);
 
                 // housekeeping: idempotency keys only need to live for a day
                 await db.IdempotencyRecords.Where(r => r.CreatedAtUtc < clock.UtcNow.AddDays(-1)).ExecuteDeleteAsync(stop);

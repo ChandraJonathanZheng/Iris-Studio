@@ -3,9 +3,14 @@ namespace IrisStudio.Api.Data;
 public enum Role { Student, Teacher }
 public enum UserStatus { Pending, Active }
 public enum LessonStatus { Booked, Attended, Cancelled }
+/// <summary>private = 一對一, group = 團體課, trial = 體驗課</summary>
+public enum LessonType { Private, Group, Trial }
 public enum ChangeStatus { Open, Approved, Declined, Withdrawn }
 public enum PaymentStatus { Pending, Confirmed, Rejected }
-public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled }
+/// <summary>Stored as text (see AppDbContext.ConfigureConventions). Reminder = Iris's manual 通知學生繳學費.</summary>
+public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal }
+/// <summary>Who asked for the time change: the student (Iris approves) or Iris (the student accepts).</summary>
+public enum ChangeBy { Student, Teacher }
 
 public class User
 {
@@ -27,6 +32,8 @@ public class User
     /// <summary>Sessions not yet booked. DB check keeps it ≥ 0.</summary>
     public int Credits { get; set; }
     public int PackageSize { get; set; }
+    /// <summary>Student class type set by Iris: Private = 一對一, Group = 團體課, Trial = 體驗課 (same labels as lessons). New sign-ups start as Trial.</summary>
+    public LessonType ClassType { get; set; } = LessonType.Trial;
     public bool Declined { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     /// <summary>When Iris approved/declined the application (for the undo window).</summary>
@@ -41,6 +48,8 @@ public class Lesson
     public DateOnly Date { get; set; }
     public TimeOnly Time { get; set; }
     public LessonStatus Status { get; set; } = LessonStatus.Booked;
+    public LessonType Type { get; set; } = LessonType.Private;
+    public int DurationMinutes { get; set; } = 60;
     public DateTime? CancelledAtUtc { get; set; }
     public bool Refunded { get; set; }
     public bool CancelledByTeacher { get; set; }
@@ -54,7 +63,10 @@ public class ChangeRequest
     public Lesson Lesson { get; set; } = null!;
     public DateOnly ToDate { get; set; }
     public TimeOnly ToTime { get; set; }
+    /// <summary>Student's reason, or Iris's message when she proposes.</summary>
     public string Reason { get; set; } = "";
+    /// <summary>Student = 學生申請 (Iris decides). Teacher = 老師提議 (the student decides). Iris never moves a lesson without consent.</summary>
+    public ChangeBy ProposedBy { get; set; } = ChangeBy.Student;
     public ChangeStatus Status { get; set; } = ChangeStatus.Open;
     /// <summary>The lesson's slot before approval, so an approval can be undone.</summary>
     public DateOnly? PrevDate { get; set; }
@@ -76,6 +88,8 @@ public class Payment
     /// <summary>Tiny blurred preview (data: URL, ~300 bytes) made at upload, shown while the receipt loads.</summary>
     public string? Lqip { get; set; }
     public string? Note { get; set; }
+    /// <summary>Bought the 體驗課 package (only once per student).</summary>
+    public bool IsTrial { get; set; }
     public string? RejectReason { get; set; }
     public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? DecidedAtUtc { get; set; }
@@ -104,8 +118,11 @@ public class Consult
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string Name { get; set; }
+    /// <summary>"line" or "email" — tells Iris how to read <see cref="Contact"/>.</summary>
+    public required string ContactType { get; set; }
     public required string Contact { get; set; }
-    public DateOnly PreferredDate { get; set; }
+    /// <summary>Rough window: weekdayDay / weekdayEvening / weekend / any.</summary>
+    public required string PreferredTime { get; set; }
     public string Topic { get; set; } = "";
     public bool Contacted { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -135,4 +152,31 @@ public class IdempotencyRecord
     public int? StatusCode { get; set; }
     public string? ResponseJson { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>Iris's 預約設定 — a single row (Id = 1).</summary>
+public class BookingSettings
+{
+    public int Id { get; set; } = 1;
+    public int LessonMinutes { get; set; } = 60;
+    public int GapMinutes { get; set; } = 30;
+    /// <summary>可提前預約: students can book up to this many days ahead.</summary>
+    public int AdvanceDays { get; set; } = 30;
+}
+
+/// <summary>每週時段: one row per weekday (0 = Sunday). Ranges as "09:30-12:30;14:00-20:30".</summary>
+public class WeeklyAvailability
+{
+    public int Weekday { get; set; }
+    public bool Enabled { get; set; }
+    public string Ranges { get; set; } = "";
+}
+
+/// <summary>特殊日期: replaces the weekly pattern for one date — closed all day, or its own ranges.</summary>
+public class DateOverride
+{
+    public DateOnly Date { get; set; }
+    public bool Closed { get; set; }
+    public string Ranges { get; set; } = "";
+    public string Note { get; set; } = "";
 }
