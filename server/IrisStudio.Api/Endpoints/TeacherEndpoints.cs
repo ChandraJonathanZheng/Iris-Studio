@@ -64,7 +64,7 @@ public static class TeacherEndpoints
             return TypedResults.Ok(await Summaries(db, clock, ids, ct));
         });
 
-        t.MapGet("/students/{id:guid}", async (Guid id, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
+        t.MapGet("/students/{id:guid}", async (Guid id, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, ConsentService consents, CancellationToken ct) =>
         {
             var u = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.Role == Role.Student, ct);
             if (u is null) return Problems.Of(404, "not_found", "找不到學生。");
@@ -80,7 +80,8 @@ public static class TeacherEndpoints
                 pays.Select(Map.Payment).ToArray(),
                 RemindChannel(u),
                 await db.Alerts.Where(a => a.UserId == id && a.Kind == AlertKind.Reminder).MaxAsync(a => (DateTime?)a.CreatedAtUtc, ct) is { } last
-                    ? DateTime.SpecifyKind(last, DateTimeKind.Utc) : null));
+                    ? DateTime.SpecifyKind(last, DateTimeKind.Utc) : null,
+                await consents.SummaryAsync(id, ct)));
         });
 
         // 通知學生繳學費 — manual payment reminder. It goes through the normal alert outbox: queued for the usual

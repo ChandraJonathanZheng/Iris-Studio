@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { session, useLogout, useMe, useOverview } from '../lib/queries';
@@ -22,7 +22,11 @@ import { Icon } from './Icon';
 import { PageSkeleton } from './ui';
 
 /** dot: show an unread dot instead of a number (when the count itself doesn't matter, e.g. a student's 通知). */
-interface NavItem { to: string; label: string; short: string; icon: string; badge?: number; dot?: boolean; end?: boolean; /** sidebar only (the phone bar has no room; reachable from 行事曆 there) */ sideOnly?: boolean }
+interface NavItem {
+  to: string; label: string; short: string; icon: string; badge?: number; dot?: boolean; end?: boolean;
+  /** sidebar only (the phone bar has no room) */ sideOnly?: boolean;
+  /** the tab is "here" on any of these paths too — 收件匣 groups 申請 / 付款 / 諮詢, 更多 groups its pages */ match?: string[];
+}
 
 function useNavItems(role: Role, unread: number): NavItem[] {
   const ov = useOverview(role === 'Teacher');
@@ -34,15 +38,27 @@ function useNavItems(role: Role, unread: number): NavItem[] {
     { to: '/app/profile', label: '個人資料', short: '我的', icon: 'user' },
   ];
   const c = ov.data?.counts;
+  // 5 tabs (was 6): everything that waits for Iris's decision lives in one 收件匣 with ONE badge,
+  // so she checks one place instead of three; rarely used pages move to 更多.
   return [
     { to: '/teacher', label: '首頁', short: '首頁', icon: 'home', end: true },
     { to: '/teacher/calendar', label: '行事曆', short: '行事曆', icon: 'calendar' },
-    { to: '/teacher/availability', label: '可預約時段', short: '時段', icon: 'clock', sideOnly: true },
     { to: '/teacher/students', label: '學生', short: '學生', icon: 'users' },
-    { to: '/teacher/requests', label: '申請', short: '申請', icon: 'inbox', badge: c ? c.changes + c.applications : 0 },
-    { to: '/teacher/payments', label: '付款', short: '付款', icon: 'receipt', badge: c?.receipts },
-    { to: '/teacher/consults', label: '諮詢', short: '諮詢', icon: 'msg', badge: c?.consults },
+    { to: '/teacher/inbox', label: '收件匣', short: '收件匣', icon: 'inbox', badge: inboxCount(c), match: ['/teacher/requests', '/teacher/payments', '/teacher/consults'] },
+    { to: '/teacher/more', label: '更多', short: '更多', icon: 'more', match: ['/teacher/availability', '/teacher/profile', '/teacher/privacy-requests'] },
   ];
+}
+
+/** items that need Iris to act: open 改時間 + new students + receipts to check + consults not contacted yet */
+export const inboxCount = (c?: { changes: number; applications: number; receipts: number; consults: number }) =>
+  c ? c.changes + c.applications + c.receipts + c.consults : 0;
+
+/** NavLink only knows its own path; grouped tabs (收件匣, 更多) are also "here" on their member pages */
+function NavItemLink({ i, size, children, ...rest }: { i: NavItem; size?: number; children: (active: boolean) => ReactNode } & Omit<ComponentProps<typeof Link>, 'to' | 'children'>) {
+  const { pathname } = useLocation();
+  if (!i.match) return <NavLink to={i.to} end={i.end} viewTransition {...rest}>{({ isActive }) => children(isActive)}</NavLink>;
+  const active = [i.to, ...i.match].some((p) => pathname === p || pathname.startsWith(p + '/'));
+  return <Link to={i.to} viewTransition aria-current={active ? 'page' : undefined} className={active ? 'active' : undefined} {...rest}>{children(active)}</Link>;
 }
 
 /** Role-guarded app frame: floating sidebar on desktop, floating bottom nav on phones (Guidebook §3, §4.9). */
@@ -76,11 +92,11 @@ function Frame({ role, name, unread, children }: { role: Role; name: string; unr
         </button>
         <nav aria-label="主選單">
           {items.map((i) => (
-            <NavLink key={i.to} to={i.to} end={i.end} viewTransition onMouseEnter={intent(i.to)} onFocus={intent(i.to)}>
-              {({ isActive }) => <>
+            <NavItemLink key={i.to} i={i} onMouseEnter={intent(i.to)} onFocus={intent(i.to)}>
+              {(isActive) => <>
               <Icon name={i.icon} weight={isActive ? 'fill' : 'regular'} />{i.label}{!!i.badge && (i.dot ? <><span className="badge dot" aria-hidden="true" /><span className="sr-only">，有未讀</span></> : <span className="badge">{i.badge}</span>)}
               </>}
-            </NavLink>
+            </NavItemLink>
           ))}
         </nav>
         <div className="stack g2" style={{ marginTop: 'auto' }}>
@@ -94,15 +110,16 @@ function Frame({ role, name, unread, children }: { role: Role; name: string; unr
       <main className="main" id="main">{children}</main>
 
       <nav className="bnav" aria-label="主選單">
-        {items.filter((i) => !i.sideOnly).slice(0, role === 'Student' ? 5 : 6).map((i) => (
-          <NavLink key={i.to} to={i.to} end={i.end} viewTransition onTouchStart={intent(i.to)} onMouseEnter={intent(i.to)}>
-            {({ isActive }) => <>
+        {items.filter((i) => !i.sideOnly).slice(0, 5).map((i) => (
+          <NavItemLink key={i.to} i={i} onTouchStart={intent(i.to)} onMouseEnter={intent(i.to)}>
+            {(isActive) => <>
               {/* active tab = filled icon: a second cue besides the sage background, readable even without colour */}
               <Icon name={i.icon} size={22} weight={isActive ? 'fill' : 'regular'} /><span>{i.short}</span>
-              {!!i.badge && <span className="badge" aria-hidden="true" />}
+              {/* student 通知 = dot (the number doesn't matter); teacher 收件匣 = count (how much work is waiting) */}
+              {!!i.badge && (i.dot ? <span className="badge" aria-hidden="true" /> : <span className="badge count" aria-hidden="true">{i.badge > 99 ? '99+' : i.badge}</span>)}
               {!!i.badge && <span className="sr-only">，{i.badge} 則待處理</span>}
             </>}
-          </NavLink>
+          </NavItemLink>
         ))}
       </nav>
 

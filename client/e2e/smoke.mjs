@@ -170,6 +170,15 @@ await check('8 Nov: booking the last 堂 queues an automatic 繳費提醒', asyn
   assert(alerts.filter((a) => a.kind === 'reminder').length === 1, 'reminders: ' + alerts.filter((a) => a.kind === 'reminder').length);
 });
 
+await check('同意設定: withdrawing media consent writes a new record (history kept)', async () => {
+  await s.goto(BASE + '/app/profile'); await s.waitForSelector('.cn-card');
+  const before = await s.evaluate(() => fetch('/api/me/consents').then((r) => r.json()));
+  assert(before.media.granted, 'seed: 王小明 agreed to media');
+  await s.click('.cn-row .switch >> nth=0'); await s.waitForSelector('.toast >> text=已撤回');
+  const after = await s.evaluate(() => fetch('/api/me/consents').then((r) => r.json()));
+  assert(!after.media.granted && after.history.length === before.history.length + 1, 'no new record: ' + JSON.stringify(after.history.length));
+});
+
 // 5. teacher
 const t = await newPage({ width: 1280, height: 900 });
 await t.goto(BASE + '/login');
@@ -177,6 +186,18 @@ await t.click('.au-demo >> text=老師 Iris');
 await t.waitForURL('**/teacher');
 await t.waitForSelector('.kpi');
 await check('teacher home: no serious axe violations (desktop)', () => axe(t, 'teacher home'));
+await check('teacher: 今日待辦 2×2 above 今天的課; 收件匣 = 申請 + 付款 + 諮詢 with one badge', async () => {
+  const order = await t.evaluate(() => { const a = document.querySelector('.th-todo'), b = document.querySelector('.th-today'); return a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) > 0; });
+  assert(order, '今日待辦 is not above 今天的課');
+  assert((await t.locator('.th-todo .kpi').count()) === 4, 'not 4 cards');
+  const titles = await t.locator('.th-todo .kpi .kt').allTextContents();
+  assert(titles.join() === '改時間申請,待確認收據,新學生,諮詢', 'card order ' + titles);
+  assert((await t.locator('.side nav a').count()) === 5, 'sidebar should have 5 items');
+  await t.click('.side nav >> text=收件匣'); await t.waitForSelector('.ibx-tabs');
+  await t.click('.ibx-tabs >> text=付款'); await t.waitForURL('**/teacher/payments');
+  assert(await t.locator('.side nav a[aria-current="page"]').textContent().then((x) => x.startsWith('收件匣')), '收件匣 not active on 付款');
+  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpi');
+});
 await check('#3 #4 ⌘K opens the command menu and navigates; hint shown in sidebar', async () => {
   assert(await t.isVisible('.kbd-hint kbd'), 'no shortcut hint');
   await t.keyboard.press('Control+k');
@@ -206,9 +227,12 @@ await check('#2 server failure → optimistic change rolls back + error toast', 
 });
 await check('#19 confirming the same receipt twice adds the package once', async () => {
   await t.goto(BASE + '/teacher/payments');
-  await t.waitForSelector('text=確認，加');
+  await t.waitForSelector('text=查看收據並確認');
   const before = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
-  const b = t.locator('.rq-approve', { hasText: '確認，加' }).first();
+  await t.locator('.rq-approve', { hasText: '查看收據並確認' }).first().click();
+  const b = t.locator('.rcpt .rq-approve');
+  assert(await b.isDisabled(), 'confirm must wait for the review check box');
+  await t.check('.rcpt-check input');
   await b.click(); await b.click({ force: true, timeout: 500 }).catch(() => {});
   await t.waitForTimeout(1200);
   const after = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
@@ -253,7 +277,36 @@ await check('8 Nov: Iris proposes a new time; it waits for the student in 申請
   await t.click('.sheet .btn.primary');
   await t.waitForSelector('.toast >> text=等學生回覆');
   await t.waitForSelector('.sd-lesson >> text=等待學生回覆');
-  await t.goto(BASE + '/teacher/requests'); await t.waitForSelector('.rq-props >> text=等待學生回覆');
+  await t.goto(BASE + '/teacher/requests?tab=waiting'); await t.waitForSelector('.rq-props .rq-prow >> text=已傳送');
+});
+await check('教師個人資料: status saved → students get it; custom needs a label; email change needs the password', async () => {
+  await t.goto(BASE + '/teacher/profile'); await t.waitForSelector('.tp-form');
+  assert(await t.locator('.tp-form .btn.primary').isDisabled(), 'save enabled without changes');
+  await t.click('.tp-st >> text=自訂');
+  assert(await t.locator('.tp-form .btn.primary').isDisabled(), 'custom without a label can be saved');
+  await t.click('.tp-st >> text=放假中'); await t.click('.tp-idea >> text=放假中，明天回覆');
+  assert((await t.locator('.tsc').textContent()).includes('放假中，明天回覆'), 'preview not live');
+  await t.click('.tp-form .btn.primary'); await t.waitForSelector('.tp-form .btn.primary >> text=已儲存');
+  const pub = await t.evaluate(() => fetch('/api/public/studio').then((r) => r.json()).then((x) => x.teacher));
+  assert(pub.status === 'vacation' && pub.statusMessage === '放假中，明天回覆', 'studio: ' + JSON.stringify(pub));
+  const r = await t.evaluate(() => fetch('/api/teacher/account/email', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'x@y.tw', password: 'nope' }) }).then((x) => x.status));
+  assert(r === 403, 'email change without the right password: ' + r);
+});
+await check('legal: footer links, consent required at sign-up, 個資申請 reaches Iris with a due date', async () => {
+  const a = await newPage({ width: 390, height: 844 });
+  await a.goto(BASE + '/'); await a.waitForTimeout(1500);
+  assert((await a.locator('.ft-cols a').count()) === 8, 'footer should have 8 links');
+  await a.click('.ft-cols >> text=隱私權政策'); await a.waitForURL('**/legal/privacy'); await a.waitForSelector('.lg-draft');
+  const noConsent = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x@y.tw', password: '12345678', consents: { version: 'v', terms: false, media: false, marketing: false, minor: false, guardian: null } }) }).then((r) => r.status));
+  assert(noConsent === 400, 'sign-up without terms consent: ' + noConsent);
+  const minorNoGuardian = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x2@y.tw', password: '12345678', consents: { version: 'v', terms: true, media: false, marketing: false, minor: true, guardian: null } }) }).then((r) => r.status));
+  assert(minorNoGuardian === 400, 'minor without guardian: ' + minorNoGuardian);
+  await a.context().close();
+  await t.evaluate(() => fetch('/api/public/privacy-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '林小姐', contact: 'lin@x.tw', type: 'delete', detail: '請刪除照片' }) }));
+  // the mock keeps its data per page load, so move with the app's own links (no reload)
+  await t.click('.side nav >> text=更多'); await t.click('.mo-row >> text=個資權利申請'); await t.waitForSelector('.pr-card >> text=林小姐');
+  assert((await t.locator('.pr-card .rq-status').first().textContent()).includes('前需回覆'), 'no due date');
+  await t.goto(BASE + '/teacher/students/s2'); await t.waitForSelector('.sd-consent.warn >> text=已撤回');
 });
 await check('#10 sheet closes by swiping down (phone)', async () => {
   await s.goto(BASE + '/app/book'); await s.waitForSelector('.chip:not([disabled])');

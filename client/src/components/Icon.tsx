@@ -3,7 +3,7 @@
 // (or the whole icon set) is a one-line change instead of a hunt through every page.
 // Named imports only: Vite tree-shakes the rest of the ~1,500 icons out of the bundle.
 import {
-  ArrowRight, Bell, CalendarBlank, CalendarPlus, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsThree,
+  ArrowRight, Bell, CalendarBlank, CalendarPlus, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsThree, EnvelopeSimple,
   Eye, EyeSlash, GearSix, House, Image, Info, MagnifyingGlass, Microphone, Minus, MusicNotes, Package, Pause, Play,
   Plus, Receipt, Repeat, SignOut, Sparkle, Star, Trash, Tray, UploadSimple, User, Users, X,
   type Icon as PhosphorIcon, type IconWeight,
@@ -13,7 +13,7 @@ const ICONS = {
   home: House, book: CalendarPlus, calendar: CalendarBlank, bell: Bell, user: User, users: Users, inbox: Tray,
   receipt: Receipt, msg: ChatCircleDots, chev: CaretRight, back: CaretLeft, more: DotsThree, repeat: Repeat,
   check: Check, x: X, upload: UploadSimple, search: MagnifyingGlass, arrow: ArrowRight, info: Info, image: Image,
-  minus: Minus, plus: Plus, trash: Trash, gear: GearSix, clock: Clock, mic: Microphone, music: MusicNotes,
+  minus: Minus, plus: Plus, trash: Trash, gear: GearSix, mail: EnvelopeSimple, clock: Clock, mic: Microphone, music: MusicNotes,
   star: Star, eye: Eye, eyeOff: EyeSlash, logout: SignOut, play: Play, pause: Pause, sparkle: Sparkle, pkg: Package,
 } satisfies Record<string, PhosphorIcon>;
 

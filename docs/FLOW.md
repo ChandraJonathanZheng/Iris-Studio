@@ -61,9 +61,14 @@ flowchart TD
   T --> TC["/teacher/calendar → lessons/:id/cancel (sheet)"]
   T --> TS["/teacher/students → :id"]
   TS --> TSS["remind · adjust · edit · payments · book · propose/:lessonId (sheets)"]
-  T --> TR["/teacher/requests → :id/decline"]
-  T --> TP["/teacher/payments → receipt modal · :id/reject"]
-  T --> TCo["/teacher/consults"]
+  T --> TI["/teacher/inbox 收件匣 → first tab with work"]
+  TI --> TR["/teacher/requests ?tab=apps|waiting → :id/decline"]
+  TI --> TP["/teacher/payments → receipt modal (check box) · :id/reject"]
+  TI --> TCo["/teacher/consults"]
+  T --> TM["/teacher/more 更多 → packages (sheet)"]
+  TM --> TPr["/teacher/profile 教師個人資料"]
+  TM --> TPv["/teacher/privacy-requests 個資權利申請"]
+  L --> LG2["/legal/:slug terms · privacy · cookies · media · booking · payment · privacy-request"]
   TC --> TAv["/teacher/availability → range/:weekday/:idx · date/:date"]
 ```
 
@@ -221,6 +226,15 @@ When a booking (by the student or by Iris) leaves the student with **0 credits**
 ### 4.10 Free consult
 `POST /api/public/consults` {name, contactType line|email, contact, preferredTime, topic} — rate-limited 5 / min / IP → appears in 諮詢 + counter on Iris's home → `POST /consults/{id}/contacted`.
 
+### 4.11 Consents and privacy requests
+1. Sign-up (email): `POST /api/auth/register` carries `consents`; user + consent rows are saved in one transaction.
+2. Sign-up (LINE): choices wait in sessionStorage during the LINE redirect; `/pending` sends `POST /api/me/consents`.
+3. 我的 → 同意設定: switching media / marketing writes a NEW row (version, time, scope, source). Withdrawing is always allowed; a minor turning one ON needs the guardian's tick.
+4. Iris sees the latest media state on 學生詳細 before posting photos.
+5. 個人資料權利申請 (`/legal/privacy-request`, no account needed) → `PrivacyRequests` → 更多 → 個資權利申請 with due date (15 d access/copy, 30 d others; 個資法 §13). Handling note required.
+Cookie settings live in localStorage (`iris-cookie-prefs`); nothing optional runs today, `allowsAnalytics()` gates anything added later.
+
+
 ---
 
 ## 5. API reference
@@ -229,10 +243,10 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 
 | Method | Path | Who | Purpose |
 |---|---|---|---|
-| GET | `/api/public/studio` | anyone | lessonMinutes, cancelHours, moveHours, packages (trial flag), bank |
+| GET | `/api/public/studio` | anyone | lessonMinutes, cancelHours, moveHours, packages (trial flag), bank, teacher (name, avatar, status, message, LINE ID if public) |
 | POST | `/api/public/consults` | anyone (rate-limited) | free-consult request |
 | GET | `/api/me` | anyone | current user (+ classType, trialAvailable) or 401 |
-| POST | `/api/auth/register` · `/login` · `/logout` | anyone | email accounts (login rate-limited) |
+| POST | `/api/auth/register` · `/login` · `/logout` | anyone | email accounts (login rate-limited); register requires `consents` (terms; guardian for minors) |
 | GET | `/api/auth/line` | anyone | start LINE Login |
 | GET | `/api/slots/days?from&count` | signed in | day states (open/closed/full/past/later) |
 | GET | `/api/slots?date` | signed in | slot states for one date |
@@ -262,6 +276,13 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 | PUT | `/api/teacher/availability/settings` · `/weekly` · `/overrides/{date}` | teacher | edit |
 | DELETE | `/api/teacher/availability/overrides/{date}` | teacher | remove special date |
 | GET | `/api/teacher/consults` · POST `/consults/{id}/contacted` | teacher | 諮詢 |
+| GET/PUT | `/api/teacher/profile` | teacher | 教師個人資料 (name, LINE ID + public flag, status, message) |
+| POST/DELETE | `/api/teacher/profile/avatar` | teacher | avatar (JPG/PNG/WEBP by content, ≤ 2 MB) → `/api/public/avatars/{file}` |
+| PUT | `/api/teacher/account/email` | teacher | change login email (current password required, EmailVerified → false) |
+| DELETE | `/api/teacher/account/line` | teacher | unlink LINE Login (only if email + password exist) |
+| GET/POST | `/api/me/consents` | signed in | own consent log / record a change (append-only) |
+| POST | `/api/public/privacy-requests` | anyone (rate-limited) | 個人資料權利申請 |
+| GET · POST | `/api/teacher/privacy-requests` · `/{id}/done` | teacher | list with due dates / mark handled (note required) |
 
 ---
 
@@ -269,8 +290,8 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 | Job | When | Does |
 |---|---|---|
 | `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (in-app only today; LINE / email adapters plug in) → sets `DeliveredAtUtc` |
+| `RetentionService` | every 6 h | deletes expired data: idempotency 24 h, consults 12 mo, read alerts 12 mo, handled privacy requests 3 y (`Studio:Retention`, proposed values) |
 | `AttendanceSettler` | every minute (inside `AlertDispatcher`) | Booked lessons whose end time has passed → **Attended**; open change requests on them → Declined |
-| Idempotency cleanup | (to add) daily | delete `IdempotencyRecords` older than 24 h |
 
 ---
 

@@ -20,6 +20,9 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<StudioClock>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<AvailabilityService>();
+builder.Services.AddScoped<ConsentService>();
+builder.Services.Configure<RetentionOptions>(cfg.GetSection("Studio:Retention"));
+builder.Services.AddHostedService<RetentionService>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddSingleton<PasswordHasher<User>>();
 builder.Services.AddSingleton<IAlertChannel, InAppOnlyChannel>(); // swap for a LINE push channel later
@@ -111,6 +114,8 @@ app.UseRateLimiter();
 app.MapPublicAndAuth();
 app.MapSlotsAndStudent();
 app.MapTeacher();
+app.MapTeacherProfile();
+app.MapPrivacy();
 
 // Unknown /api paths are real 404s; everything else is a React route.
 app.MapFallback("/api/{**rest}", () => Problems.Of(404, "not_found", "找不到這個 API。"));

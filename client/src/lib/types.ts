@@ -120,6 +120,8 @@ export interface StudentDetail extends StudentSummary {
   /** where 通知學生繳學費 goes: LINE if the student signed in with LINE, else email; null = no way to reach them */
   remindChannel: 'line' | 'email' | null;
   lastRemindedAt: string | null;
+  /** what Iris may do with this student's photos / videos / voice, and marketing — latest consent record */
+  consent: StudentConsentSummary;
 }
 
 export interface ChangeRequest {
@@ -175,6 +177,18 @@ export interface StudioInfo {
   /** trial = the 1-lesson 體驗課, only offered while me.trialAvailable */
   packages: { size: number; price: number; trial?: boolean }[];
   bank: { name: string; account: string; holder: string };
+  /** what students may see about Iris (lineId only when she made it public) */
+  teacher: TeacherPublic;
+}
+
+/** 正常上課 / 放假中 / 暫停接新學生 / 自訂 */
+export type TeacherStatus = 'normal' | 'vacation' | 'noNewStudents' | 'custom';
+export interface TeacherPublic { name: string; avatarUrl: string | null; status: TeacherStatus; statusLabel: string | null; statusMessage: string | null; lineId: string | null }
+/** 教師個人資料. Public profile (name, avatar, contact LINE ID, status) is separate from the sign-in bindings (email, LINE Login). */
+export interface TeacherProfile {
+  name: string; email: string | null; emailVerified: boolean; lineLinked: boolean; hasPassword: boolean;
+  lineId: string | null; lineIdPublic: boolean; avatarUrl: string | null;
+  status: TeacherStatus; statusLabel: string | null; statusMessage: string | null;
 }
 
 export interface BookResult { lesson: Lesson; creditsLeft: number }
@@ -187,3 +201,23 @@ export interface WeeklyDay { weekday: number; enabled: boolean; ranges: TimeRang
 export interface DateOverride { date: string; closed: boolean; ranges: TimeRange[]; note: string }
 export interface BookingSettings { lessonMinutes: number; gapMinutes: number; advanceDays: number }
 export interface Availability { settings: BookingSettings; weekly: WeeklyDay[]; overrides: DateOverride[] }
+
+/* ---------- consent records & privacy requests ---------- */
+export type ConsentKind = 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian';
+export interface GuardianInput { name: string; relation: string; contact: string; agreed: boolean }
+/** what the sign-up form / 同意設定 sends. Append-only on the server: every change is a new record. */
+export interface ConsentInput { version: string; terms: boolean; media: boolean; marketing: boolean; minor: boolean; guardian: GuardianInput | null }
+export interface ConsentRecord { kind: ConsentKind; granted: boolean; version: string; at: string; source: 'register' | 'profile' | 'request' }
+export interface MyConsents {
+  media: { granted: boolean; at: string | null };
+  marketing: { granted: boolean; at: string | null };
+  minor: boolean; guardianName: string | null;
+  history: ConsentRecord[];
+}
+export interface StudentConsentSummary { media: boolean; mediaAt: string | null; mediaWithdrawn: boolean; marketing: boolean; minor: boolean }
+/** 個資法 §3 rights + withdrawing an optional consent */
+export type PrivacyRequestType = 'access' | 'copy' | 'correct' | 'stop' | 'delete' | 'withdraw';
+export interface PrivacyRequest {
+  id: string; name: string; contact: string; type: PrivacyRequestType; detail: string;
+  status: 'open' | 'done'; createdAt: string; dueAt: string; handledAt: string | null; note: string | null;
+}
