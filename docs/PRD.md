@@ -1,0 +1,195 @@
+# Iris Studio — Product Requirements Document (PRD)
+
+| | |
+|---|---|
+| Product | Iris Studio — public website + booking & admin app for Iris's singing studio |
+| Owner | Chandra (developer) · Iris (studio owner, primary user) |
+| Status | Clickable prototype done (React + mock API); .NET 10 server written, not yet compiled |
+| Version | v2.1 — 8 Nov 2026: Iris's 13 answers built in (see §10). Sprint 1 scope locked. |
+| Related docs | `FEATURES.md` · `DESIGN-SYSTEM.md` · `SCHEMA.md` · `FLOW.md` |
+
+---
+
+## 1. Problem
+
+Iris runs a one-teacher singing studio. Her daily admin is manual and repetitive:
+
+- Students ask in LINE chats to book or move lessons; Iris checks her calendar by hand.
+- She has to remember who has paid and how many lessons each student has left.
+- Payment is bank transfer; receipts arrive as screenshots in chats and get lost.
+- New people ask for a trial or consultation through many channels.
+- When a student runs out of lessons, Iris has to chase them for the next payment herself.
+
+**Goal:** make these repeated tasks a system, so Iris spends her time teaching instead of on admin.
+
+## 2. Goals and non-goals
+
+### Goals (launch)
+1. A public website that introduces Iris and turns visitors into **free consultations**.
+2. Students **book, move and cancel** lessons themselves, inside the hours Iris has opened.
+3. **Lesson credits (堂數) are tracked automatically.** Students buy a package any time by uploading a transfer receipt; credits never expire. Lessons that have ended become 已上課 by themselves.
+4. Iris sees **every student, lesson (past / today / future) and payment** in one place and decides requests in a tap, with **undo**.
+5. Iris controls **when students can book** (weekly hours, special dates, lesson length, break, how far ahead).
+6. Iris can **remind a student to pay** with one button, and the system reminds automatically when the last credit is booked.
+7. Sign-in with **LINE** (main) or email; new accounts need Iris's approval.
+8. Iris can **book for a student** and **propose a new time** — but a lesson only moves with the student's consent.
+
+### Non-goals (launch)
+- Online payment gateway (payment = bank transfer + receipt image).
+- Several teachers or studios.
+- Group lessons with several students in one slot (the `group` lesson type is a label only; one booking per slot). **Pending** — decide later.
+- Re-applying after Iris declines an account. **Pending** — decide later.
+- Homework, recordings, events RSVP (phase 2).
+- Native mobile apps (the web app is mobile-first and installable later as a PWA).
+
+## 3. Users
+
+| User | Who | Main jobs |
+|---|---|---|
+| **Visitor** | Someone curious about lessons | Understand who Iris is, read student stories, ask for a free 15-min chat |
+| **Applicant** | Signed up, not approved yet | Wait for Iris, see what happens next |
+| **Student** | Approved learner, any age | See next lesson, book / move / cancel, check 堂數, upload receipts, read alerts |
+| **Teacher (Iris)** | Studio owner, one account, mostly on her phone | Today's schedule, decide requests, confirm payments, manage students, set availability, remind to pay |
+
+## 4. Requirements
+
+Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature list with acceptance criteria: `FEATURES.md`.
+
+### 4.1 Public website (P0)
+| ID | Requirement |
+|---|---|
+| WEB-1 | Page order: Navbar → Hero → Trust strip → About Iris → Benefits → Student stories → Studio events → Final CTA → Footer. |
+| WEB-2 | Navbar 56 px, frosted. **免費諮詢** is the primary button, **登入** a text link. |
+| WEB-3 | Hero: 找到屬於你的聲音 / 不是唱得更像別人，而是更自在地唱成自己。 CTAs: 免費諮詢 + 看看怎麼上課 ↓. |
+| WEB-4 | Benefits: 3 cards. On phones a swipe row (snap, next card peeks, page dots); on desktop 3 columns. No autoplay. |
+| WEB-5 | Student stories: one story at a time with a lyric-style text reveal, 7 s autoplay with a progress line, pause button, swipe / arrow keys. Reduced motion: no autoplay, no animation. |
+| WEB-6 | Events: 1 featured photo + 2 thumbnails per event, 查看更多照片 opens the rest. |
+| WEB-7 | `/consult`: name, contact (LINE / Email switch), preferred time (平日白天 · 平日晚上 · 週末 · 都可以), topic (optional). CTA 和 Iris 聊聊. Rate-limited 5 / min / IP. |
+| WEB-8 | All photos, bio and testimonials are placeholders until Iris provides real, consented content. |
+
+### 4.2 Accounts (P0)
+| ID | Requirement |
+|---|---|
+| AUTH-1 | Login screen: 使用 LINE 登入 (primary), 使用 Email 登入, 老師登入 →, 建立帳號 →. Demo accounts only in demo builds. |
+| AUTH-2 | Register: 3-step indicator 建立帳號 → Iris 確認 → 開始預約. LINE register, or name + email + password (≥ 8, show/hide). |
+| AUTH-3 | New accounts are **Pending** and see only the 等待 Iris 確認 screen (polls every 10 s, enters the app automatically once approved). |
+| AUTH-4 | Session = HttpOnly, SameSite cookie, 30 days sliding. Wrong email or password give the same message. Login rate-limited 10 / min / IP. |
+| AUTH-5 | LINE Login (OIDC) issues the same cookie; the LINE `sub` is stored as `LineUserId` (also used for LINE push). |
+
+### 4.3 Student app (P0)
+| ID | Requirement |
+|---|---|
+| ST-1 | **首頁**: 老師想調整上課時間 card on top when Iris proposed a time (可以 / 不方便), 下一堂課 hero (2 天後上課, date, duration · type, room, status, 改時間, small 取消預約), 我的堂數 card, 其他預約 (excludes the next class, ••• menu). |
+| ST-2 | **預約**: date strip + time chips generated from Iris's availability; 只顯示空的時段 toggle; compact summary; CTA 請選擇時段 → 確認預約. |
+| ST-3 | **改時間**: only **≥ 12 h before** the lesson (later: the option is greyed with the reason, cancel instead). Pick a new slot + reason. The old slot stays booked until Iris approves. One open request per lesson; can be withdrawn. |
+| ST-3b | **Iris's proposal**: 可以 moves the lesson (if the slot is still free), 不方便 keeps it. Nothing moves without the student's answer. |
+| ST-4 | **取消**: refund the credit if ≥ 24 h before the lesson; the sheet says which case applies before confirming; 30 s undo. |
+| ST-5 | **行事曆**: month view with shaped marks (● upcoming ○ done ◆ changing) + list view with filters. |
+| ST-6 | **堂數與付款**: credit boxes, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. A 體驗 student who hasn't tried yet sees only the 體驗課 package. |
+| ST-7 | **通知**: alerts list, unread dot (not a number). |
+| ST-8 | **我的**: profile (name, email, phone, LINE ID, voice type, goal), logout. |
+
+### 4.4 Teacher app (P0)
+| ID | Requirement |
+|---|---|
+| T-1 | **首頁**: 今天的課 (下一堂 highlighted, finished lessons grouped and muted), 4 action counters, 堂數用完 list with 收據待確認 chip. |
+| T-2 | **行事曆**: compact month grid + day list (改時間 → propose, 取消 opens a sheet that states the refund + notification policy). Link to 可預約時段. |
+| T-3 | **學生**: search, filter chips, compact rows; only exceptions show a status (快用完 / 用完 / 確認中). |
+| T-4 | **學生詳細**: profile + quick actions (LINE 聯絡 · 調整堂數 · 編輯), 課程狀態, **通知學生繳學費**, upcoming lessons with **＋ 預約課程** (book for the student, −1 堂) and **提議改時間** per lesson, latest payment, history. |
+| T-5 | **申請**: 改時間 (old → new time, reason, availability; 同意 disabled on conflict; 婉拒 or **婉拒並提議其他時間**), 你的提議 (等待學生回覆 + 收回 / answered in the last 7 days), and 新學生 (確認 / 婉拒). |
+| T-6 | **付款**: receipt opens in a modal over a dimmed page; 確認，加 N 堂 / 退回 (reason required). |
+| T-7 | **諮詢**: website requests with contact type + preferred time; mark as contacted. |
+| T-8 | **可預約時段**: tabs 每週時段 / 特殊日期 / 預約設定 (see §5). |
+| T-9 | **通知學生繳學費**: editable message, channel shown (LINE or Email), 24 h repeat warning, sent after 10 s with 復原. |
+| T-10 | Every decision (approve, decline, confirm, cancel, adjust, remind) has **undo**; the student's alert is held back 10 s so a reversed decision is never seen. |
+
+## 5. Business rules
+
+| Rule | Value | Where it lives |
+|---|---|---|
+| Lesson length | 60 min (30 / 45 / 60 / 90 / 120) | `BookingSettings.LessonMinutes` (Iris edits) |
+| Break between lessons | 30 min (0 / 10 / 15 / 30 / 60) | `BookingSettings.GapMinutes` |
+| Book ahead | 30 days (7 / 14 / 30 / 60 / 90) | `BookingSettings.AdvanceDays` |
+| Default weekly hours | Mon–Sat 09:30–12:30 + 14:00–20:30, Sunday off | `WeeklyAvailability` (seeded) |
+| Slot generation | Lesson must **fit** in a range; next start = start + length + break | `AvailabilityService` / `lib/availability.ts` |
+| Special date | Replaces the weekly hours for that day (closed or own ranges) | `DateOverride` |
+| Slot taken | Any booked lesson that overlaps, break included | `IsTakenAsync` + per-date advisory lock |
+| Free cancellation | ≥ 24 h before; Iris's cancellations always refund | `Studio:CancelHours` |
+| 改時間 (student) | Only ≥ 12 h before the lesson | `Studio:MoveHours` |
+| Iris moves a lesson | Never directly — she proposes, the student accepts | `ChangeRequest.ProposedBy = Teacher` |
+| Attendance | A Booked lesson becomes **Attended** when its end time has passed (no check-in); open change requests on it are closed | `AttendanceSettler` (runs every minute) |
+| Undo window | 30 s | `Studio:UndoSeconds` |
+| Alert delay | 10 s (so undo can pull it back) | `Studio:AlertDelaySeconds` |
+| Packages | 體驗課 1 堂 NT$ 800 (placeholder price) · 4 堂 NT$ 3,200 · 8 堂 NT$ 6,200 | `Studio:Packages` (`Trial: true`) |
+| Buy a package | Any time; only one receipt pending at a time; credits are added on top | server rule |
+| 體驗課 | Only for students whose class type is 體驗, once (a rejected receipt doesn't count) | `Payment.IsTrial` |
+| Credit expiry | None | — |
+| Lesson type | Copied from the student's class type when booked | `BookAsync` |
+| Automatic 繳費提醒 | When a booking uses the last credit; skipped if a receipt is pending or a reminder went out in the last 24 h; dropped if that lesson is cancelled with refund | `AutoRemindAsync` |
+| Credits | Book −1 · cancel in time +1 · confirmed receipt +package · manual ± with reason. Never < 0 (DB check). | `CreditLog` audit |
+| Receipts | Image only (checked by content), ≤ 5 MB, private to that student + Iris | `/api/receipts/{id}` |
+| Time zone | All lesson times are studio time (Asia/Taipei) | `StudioClock` |
+| Date format | `MM-DD(週)` e.g. `11-05(四) 16:30`; landing events `YYYY/MM/DD（週）` | `lib/date.ts` |
+
+## 6. Notifications
+
+| Channel | Use | Cost (checked Nov 2026) |
+|---|---|---|
+| In-app 通知 | Every alert | free |
+| LINE Messaging API (push) | Students who signed in with LINE and added the OA as a friend | 輕用量 plan: free, 200 push messages / month |
+| Email (Resend) | Students without LINE | Free plan: 3,000 / month, 100 / day |
+
+All alerts go through one outbox (`Alert.SendAfterUtc`) and one `IAlertChannel`. Real LINE / email delivery is plugged in once Iris's LINE OA and Resend account exist.
+
+## 7. Success metrics (2 months after launch)
+
+| Metric | Target |
+|---|---|
+| Bookings made by students themselves | ≥ 80 % |
+| Receipt upload → confirmation | median < 24 h |
+| Double bookings or credit mistakes | 0 |
+| Iris's weekly admin time (self-reported) | halved |
+| Consult form → first lesson | tracked from launch |
+
+## 8. Non-functional requirements
+
+- **Mobile-first**: phone bottom bar ↔ desktop sidebar at 900 px; every tap target ≥ 44 px; safe areas respected; content never hidden behind the bottom bar.
+- **Accessibility**: WCAG 2.2 AA contrast (checked with axe), visible focus, labels on every control, colour never the only signal (shapes ● ○ ◆ ✕), reduced motion honoured, moving content can be paused.
+- **Reliability**: idempotency keys on money/credit actions; transactions for book + credit and confirm + credit; DB unique / check constraints; optimistic UI with rollback.
+- **Security**: role checks on every route; students only see their own data; receipts private; rate limits; no stack traces to users; bank details from config / env, never in the repo.
+- **Performance**: pages interactive < 1 s on 4G for this data size; slots fetched fresh (staleTime 0), other data cached 30 s.
+- **Deploy**: one .NET app serves the React build + API on one domain (no CORS).
+
+## 9. Tech stack
+
+React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sheets) · cmdk (⌘K) · Phosphor icons · MSW (mock API) — .NET 10 Minimal API · EF Core 10 + Npgsql · PostgreSQL · cookie auth + LINE OIDC · ImageSharp (receipt previews).
+
+## 10. Decisions (8 Nov 2026) and what is still open
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | When does a lesson count as attended? | Automatically when its time has passed and it wasn't cancelled |
+| 2 | When may a student buy a package? | Any time; credits are added to what's left |
+| 3 | Slot rule: end inside the range, or only start inside? | The whole lesson must fit inside the range |
+| 4 | Trial flow? | 15-min chat → student registers → Iris approves → student buys 體驗課 (1 lesson, NT$ price) → books. Done. |
+| 5 | Can Iris move a lesson herself? | No. She proposes (or declines and proposes another time); the student confirms. Same the other way. |
+| 6 | Latest time for 改時間? | 12 h before the lesson |
+| 7 | LINE add-friend prompt at login? | Yes (`bot_prompt=aggressive`) |
+| 8 | Do credits expire? | No |
+| 9 | 團體課 with several students per slot? | **Pending** |
+| 10 | Re-apply after being declined? | **Pending** |
+| 11 | Unify labels? | Yes: 一對一 / 團體課 / 體驗課 everywhere |
+| 12 | Automatic payment reminder? | Yes, when the last credit is booked |
+| 13 | Teacher books for a student? | Yes, screen built (學生詳細 → 預約課程) |
+
+Still open: real content (photos, bio, testimonials with consent), the real 體驗課 price, bank account, decisions 9 and 10.
+
+## 11. Release checklist
+
+- [ ] `dotnet build`, then `dotnet ef migrations add Initial` + `database update`
+- [ ] Real content, prices and bank details (env / user-secrets)
+- [ ] Strong teacher password; HTTPS; `Cookie.SecurePolicy = Always`
+- [ ] LINE Login + Messaging channels under the same provider, and the Official Account **linked to the LOGIN channel** (needed for the add-friend prompt); Resend domain verified
+- [ ] Confirm the 體驗課 price with Iris (`Studio:Packages`)
+- [ ] Backups for PostgreSQL and the receipts folder
+- [ ] Remove demo accounts (mock build only)
