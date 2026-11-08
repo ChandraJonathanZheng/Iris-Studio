@@ -43,6 +43,7 @@ export const api = {
   post: <T>(url: string, body?: unknown, opts?: Options) => request<T>('POST', url, body, opts),
   put: <T>(url: string, body?: unknown) => request<T>('PUT', url, body),
   patch: <T>(url: string, body?: unknown) => request<T>('PATCH', url, body),
+  del: <T>(url: string) => request<T>('DELETE', url),
 };
 
 export function newIdempotencyKey(): string {

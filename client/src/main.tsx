@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router';
+import { createBrowserRouter, createMemoryRouter, RouterProvider } from 'react-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { routes } from './App';
 import { ToastProvider } from './components/Toast';
@@ -8,12 +8,17 @@ import { makeQueryClient } from './lib/queries';
 import './styles.css';
 
 async function start() {
+  const proto = import.meta.env.MODE === 'proto';
   if (import.meta.env.MODE === 'mock') {
     const { worker } = await import('./mocks/browser');
     await worker.start({ onUnhandledRequest: 'bypass', quiet: true });
+  } else if (proto) {
+    // single-file prototype: mock API inside the page, in-memory routes (the host page owns the URL)
+    const { installInlineMock } = await import('./mocks/inline');
+    installInlineMock();
   }
   const qc = makeQueryClient();
-  const router = createBrowserRouter(routes);
+  const router = proto ? createMemoryRouter(routes, { initialEntries: ['/'] }) : createBrowserRouter(routes);
   const root = document.getElementById('root')!;
   // The landing page HTML was pre-rendered at build time (#7). We render fresh on top of it rather than hydrate,
   // because the server snapshot has no router/query state; the visitor already saw the content instantly.

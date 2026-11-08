@@ -17,7 +17,7 @@ export function PageSkeleton({ blocks = [140, 200] }: { blocks?: number[] }) {
 }
 export function ListSkeleton({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="card tight" aria-busy="true" aria-label="載入中">
+    <div className="card tight" role="status" aria-busy="true" aria-label="載入中">
       {Array.from({ length: rows }, (_, i) => (
         <div className="li" key={i}><Sk w={44} h={44} /><div className="grow stack g1"><Sk w="50%" h={16} /><Sk w="70%" h={12} /></div></div>
       ))}
@@ -34,7 +34,7 @@ export function DateBox({ date }: { date: string }) {
   const t = studioToday();
   return (
     <div className={`dbox${date === t ? ' today' : date < t ? ' past' : ''}`} aria-hidden="true">
-      <b>{dayNum(date)}</b><span>{monthNum(date)}月</span>
+      <span>{monthNum(date)}月</span><b>{dayNum(date)}</b>
     </div>
   );
 }
@@ -42,7 +42,7 @@ export function DateBox({ date }: { date: string }) {
 export function Quota({ attended, booked, free }: { attended: number; booked: number; free: number }) {
   return (
     <div className="quota" role="img" aria-label={`已上 ${attended} 堂、已預約 ${booked} 堂、可預約 ${free} 堂`}>
-      {Array.from({ length: attended }, (_, i) => <span key={`a${i}`} className="q a"><Icon name="check" size={18} /></span>)}
+      {Array.from({ length: attended }, (_, i) => <span key={`a${i}`} className="q a"><Icon name="check" size={18} weight="bold" /></span>)}
       {Array.from({ length: booked }, (_, i) => <span key={`b${i}`} className="q b" aria-hidden="true">●</span>)}
       {Array.from({ length: free }, (_, i) => <span key={`f${i}`} className="q f" aria-hidden="true">○</span>)}
     </div>

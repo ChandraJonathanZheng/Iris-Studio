@@ -8,3 +8,5 @@ server/IrisStudio.Api/App_Data/
 *.user
 .env
 .DS_Store
+client/dist-proto/
+*.local

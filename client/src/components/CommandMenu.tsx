@@ -20,6 +20,7 @@ const PAGES: Record<Role, { to: string; label: string; keywords?: string[] }[]> 
   Teacher: [
     { to: '/teacher', label: '首頁', keywords: ['home'] },
     { to: '/teacher/calendar', label: '行事曆', keywords: ['calendar'] },
+    { to: '/teacher/availability', label: '可預約時段（每週時段、特殊日期）', keywords: ['availability', 'hours', 'schedule', '休息'] },
     { to: '/teacher/students', label: '學生', keywords: ['students'] },
     { to: '/teacher/requests', label: '申請（改時間、新學生）', keywords: ['requests'] },
     { to: '/teacher/payments', label: '付款（收據確認）', keywords: ['payments', 'receipts'] },

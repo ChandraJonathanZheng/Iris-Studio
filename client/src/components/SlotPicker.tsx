@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { addDays, dayNum, studioToday, wd } from '../lib/date';
+import { addDays, dayNum, monthNum, studioToday, wd } from '../lib/date';
 import { useDays, useSlots } from '../lib/queries';
 import { Sk } from './ui';
 
-const DAY_LABEL: Record<string, string> = { past: '已過', closed: '休息', full: '額滿' };
+const DAY_LABEL: Record<string, string> = { past: '已過', closed: '休息', full: '額滿', later: '未開放' };
 
 /**
  * Date strip + time chips (from the booking review):
@@ -47,10 +47,11 @@ export function SlotPicker({ date, time, onDate, onTime, onlyFree, setOnlyFree, 
               return (
                 <button
                   key={d.date} className={`day${d.state === 'past' ? ' past' : ''}`} disabled={disabled}
-                  aria-pressed={date === d.date} aria-label={`${Number(d.date.slice(5, 7))}/${dayNum(d.date)}（${wd(d.date)}）${label || '可預約'}`}
+                  aria-pressed={date === d.date}
                   onClick={() => onDate(d.date)}
                 >
-                  <span>{wd(d.date)}</span><b>{dayNum(d.date)}</b><small>{label}</small>
+                  {/* the visible text IS the accessible name; sr-only bits add month + state for screen readers */}
+                  <span className="sr-only">{monthNum(d.date)}月</span><span>{wd(d.date)}</span><b>{dayNum(d.date)}<span className="sr-only">日</span></b><small>{label}{!label && <span className="sr-only">可預約</span>}</small>
                 </button>
               );
             })}

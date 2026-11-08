@@ -1,7 +1,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type {
-  AlertItem, BookResult, CancelResult, Consult, Day, Lesson, Me, Overview, Payment, PaymentStatus,
+  AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, Overview, Payment, PaymentStatus,
   Requests, Slot, StudentDetail, StudentSummary, StudioInfo,
 } from './types';
 
@@ -32,6 +32,7 @@ export const qk = {
   requests: ['requests'] as const,
   payments: (status: PaymentStatus | 'All') => ['payments', status] as const,
   consults: ['consults'] as const,
+  availability: ['availability'] as const,
 };
 
 // ---------- queries ----------
@@ -160,7 +161,7 @@ export function useUploadReceipt() {
 
 export function useSendConsult() {
   return useMutation({
-    mutationFn: (v: { name: string; contact: string; preferredDate: string; topic: string }) => api.post('/api/public/consults', v),
+    mutationFn: (v: { name: string; contactType: ConsultContactType; contact: string; preferredTime: ConsultTime; topic: string }) => api.post('/api/public/consults', v),
   });
 }
 
@@ -231,10 +232,25 @@ export function useDecidePayment() {
 export function useAdjustCredits(studentId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (delta: number) => api.post<{ credits: number }>(`/api/teacher/students/${studentId}/credits`, { delta }),
-    onMutate: async (delta) => {
+    mutationFn: (v: { delta: number; reason: string }) => api.post<{ credits: number }>(`/api/teacher/students/${studentId}/credits`, v),
+    onMutate: async ({ delta }) => {
       const snap = await snapshot(qc, qk.student(studentId));
       qc.setQueryData<StudentDetail>(qk.student(studentId), (s) => (s ? { ...s, credits: Math.max(0, s.credits + delta) } : s));
+      return { snap };
+    },
+    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSettled: () => { qc.invalidateQueries({ queryKey: qk.student(studentId) }); qc.invalidateQueries({ queryKey: qk.students }); },
+  });
+}
+
+export function useSetClassType(studentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (classType: ClassType) => api.patch(`/api/teacher/students/${studentId}/class-type`, { classType }),
+    onMutate: async (classType) => {
+      const snap = await snapshot(qc, qk.student(studentId), qk.students);
+      qc.setQueryData<StudentDetail>(qk.student(studentId), (s) => (s ? { ...s, classType } : s));
+      qc.setQueryData<StudentSummary[]>(qk.students, (l) => l?.map((s) => (s.id === studentId ? { ...s, classType } : s)));
       return { snap };
     },
     onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
@@ -265,7 +281,103 @@ export function useMarkContacted() {
   });
 }
 
+/** Set while a deliberate logout is happening, so Shell sends the user home instead of to /login. */
+export const session = { loggingOut: false };
+
 export function useLogout() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: () => api.post('/api/auth/logout'), onSuccess: () => { qc.clear(); } });
+  // Callers navigate away FIRST, then call this: clearing the cache while a signed-in page is still mounted
+  // would make that page read a user that no longer exists.
+  return useMutation({ mutationFn: () => api.post('/api/auth/logout'), onMutate: () => { session.loggingOut = true; }, onSettled: () => { window.setTimeout(() => { session.loggingOut = false; }, 1000); }, onSuccess: () => { qc.setQueryData(qk.me, null); qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' }); } });
+}
+
+/* ---------- 可預約時段 (Iris's availability) ---------- */
+export const useAvailability = () =>
+  useQuery({ queryKey: qk.availability, queryFn: ({ signal }) => api.get<Availability>('/api/teacher/availability', signal) });
+
+/**
+ * One mutation shape for every availability edit: show the change at once (optimistic), roll back on error,
+ * and afterwards refresh everything that is generated from it — students' days/slots and the lesson length.
+ */
+function useAvailabilityEdit<V>(send: (v: V) => Promise<Availability>, apply: (a: Availability, v: V) => Availability) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: send,
+    onMutate: async (v: V) => {
+      const snap = await snapshot(qc, qk.availability);
+      qc.setQueryData<Availability>(qk.availability, (a) => (a ? apply(a, v) : a));
+      return { snap };
+    },
+    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSuccess: (a) => qc.setQueryData(qk.availability, a),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['days'] });
+      qc.invalidateQueries({ queryKey: ['slots'] });
+      qc.invalidateQueries({ queryKey: qk.studio });
+    },
+  });
+}
+export const useSaveWeekly = () => useAvailabilityEdit<Availability['weekly']>(
+  (w) => api.put<Availability>('/api/teacher/availability/weekly', w), (a, w) => ({ ...a, weekly: w }));
+export const useSaveBookingSettings = () => useAvailabilityEdit<BookingSettings>(
+  (s) => api.put<Availability>('/api/teacher/availability/settings', s), (a, s) => ({ ...a, settings: s }));
+export const useSaveOverride = () => useAvailabilityEdit<DateOverride>(
+  (o) => api.put<Availability>(`/api/teacher/availability/overrides/${o.date}`, { closed: o.closed, ranges: o.ranges, note: o.note }),
+  (a, o) => ({ ...a, overrides: [...a.overrides.filter((x) => x.date !== o.date), o].sort((x, y) => x.date.localeCompare(y.date)) }));
+export const useDeleteOverride = () => useAvailabilityEdit<string>(
+  (date) => api.del<Availability>(`/api/teacher/availability/overrides/${date}`),
+  (a, date) => ({ ...a, overrides: a.overrides.filter((x) => x.date !== date) }));
+
+/* ---------- 通知學生繳學費 ---------- */
+export function useSendReminder(studentId: string) {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (message: string) => api.post<{ id: string; channel: 'line' | 'email' }>(`/api/teacher/students/${studentId}/remind`, { message }),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.student(studentId) }),
+  });
+  /** 復原 within the 10 s alert delay: the queued message is deleted before it is sent. */
+  const undo = async (reminderId: string) => {
+    await api.del(`/api/teacher/reminders/${reminderId}`);
+    qc.invalidateQueries({ queryKey: qk.student(studentId) });
+  };
+  return { mutation, undo };
+}
+
+/** Iris books a lesson for a student. Idempotent (double tap = one lesson), uses one of the student's 堂數. */
+export function useTeacherBook(studentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { date: string; time: string; key: string }) =>
+      api.post<{ id: string }>(`/api/teacher/lessons?studentId=${encodeURIComponent(studentId)}`, { date: v.date, time: v.time }, { idempotencyKey: v.key }),
+    onSettled: (_d, _e, v) => {
+      qc.invalidateQueries({ queryKey: qk.student(studentId) });
+      qc.invalidateQueries({ queryKey: qk.students });
+      qc.invalidateQueries({ queryKey: qk.overview });
+      qc.invalidateQueries({ queryKey: ['lessons'] });
+      qc.invalidateQueries({ queryKey: qk.slots(v.date) });
+      qc.invalidateQueries({ queryKey: ['days'] });
+    },
+  });
+}
+
+/** 老師提議改時間 + 收回. Nothing moves until the student accepts, so no optimistic update is needed. */
+export function useProposals() {
+  const qc = useQueryClient();
+  const inv = () => { qc.invalidateQueries({ queryKey: qk.requests }); qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: ['students'] }); qc.invalidateQueries({ queryKey: qk.overview }); };
+  const propose = useMutation({
+    mutationFn: (v: { lessonId: string; date: string; time: string; message: string }) =>
+      api.post<{ id: string }>(`/api/teacher/lessons/${v.lessonId}/proposals`, { date: v.date, time: v.time, message: v.message }),
+    onSettled: inv,
+  });
+  const withdraw = useMutation({ mutationFn: (id: string) => api.post(`/api/teacher/proposals/${id}/withdraw`), onSettled: inv });
+  return { propose, withdraw };
+}
+
+/** The student answers Iris's proposal: accept moves the lesson, decline keeps it where it is. */
+export function useAnswerProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; accept: boolean }) => api.post(`/api/student/change-requests/${v.id}/${v.accept ? 'accept' : 'decline'}`),
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: ['days'] }); },
+  });
 }

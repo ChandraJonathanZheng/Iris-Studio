@@ -32,16 +32,16 @@ const axe = async (p, label) => {
 // 1. pre-render
 await check('#7 landing HTML is pre-rendered (text in the raw HTML)', async () => {
   const html = await (await fetch(BASE + '/')).text();
-  assert(html.includes('找到你最自在的聲音') && html.includes('免費諮詢'), 'headline missing from raw HTML');
+  assert(html.includes('找到屬於你的聲音') && html.includes('免費諮詢'), 'headline missing from raw HTML');
 });
 
 const s = await newPage();
 await s.goto(BASE + '/');
 await check('landing: no serious axe violations (phone)', () => axe(s, 'landing'));
 await check('login button top-right → login page', async () => {
-  await s.click('.topbar >> text=學生登入'); await s.waitForURL('**/login');
+  await s.click('.topbar >> text=登入'); await s.waitForURL('**/login');
 });
-await s.click('text=使用 LINE 登入（學生 王小明）');
+await s.click('.au-demo >> text=學生 王小明');
 await s.waitForURL('**/app');
 await check('#1 skeleton shows on first load, then content', async () => {
   // the home skeleton or the content: skeleton must have been rendered at some point
@@ -135,10 +135,45 @@ await check('#9 view transitions are wired (API available or graceful)', async (
   assert(has, 'browser lacks startViewTransition (Chromium should have it)');
 });
 
+// 4b. decisions of 8 Nov (student side)
+await check('8 Nov: Iris\'s proposal waits on home; 可以 moves the lesson', async () => {
+  await s.goto(BASE + '/app'); await s.waitForSelector('.sh-prop');
+  await s.click('.sh-prop .btn.primary');
+  await s.waitForSelector('.toast >> text=已改到');
+  const ls = await s.evaluate(() => fetch('/api/student/lessons?from=2000-01-01&to=2100-01-01').then((r) => r.json()));
+  const l10 = ls.find((l) => l.id === 'l10');
+  assert(l10 && !l10.change && l10.time === '14:00', 'lesson not moved: ' + JSON.stringify(l10));
+  assert(!(await s.isVisible('.sh-prop')), 'card still shown');
+});
+await check('8 Nov: buy any time (upload open with 堂數 left), no 體驗課 for a regular student', async () => {
+  await s.goto(BASE + '/app/quota'); await s.waitForSelector('#rc');
+  assert((await me(s)).credits > 0, 'test needs credits left');
+  assert(await s.isEnabled('#rc'), 'upload disabled although buying any time is allowed');
+  assert(!(await s.isVisible('text=體驗課 · ')), 'trial package offered to a regular student');
+});
+await check('8 Nov: booking the last 堂 queues an automatic 繳費提醒', async () => {
+  const r = await s.evaluate(async () => {
+    const book = async () => {
+      const days = await (await fetch('/api/slots/days?from=' + new Date().toISOString().slice(0, 10) + '&count=30')).json();
+      for (const d of days.filter((x) => x.state === 'open')) {
+        const free = (await (await fetch('/api/slots?date=' + d.date)).json()).find((x) => x.state === 'free');
+        if (free) return fetch('/api/student/lessons', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ date: d.date, time: free.time }) });
+      }
+    };
+    let me = await (await fetch('/api/me')).json();
+    while (me.credits > 0) { await book(); me = await (await fetch('/api/me')).json(); }
+    return me.credits;
+  });
+  assert(r === 0, 'credits left ' + r);
+  await s.waitForTimeout(10_500); // alerts are released after the 10 s undo delay
+  const alerts = await s.evaluate(() => fetch('/api/student/alerts').then((r) => r.json()));
+  assert(alerts.filter((a) => a.kind === 'reminder').length === 1, 'reminders: ' + alerts.filter((a) => a.kind === 'reminder').length);
+});
+
 // 5. teacher
 const t = await newPage({ width: 1280, height: 900 });
 await t.goto(BASE + '/login');
-await t.click('text=老師 Iris');
+await t.click('.au-demo >> text=老師 Iris');
 await t.waitForURL('**/teacher');
 await t.waitForSelector('.kpi');
 await check('teacher home: no serious axe violations (desktop)', () => axe(t, 'teacher home'));
@@ -152,32 +187,73 @@ await check('#3 #4 ⌘K opens the command menu and navigates; hint shown in side
 });
 await check('#5 approve change → undo within 5 s → request back, student got no alert', async () => {
   await t.goto(BASE + '/teacher/requests');
-  await t.waitForSelector('.li.col');
-  const n0 = await t.locator('.li.col').count();
-  await t.locator('.btn.primary.sm:not([disabled])', { hasText: '同意' }).first().click();
+  await t.waitForSelector('.rq');
+  const n0 = await t.locator('.rq').count();
+  await t.locator('.rq-approve:not([disabled])', { hasText: '同意' }).first().click();
   await t.waitForSelector('.toast .undo');
-  assert((await t.locator('.li.col').count()) === n0 - 1, 'not removed optimistically');
+  assert((await t.locator('.rq').count()) === n0 - 1, 'not removed optimistically');
   await t.click('.toast .undo');
   await t.waitForSelector('.toast >> text=已復原');
-  await t.waitForFunction((n) => document.querySelectorAll('.li.col').length === n, n0);
+  await t.waitForFunction((n) => document.querySelectorAll('.rq').length === n, n0);
 });
 await check('#2 server failure → optimistic change rolls back + error toast', async () => {
   await t.evaluate(() => sessionStorage.setItem('iris-mock-fail', '/change-requests/.+/approve$'));
-  const n0 = await t.locator('.li.col').count();
-  await t.locator('.btn.primary.sm:not([disabled])', { hasText: '同意' }).first().click();
+  const n0 = await t.locator('.rq').count();
+  await t.locator('.rq-approve:not([disabled])', { hasText: '同意' }).first().click();
   await t.waitForSelector('.toast.error');
-  await t.waitForFunction((n) => document.querySelectorAll('.li.col').length === n, n0);
+  await t.waitForFunction((n) => document.querySelectorAll('.rq').length === n, n0);
   await t.evaluate(() => sessionStorage.removeItem('iris-mock-fail'));
 });
 await check('#19 confirming the same receipt twice adds the package once', async () => {
   await t.goto(BASE + '/teacher/payments');
   await t.waitForSelector('text=確認，加');
   const before = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
-  const b = t.locator('.btn.primary.sm', { hasText: '確認，加' }).first();
+  const b = t.locator('.rq-approve', { hasText: '確認，加' }).first();
   await b.click(); await b.click({ force: true, timeout: 500 }).catch(() => {});
   await t.waitForTimeout(1200);
   const after = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
   assert(after - before === 8, `credits ${before} → ${after}`);
+});
+await check('可預約時段: turning Sunday on generates bookable slots from the range', async () => {
+  await t.goto(BASE + '/teacher/availability');
+  await t.waitForSelector('.av-days');
+  const sunday = await t.evaluate(() => { const d = new Date(Date.now() + 8 * 36e5); d.setUTCDate(d.getUTCDate() + ((7 - d.getUTCDay()) % 7 || 7)); return d.toISOString().slice(0, 10); });
+  const before = await t.evaluate((d) => fetch(`/api/slots?date=${d}`).then((r) => r.json()), sunday);
+  assert(before.length === 0, 'Sunday should start closed');
+  await t.click('[aria-labelledby="av-d-0"]');
+  await t.waitForSelector('.toast');
+  const after = await t.evaluate((d) => fetch(`/api/slots?date=${d}`).then((r) => r.json()), sunday);
+  // default range when switching on: 10:00–18:00, 60 min + 30 min break → 10:00, 11:30, 13:00, 14:30, 16:00
+  assert(after.map((x) => x.time).join() === '10:00,11:30,13:00,14:30,16:00', 'got ' + after.map((x) => x.time).join());
+  await t.click('.toast .undo'); await t.waitForSelector('.toast >> text=已復原');
+});
+await check('8 Nov: lessons that ended are marked 已上課 automatically', async () => {
+  const today = new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
+  const ls = await t.evaluate((d) => fetch(`/api/teacher/lessons?from=2000-01-01&to=${d}`).then((r) => r.json()), today);
+  const end = (l) => Date.parse(`${l.date}T${l.time}:00+08:00`) + l.minutes * 6e4;
+  const stale = ls.filter((l) => l.status === 'Booked' && end(l) <= Date.now());
+  assert(stale.length === 0, 'still Booked: ' + stale.map((l) => l.id).join());
+});
+await check('8 Nov: Iris books for a student from the student page (−1 堂)', async () => {
+  await t.goto(BASE + '/teacher/students/s2'); await t.waitForSelector('.sd-add');
+  const c0 = await t.evaluate(() => fetch('/api/teacher/students/s2').then((r) => r.json()).then((x) => x.credits));
+  await t.click('.sd-add'); await t.waitForSelector('.sheet .chip:not([disabled])');
+  await t.locator('.sheet .chip:not([disabled])').first().click();
+  await t.click('.sheet .btn.primary');
+  await t.waitForSelector('.toast >> text=已幫');
+  const c1 = await t.evaluate(() => fetch('/api/teacher/students/s2').then((r) => r.json()).then((x) => x.credits));
+  assert(c1 === c0 - 1, `credits ${c0} → ${c1}`);
+});
+await check('8 Nov: Iris proposes a new time; it waits for the student in 申請', async () => {
+  await t.goto(BASE + '/teacher/students/s1'); await t.waitForSelector('text=提議改時間');
+  await t.locator('.sd-lesson >> text=提議改時間').first().click();
+  await t.waitForSelector('.sheet .chip:not([disabled])');
+  await t.locator('.sheet .chip:not([disabled])').first().click();
+  await t.fill('#pm', '那天我有研習');
+  await t.click('.sheet .btn.primary');
+  await t.waitForSelector('.toast >> text=等學生回覆');
+  await t.waitForSelector('.sd-lesson >> text=等待學生回覆');
+  await t.goto(BASE + '/teacher/requests'); await t.waitForSelector('.rq-props >> text=等待學生回覆');
 });
 await check('#10 sheet closes by swiping down (phone)', async () => {
   await s.goto(BASE + '/app/book'); await s.waitForSelector('.chip:not([disabled])');
