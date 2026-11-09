@@ -80,9 +80,8 @@ public static class TeacherProfileEndpoints
             return Results.NoContent();
         });
 
-        // Login email: needs the current password. EmailVerified goes back to false.
-        // TODO: send the verification link once Resend is connected (see FLOW.md §6).
-        t.MapPut("/account/email", async (ChangeEmailRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, CancellationToken ct) =>
+        // Login email: needs the current password. EmailVerified goes back to false and a verification link is emailed.
+        t.MapPut("/account/email", async (ChangeEmailRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, AccountTokens tokens, CancellationToken ct) =>
         {
             var email = (r.Email ?? "").Trim().ToLowerInvariant();
             if (!email.Contains('@') || email.Length > 200) return Problems.Of(400, "validation", "請填寫正確的 Email。");
@@ -90,7 +89,7 @@ public static class TeacherProfileEndpoints
             if (u.PasswordHash is null || hasher.VerifyHashedPassword(u, u.PasswordHash, r.Password ?? "") == PasswordVerificationResult.Failed)
                 return Problems.Of(403, "wrong_password", "密碼不正確。");
             if (await db.Users.AnyAsync(x => x.Email == email && x.Id != u.Id, ct)) return Problems.Of(409, "email_taken", "這個 Email 已經被其他帳號使用。");
-            if (u.Email != email) { u.Email = email; u.EmailVerified = false; }
+            if (u.Email != email) { u.Email = email; u.EmailVerified = false; await tokens.SendVerificationAsync(u, ct); }
             await db.SaveChangesAsync(ct);
             return Results.Ok(Dto(u));
         });

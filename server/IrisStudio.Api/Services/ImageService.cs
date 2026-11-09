@@ -1,47 +1,47 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Formats.Webp;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace IrisStudio.Api.Services;
 
-/// <summary>Receipt images: check the real file type and make a tiny blurred preview (LQIP).</summary>
-public class ImageService
+/// <summary>Receipts are checked by encoded content, bounded in decoded size, and given a 16px preview.</summary>
+public static class ImageService
 {
     public const long MaxBytes = 5 * 1024 * 1024;
+    private const long MaxPixels = 20_000_000;
 
-    /// <summary>Detects the format from the file's bytes (not the extension). Returns the MIME type or null.</summary>
-    public static async Task<string?> DetectAsync(Stream s, CancellationToken ct)
+    public static Task<string?> DetectAsync(Stream stream, CancellationToken ct)
     {
-        s.Position = 0;
-        try
+        ct.ThrowIfCancellationRequested();
+        stream.Position = 0;
+        using var managed = new SKManagedStream(stream, false);
+        using var codec = SKCodec.Create(managed);
+        var type = codec?.EncodedFormat switch
         {
-            var format = await Image.DetectFormatAsync(s, ct);
-            s.Position = 0;
-            return format switch
-            {
-                JpegFormat => "image/jpeg",
-                PngFormat => "image/png",
-                WebpFormat => "image/webp",
-                _ => null,
-            };
-        }
-        catch (UnknownImageFormatException) { return null; }
+            SKEncodedImageFormat.Jpeg => "image/jpeg",
+            SKEncodedImageFormat.Png => "image/png",
+            SKEncodedImageFormat.Webp => "image/webp",
+            _ => null,
+        };
+        stream.Position = 0;
+        return Task.FromResult(type);
     }
 
-    /// <summary>
-    /// 16 px wide JPEG as a data: URL (~300 bytes). The client shows it blurred while the full image loads (#8),
-    /// so the box never sits empty or jumps when the picture arrives.
-    /// </summary>
-    public static async Task<string> MakeLqipAsync(Stream s, CancellationToken ct)
+    public static Task<string> MakeLqipAsync(Stream stream, CancellationToken ct)
     {
-        s.Position = 0;
-        using var img = await Image.LoadAsync(s, ct);
-        img.Mutate(x => x.Resize(new ResizeOptions { Size = new Size(16, 0), Mode = ResizeMode.Max }));
-        using var ms = new MemoryStream();
-        await img.SaveAsJpegAsync(ms, new JpegEncoder { Quality = 40 }, ct);
-        s.Position = 0;
-        return "data:image/jpeg;base64," + Convert.ToBase64String(ms.ToArray());
+        ct.ThrowIfCancellationRequested();
+        stream.Position = 0;
+        using var managed = new SKManagedStream(stream, false);
+        using var codec = SKCodec.Create(managed);
+        if (codec is null || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > MaxPixels)
+            throw new BizException(400, "bad_image", "圖片損壞或尺寸過大，請縮小後再上傳。");
+        using var bitmap = new SKBitmap(codec.Info);
+        if (codec.GetPixels(bitmap.Info, bitmap.GetPixels()) != SKCodecResult.Success)
+            throw new BizException(400, "bad_image", "圖片損壞或格式不正確。");
+        var scale = Math.Min(1d, 16d / Math.Max(bitmap.Width, bitmap.Height));
+        var width = Math.Max(1, (int)Math.Round(bitmap.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(bitmap.Height * scale));
+        using var preview = bitmap.Resize(new SKImageInfo(width, height), new SKSamplingOptions(SKFilterMode.Linear));
+        using var encoded = preview.Encode(SKEncodedImageFormat.Jpeg, 40);
+        stream.Position = 0;
+        return Task.FromResult("data:image/jpeg;base64," + Convert.ToBase64String(encoded.ToArray()));
     }
 }

@@ -15,6 +15,8 @@ public class RetentionOptions
     public int PrivacyRequestYears { get; set; } = 3;
     /// <summary>Idempotency keys only guard double taps.</summary>
     public int IdempotencyHours { get; set; } = 24;
+    /// <summary>Email delivery log (sent / skipped / failed rows). Queued rows are never deleted here.</summary>
+    public int EmailLogDays { get; set; } = 90;
 }
 
 /// <summary>
@@ -36,7 +38,9 @@ public class RetentionService(IServiceScopeFactory scopes, IOptions<RetentionOpt
                 var n = await db.IdempotencyRecords.Where(x => x.CreatedAtUtc < now.AddHours(-r.IdempotencyHours)).ExecuteDeleteAsync(stop)
                       + await db.Consults.Where(x => x.CreatedAtUtc < now.AddMonths(-r.ConsultMonths)).ExecuteDeleteAsync(stop)
                       + await db.Alerts.Where(x => x.Read && x.CreatedAtUtc < now.AddMonths(-r.AlertMonths)).ExecuteDeleteAsync(stop)
-                      + await db.PrivacyRequests.Where(x => x.Done && x.HandledAtUtc < now.AddYears(-r.PrivacyRequestYears)).ExecuteDeleteAsync(stop);
+                      + await db.PrivacyRequests.Where(x => x.Done && x.HandledAtUtc < now.AddYears(-r.PrivacyRequestYears)).ExecuteDeleteAsync(stop)
+                      + await db.EmailMessages.Where(x => x.Status != EmailStatus.Queued && x.CreatedAtUtc < now.AddDays(-r.EmailLogDays)).ExecuteDeleteAsync(stop)
+                      + await db.AuthTokens.Where(x => x.ExpiresAtUtc < now.AddDays(-7)).ExecuteDeleteAsync(stop);
                 if (n > 0) log.LogInformation("Retention: deleted {Count} expired rows", n);
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Retention run failed"); }

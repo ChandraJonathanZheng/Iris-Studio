@@ -1,35 +1,37 @@
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { Drawer } from 'vaul';
 import { Icon } from './Icon';
 
-/**
- * A bottom sheet that is a ROUTE (e.g. /app/book/confirm).
- * #12: because it has its own history entry, the browser back button, the iOS swipe and Android's
- *      predictive back close the sheet instead of leaving the app.
- * #10 / #11: Vaul gives swipe-to-dismiss with velocity, and its drag can interrupt the open/close animation.
- */
-export function RouteSheet({ title, children, dismissible = true, onClose }: {
-  title: string; children: ReactNode; dismissible?: boolean; onClose?: () => void;
-}) {
+/** Close a route-sheet: step back in history (so Back doesn't reopen it); on a deep link go to the parent page. */
+export function useSheetClose(parent: string) {
   const nav = useNavigate();
+  const { key } = useLocation();
+  return () => (key !== 'default' ? nav(-1) : nav(parent, { replace: true }));
+}
+
+/**
+ * A bottom sheet that is a ROUTE (e.g. /app/book/confirm): the browser back button, the iOS swipe and
+ * Android predictive back close the sheet instead of leaving the app. Vaul gives swipe-to-dismiss and focus trap.
+ */
+export function RouteSheet({ title, parent = '..', children, dismissible = true, className = '', footer, onClose }: {
+  title: string; parent?: string; children: ReactNode; dismissible?: boolean; className?: string; footer?: ReactNode; onClose?: () => void;
+}) {
+  const goBack = useSheetClose(parent);
   const [open, setOpen] = useState(true);
-  const close = () => { if (onClose) onClose(); else nav(-1); };
+  const close = () => { if (dismissible) { setOpen(false); window.setTimeout(onClose ?? goBack, 180); } };
   return (
-    <Drawer.Root
-      open={open}
-      dismissible={dismissible}
-      onOpenChange={(o) => { if (!o) { setOpen(false); window.setTimeout(close, 180); } }}
-    >
+    <Drawer.Root open={open} onOpenChange={(o) => { if (!o && dismissible) close(); }} dismissible={dismissible}>
       <Drawer.Portal>
-        <Drawer.Overlay className="sheet-overlay" />
-        <Drawer.Content className="sheet" aria-describedby={undefined}>
-          <div className="grab" aria-hidden="true" />
-          <div className="row between">
+        <Drawer.Overlay className="v-overlay" />
+        <Drawer.Content className={`v-sheet ${className}`} aria-describedby={undefined}>
+          <div className="grab" aria-hidden />
+          <div className="s-head">
             <Drawer.Title className="h2">{title}</Drawer.Title>
-            <button className="icon-btn" aria-label="關閉" disabled={!dismissible} onClick={() => setOpen(false)}><Icon name="x" /></button>
+            <button className="iconbtn" aria-label="關閉" disabled={!dismissible} onClick={close} style={{ boxShadow: 'none' }}><Icon name="x" /></button>
           </div>
-          {children}
+          <div className="s-body">{children}</div>
+          {footer && <div className="s-footer">{footer}</div>}
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>

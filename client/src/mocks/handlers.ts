@@ -1,13 +1,14 @@
-import type { MConsent, MPrivacyRequest } from './db';
+import type { MConsent, MConsult, MPrivacyRequest } from './db';
 import { delay, http, HttpResponse } from 'msw';
 import { addDays, compareSlot, fmtSlot, studioToday } from '../lib/date';
 import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
-import type { Availability, Me, Overview, StudentDetail, StudentSummary } from '../lib/types';
+import type { Availability, Consult, Me, Overview, StudentDetail, StudentSummary } from '../lib/types';
 import {
   ALERT_DELAY_MS, STUDIO, UNDO_MS, addAlert, availability, db, dropQueuedAlerts, settleAttendance, idem, isTaken, lessonDto, lessonStart,
   newId, slotPast, userById, validSlot, type MUser,
 } from './db';
 
+const creditAdjustments = new Map<string, { studentId: string; delta: number; createdAt: number; undone: boolean }>();
 const SESSION = 'iris-mock-session';
 const memory = new Map<string, string>();
 const store = {
@@ -52,8 +53,10 @@ function meDto(u: MUser): Me {
     packageSize: u.packageSize,
     unreadAlerts: db.alerts.filter((a) => a.userId === u.id && !a.read && a.sendAfter <= Date.now()).length,
     classType: u.classType ?? 'private', trialAvailable: trialAvailable(u),
+    emailVerified: u.emailVerified ?? false, emailUpdates: u.emailUpdates ?? true, emailReminders: u.emailReminders ?? true,
   };
 }
+const consultDto = (c: MConsult): Consult => ({ ...c, scheduledDate: c.scheduledDate ?? null, scheduledTime: c.scheduledTime ?? null, scheduleNote: c.scheduleNote ?? null });
 /** 體驗 students can buy the trial package once (a rejected receipt doesn't count) */
 const trialAvailable = (u: MUser) => (u.classType ?? 'private') === 'trial' && !db.payments.some((p) => p.studentId === u.id && p.trial && p.status !== 'Rejected');
 function summary(u: MUser): StudentSummary {
@@ -403,6 +406,7 @@ export const handlers = [
     const r = requireUser('Student'); if (r.err) return r.err;
     const b = (await request.json()) as Partial<MUser>;
     // only safe fields: never credits/status/grade (mass assignment)
+    if ('email' in b && (b.email ?? null) !== r.u.email) r.u.emailVerified = false; // a new address must be verified again
     (['name', 'email', 'phone', 'lineId', 'voiceType', 'goal'] as const).forEach((k) => { if (k in b) (r.u as unknown as Record<string, unknown>)[k] = b[k] ?? null; });
     return HttpResponse.json(meDto(r.u));
   }),
@@ -563,12 +567,28 @@ export const handlers = [
   http.post('/api/teacher/students/:id/credits', async ({ params, request }) => {
     await delay(300);
     const r = requireUser('Teacher'); if (r.err) return r.err;
-    const u = userById(params.id as string); if (!u) return problem(404, '找不到學生。');
-    const { delta } = (await request.json()) as { delta: number; reason?: string };
-    if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 50) return problem(400, '調整數量不正確。', 'validation');
-    if (u.credits + delta < 0) return problem(409, '堂數不能小於 0。', 'negative');
-    u.credits += delta;
-    addAlert(u.id, 'added', '老師調整了你的堂數', `現在剩餘 ${u.credits} 堂。`);
+    return idempotent(request, r.u.id, async () => {
+      const u = userById(params.id as string); if (!u) return problem(404, '找不到學生。');
+      const { delta, reason } = (await request.json()) as { delta: number; reason?: string };
+      if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 4 || !reason?.trim() || reason.trim().length > 200) return problem(400, '請填寫調整數量和原因。', 'validation');
+      if (u.credits + delta < 0) return problem(409, '堂數不能小於 0。', 'negative');
+      u.credits += delta;
+      const id = newId();
+      creditAdjustments.set(id, { studentId: u.id, delta, createdAt: Date.now(), undone: false });
+      addAlert(u.id, 'added', '老師調整了你的堂數', `現在剩餘 ${u.credits} 堂。`, `credits:${id}`);
+      return HttpResponse.json({ credits: u.credits, id, undoUntil: new Date(Date.now() + UNDO_MS).toISOString() });
+    });
+  }),
+  http.post('/api/teacher/credit-adjustments/:id/undo', async ({ params }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const log = creditAdjustments.get(params.id as string);
+    if (!log) return problem(404, '找不到調整紀錄。');
+    if (log.undone || Date.now() - log.createdAt > UNDO_MS) return problem(409, '已超過可以復原的時間。', 'undo_expired');
+    const u = userById(log.studentId)!;
+    if (u.credits - log.delta < 0) return problem(409, '堂數已經被用掉，無法復原。', 'credits_used');
+    u.credits -= log.delta; log.undone = true;
+    dropQueuedAlerts(`credits:${params.id}`);
     return HttpResponse.json({ credits: u.credits });
   }),
   http.patch('/api/teacher/students/:id/class-type', async ({ params, request }) => {
@@ -715,8 +735,59 @@ export const handlers = [
   http.get('/api/teacher/consults', async () => {
     await lag();
     const r = requireUser('Teacher'); if (r.err) return r.err;
-    return HttpResponse.json(db.consults);
+    return HttpResponse.json(db.consults.map(consultDto));
   }),
+  http.post('/api/teacher/consults/:id/schedule', async ({ params, request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const c = db.consults.find((x) => x.id === params.id); if (!c) return problem(404, '找不到。');
+    const b = (await request.json()) as { date: string; time: string; note?: string };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time) || b.date < studioToday()) return problem(400, '請選擇之後的日期和時間。', 'validation');
+    Object.assign(c, { scheduledDate: b.date, scheduledTime: b.time, scheduleNote: b.note?.trim() || null, contacted: true });
+    return HttpResponse.json(consultDto(c)); // the real server also emails an applicant who left an email
+  }),
+  // ---------- email notifications (the mock sends nothing; links in real emails lead to these pages) ----------
+  http.post('/api/teacher/consults/:id/confirmation', async ({ params }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const c = db.consults.find((x) => x.id === params.id); if (!c) return problem(404, '找不到。');
+    if (c.contactType !== 'email') return problem(400, '對方沒有留下 Email，請透過 LINE 告知對方。', 'validation');
+    if (!c.scheduledDate || !c.scheduledTime || slotPast(c.scheduledDate, c.scheduledTime)) return problem(400, '請先安排之後的諮詢時間。', 'validation');
+    return new HttpResponse(null, { status: 202 });
+  }),
+  http.put('/api/me/notifications', async ({ request }) => {
+    await delay(200);
+    const r = requireUser(); if (r.err) return r.err;
+    const b = (await request.json()) as { emailUpdates: boolean; emailReminders: boolean };
+    r.u.emailUpdates = b.emailUpdates; r.u.emailReminders = b.emailReminders;
+    return HttpResponse.json(b);
+  }),
+  http.post('/api/me/email/verification', async () => {
+    await lag();
+    const r = requireUser(); if (r.err) return r.err;
+    if (!r.u.email) return problem(409, '請先填寫 Email。', 'no_email');
+    if (r.u.emailVerified) return problem(409, '這個 Email 已經驗證過了。', 'already_verified');
+    return new HttpResponse(null, { status: 202 });
+  }),
+  http.post('/api/auth/forgot-password', async () => { await lag(); return new HttpResponse(null, { status: 202 }); }),
+  // demo links: any token works once the user is signed in (verify) / "demo" resets the signed-in user's password
+  http.post('/api/auth/verify-email', async () => {
+    await lag();
+    const u = sessionUser();
+    if (!u?.email) return problem(400, '驗證連結已失效或已使用過，請重新寄送驗證信。', 'invalid_token');
+    u.emailVerified = true;
+    return HttpResponse.json({ email: u.email });
+  }),
+  http.post('/api/auth/reset-password', async ({ request }) => {
+    await lag();
+    const b = (await request.json()) as { token: string; password: string };
+    if ((b.password ?? '').length < 8) return problem(400, '密碼至少 8 個字元。', 'validation');
+    const u = sessionUser();
+    if (!u) return problem(400, '重設連結已失效或已使用過，請重新申請。', 'invalid_token');
+    u.password = b.password; store.removeItem(SESSION);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/public/unsubscribe', async () => { await lag(); return new HttpResponse(null, { status: 204 }); }),
   http.post('/api/teacher/consults/:id/contacted', async ({ params, request }) => {
     await delay(200);
     const r = requireUser('Teacher'); if (r.err) return r.err;

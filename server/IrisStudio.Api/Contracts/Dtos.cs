@@ -8,7 +8,7 @@ namespace IrisStudio.Api.Contracts;
 
 public record MeDto(Guid Id, string Name, string Role, string Status, string? Email, string? Phone, string? LineId, bool LineLinked,
     string? VoiceType, string? Goal, string? Grade, string? AvatarUrl, int Credits, int Booked, int Attended, int PackageSize, int UnreadAlerts,
-    string ClassType, bool TrialAvailable);
+    string ClassType, bool TrialAvailable, bool EmailVerified, bool EmailUpdates, bool EmailReminders);
 
 public record ChangeInfoDto(Guid Id, string ToDate, string ToTime, string Reason, string By);
 public record LessonDto(Guid Id, string Date, string Time, string Status, string Type, int Minutes, string Room, Guid StudentId, string StudentName, ChangeInfoDto? Change);
@@ -33,7 +33,8 @@ public record ProposalDto(Guid Id, Guid LessonId, Guid StudentId, string Student
 public record ProposeRequest(string Date, string Time, string? Message);
 public record CountsDto(int Receipts, int ReceiptsAmount, int Changes, int Applications, int Consults);
 public record OverviewDto(LessonDto[] Today, CountsDto Counts, StudentSummaryDto[] OutOfQuota);
-public record ConsultDto(Guid Id, string Name, string ContactType, string Contact, string PreferredTime, string Topic, DateTime CreatedAt, bool Contacted);
+public record ConsultDto(Guid Id, string Name, string ContactType, string Contact, string PreferredTime, string Topic, DateTime CreatedAt, bool Contacted,
+    string? ScheduledDate, string? ScheduledTime, string? ScheduleNote);
 public record StudioDto(int LessonMinutes, int CancelHours, int MoveHours, PackageOption[] Packages, BankOption Bank, TeacherPublicDto Teacher);
 /// <summary>What students may see about Iris. LineId only when she chose to show it.</summary>
 public record TeacherPublicDto(string Name, string? AvatarUrl, string Status, string? StatusLabel, string? StatusMessage, string? LineId);
@@ -44,6 +45,7 @@ public record ChangeEmailRequest(string Email, string Password);
 public record BookResultDto(LessonDto Lesson, int CreditsLeft);
 public record CancelResultDto(bool Refunded, int CreditsLeft, DateTime UndoUntil);
 public record CreditsDto(int Credits);
+public record CreditAdjustmentDto(int Credits, Guid Id, DateTime UndoUntil);
 
 // requests
 public record LoginRequest(string Email, string Password);
@@ -67,7 +69,14 @@ public record ReasonRequest(string? Reason);
 /// <summary>Manual credit change. Reason is required by the UI (補課 / 贈送 / 修正錯誤 / 其他 + note) and kept in the audit log.</summary>
 public record DeltaRequest(int Delta, string? Reason = null);
 public record ContactedRequest(bool Contacted);
+public record ScheduleConsultRequest(string Date, string Time, string? Note);
+public record EmailOnlyRequest(string? Email);
+public record TokenRequest(string? Token);
+public record ResetPasswordRequest(string? Token, string? Password);
+/// <summary>Email preferences. Account, security and payment emails can't be turned off.</summary>
+public record NotificationPrefsDto(bool EmailUpdates, bool EmailReminders);
 public record ClassTypeRequest(string ClassType);
+public record GradeRequest(string? Grade);
 
 public static class Map
 {
@@ -82,6 +91,9 @@ public static class Map
     public static PaymentDto Payment(Payment p) => new(p.Id, p.StudentId, p.Student?.Name ?? "", p.PackageSize, p.Amount, p.Status.ToString(),
         DateTime.SpecifyKind(p.UploadedAtUtc, DateTimeKind.Utc), p.Note, p.RejectReason, $"/api/receipts/{p.Id}", p.Lqip, p.IsTrial);
 
+    public static ConsultDto Consult(Consult c) => new(c.Id, c.Name, c.ContactType, c.Contact, c.PreferredTime, c.Topic,
+        DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc), c.Contacted,
+        c.ScheduledDate is { } d ? D(d) : null, c.ScheduledTime is { } t ? T(t) : null, c.ScheduleNote);
     public static AlertDto Alert(Alert a) => new(a.Id, a.Kind.Camel(), a.Title, a.Body, DateTime.SpecifyKind(a.CreatedAtUtc, DateTimeKind.Utc), a.Read);
 
     public static bool TryParseSlot(string date, string time, out DateOnly d, out TimeOnly t)

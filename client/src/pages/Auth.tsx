@@ -1,222 +1,162 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Icon } from '../components/Icon';
-import { api } from '../lib/api';
-import { qk, session, useLogout, useMe } from '../lib/queries';
+import { api, ApiError } from '../lib/api';
+import { qk, useLogout, useMe } from '../lib/queries';
 import type { ConsentInput, Me } from '../lib/types';
-import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
+import { Icon } from '../components/Icon';
+import { Field, PasswordInput, Segmented } from '../components/ui';
 
-/** LINE sign-up leaves the site for LINE, so the choices wait here and are sent once the account exists (Pending). */
+import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
 const PENDING_CONSENT = 'iris-pending-consent';
 
-const MOCK = import.meta.env.MODE === 'mock' || import.meta.env.MODE === 'proto';
-const home = (me: Me) => (me.role === 'Teacher' ? '/teacher' : me.status === 'Pending' ? '/pending' : '/app');
+const DEMO = import.meta.env.MODE === 'mock' || import.meta.env.MODE === 'proto';
+const homeFor = (m: Me) => (m.status === 'Pending' ? '/pending' : m.role === 'Teacher' ? '/teacher' : '/app');
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** One place that turns an API answer into a signed-in session and a destination. */
+function useEnter() {
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  return async () => {
+    const m = await api.get<Me | null>('/api/me');
+    if (!m) throw new ApiError(401, 'session_missing', '登入狀態未能儲存，請允許此網站使用 Cookie 後重新登入。');
+    qc.setQueryData(qk.me, m);
+    nav(homeFor(m), { replace: true });
+  };
+}
+
+/** Already signed in → straight to your home (also covers the browser Back button after login). */
+function useRedirectIfSignedIn() {
+  const me = useMe();
+  return me.data ? <Navigate to={homeFor(me.data)} replace /> : null;
+}
+
+function LineButton({ label, register, consents, beforeStart }: { label: string; register?: boolean; consents?: ConsentInput; beforeStart?: () => boolean }) {
+  const enter = useEnter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const click = async () => {
+    if (beforeStart && !beforeStart()) return;
+    if (!DEMO) {
+      if (register && consents) { try { sessionStorage.setItem(PENDING_CONSENT, JSON.stringify(consents)); } catch { /* storage unavailable */ } }
+      window.location.href = register ? '/api/auth/line?returnUrl=%2Fpending' : '/api/auth/line?returnUrl=%2Fapp'; return;
+    }
+    setBusy(true); setError('');
+    try {
+      if (register) await api.post('/api/auth/line/mock-register');
+      else await api.post('/api/auth/line/mock', { as: 's1' });
+      if (register && consents) await api.post('/api/me/consents', consents);
+      await enter();
+    }
+    catch (e) { setError(e instanceof ApiError ? e.message : '登入失敗'); setBusy(false); }
+  };
+  return (
+    <>
+      <button className="btn primary block line-btn" onClick={click} disabled={busy}><span className="line-mark" aria-hidden>LINE</span>{label}</button>
+      {error && <p className="err" role="alert">{error}</p>}
+    </>
+  );
+}
 
 export function Login() {
-  const me = useMe();
-  const qc = useQueryClient();
-  const nav = useNavigate();
-  const loc = useLocation() as { state?: { from?: string } };
-  const [showEmail, setShowEmail] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  // every hook must run before the early return below (React counts hooks per render)
-  const [mode, setMode] = useState<'student' | 'teacher'>('student');
-  const err = new URLSearchParams(useLocation().search).get('error');
+  const [search] = useSearchParams();
+  const lineError = ({
+    line: 'LINE 登入未完成，請重新登入。若持續發生，請聯絡工作室。',
+    line_session: '登入驗證已過期或 Cookie 遺失，請從同一個網站重新按 LINE 登入。',
+    declined: '此帳號目前無法登入，請聯絡工作室。',
+  } as Record<string, string>)[search.get('error') ?? ''];
+  const redirect = useRedirectIfSignedIn();
+  const enter = useEnter();
+  const [email, setEmail] = useState(() => (search.get('email') ?? '').slice(0, 200)); const [password, setPassword] = useState('');
+  const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'line' | 'email'>(() => search.get('method') === 'email' ? 'email' : 'line');
 
-  if (me.data) return <Navigate to={home(me.data)} replace />;
-
-  // Re-read /api/me after signing in so every page gets the full, fresh profile (not just the login reply).
-  const done = async () => {
-    const u = await qc.fetchQuery({ queryKey: qk.me, queryFn: () => api.get<Me | null>('/api/me'), staleTime: 0 });
-    if (u) nav(loc.state?.from ?? home(u), { replace: true, viewTransition: true });
+  const submit = async (e?: FormEvent, creds = { email, password }) => {
+    e?.preventDefault(); setBusy(true); setError('');
+    try { await api.post('/api/auth/login', creds); await enter(); }
+    catch (err) { setError(err instanceof ApiError ? err.message : '登入失敗，請再試一次。'); setBusy(false); }
   };
-  const submit = async (e: FormEvent) => {
-    e.preventDefault(); setBusy(true); setError(null);
-    try { await api.post('/api/auth/login', { email, password }); await done(); }
-    catch (x) { setError((x as Error).message); }
-    finally { setBusy(false); }
-  };
-  const mockLine = async (as: string) => { setBusy(true); try { await api.post('/api/auth/line/mock', { as }); await done(); } finally { setBusy(false); } };
-
-  const openEmail = (m: 'student' | 'teacher') => { setMode(m); setShowEmail(true); setError(null); };
-  // LINE stays a small brand mark; the button itself uses the IRIS sage
-  const lineMark = <span className="li-mark" aria-hidden="true"><Icon name="msg" size={14} /></span>;
+  if (redirect) return redirect;
 
   return (
-    <div className="auth au">
-      <div className="au-card">
-        <Link to="/" className="au-brand" aria-label="回到 Iris 聲樂工作室 首頁" viewTransition><b>IRIS</b><span>聲樂工作室</span></Link>
-        <div className="au-head">
-          <h1 className="au-h1">{showEmail && mode === 'teacher' ? '老師登入' : '歡迎回來'}</h1>
-          <p className="au-sub">{showEmail && mode === 'teacher' ? '用工作室的 Email 和密碼登入。' : '登入後就可以預約下一堂課'}</p>
-        </div>
-        {err && <div className="notice error" role="alert"><Icon name="info" /><span>LINE 登入沒有完成，請再試一次。</span></div>}
-
-        {!showEmail ? (
-          <div className="au-actions">
-            {MOCK
-              ? <button className="au-btn primary" disabled={busy} onClick={() => mockLine('s1')}>{lineMark}使用 LINE 登入</button>
-              // Real LINE Login is an OAuth redirect handled by the server, so it's a plain link, not fetch.
-              : <a className="au-btn primary" href={`/api/auth/line?returnUrl=${encodeURIComponent(loc.state?.from ?? '')}`}>{lineMark}使用 LINE 登入</a>}
-            <button className="au-btn" onClick={() => openEmail('student')}>使用 Email 登入</button>
-          </div>
-        ) : (
-          <form className="au-form" onSubmit={submit}>
-            <div className="field"><label htmlFor="em">Email</label><input id="em" className="input" type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-            <div className="field"><label htmlFor="pw">密碼</label><input id="pw" className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
-            {error && <div className="notice error" role="alert"><Icon name="info" /><span>{error}</span></div>}
-            <button className="au-btn primary" disabled={busy}>{busy ? '登入中…' : '登入'}</button>
-            <button type="button" className="au-text" onClick={() => setShowEmail(false)}>← 其他登入方式</button>
+    <div className="auth"><div className="card">
+      <div className="stack s2"><Link to="/" className="over">IRIS STUDIO</Link><h1 className="h1" style={{ fontSize: 28, lineHeight: '36px' }}>歡迎回來</h1><p className="sub">登入後預約課程、查看堂數。</p></div>
+      {lineError && <p className="err" role="alert">{lineError}</p>}
+      {search.get('reset') === 'success' && <p className="info" role="status">密碼已更新，請使用新密碼登入。</p>}
+      <LineButton label="使用 LINE 登入" />
+      {mode === 'line'
+        ? <button className="btn secondary block" onClick={() => setMode('email')}>使用 Email 登入</button>
+        : (
+          <form className="stack" onSubmit={submit} noValidate>
+            <Field id="email" label="Email" error={error ? ' ' : undefined}>
+              <input id="email" className="input" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!error || undefined} aria-describedby={error ? 'login-err' : undefined} />
+            </Field>
+            <Field id="password" label="密碼" action={<Link className="btn link" to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}>忘記密碼？</Link>}>
+              <PasswordInput id="password" value={password} onChange={setPassword} invalid={!!error} describedBy={error ? 'login-err' : undefined} />
+            </Field>
+            {error && <p id="login-err" className="err" role="alert">{error}</p>}
+            <button className="btn primary block" disabled={busy || !email || !password}>登入</button>
           </form>
         )}
-
-        {!showEmail && <>
-          <div className="au-divider"><span>其他登入方式</span></div>
-          <button className="au-text" onClick={() => openEmail('teacher')}>老師登入 <span aria-hidden="true">→</span></button>
-        </>}
-
-        <p className="au-foot">第一次來 IRIS？<Link to="/register" viewTransition>建立帳號 <span aria-hidden="true">→</span></Link></p>
+      <div className="row between">
+        <button className="btn link" onClick={() => { setMode('email'); setEmail('iris@studio.local'); setPassword(''); }}>老師登入 →</button>
+        <Link className="btn link" to="/register">建立帳號 →</Link>
       </div>
-
-      {/* demo accounts only exist in the mock/prototype build — never in production */}
-      {MOCK && (
-        <section className="au-demo" aria-labelledby="au-demo-h">
-          <h2 id="au-demo-h">示範帳號</h2>
-          <div>
-            <button disabled={busy} onClick={() => mockLine('s1')}>學生 王小明</button>
-            <button disabled={busy} onClick={() => mockLine('s6')}>新學生（等待確認）</button>
-            <button disabled={busy} onClick={() => mockLine('t1')}>老師 Iris</button>
+      {DEMO && (
+        <div className="info stack s2" aria-label="示範帳號">
+          <b>示範帳號</b>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button className="btn secondary sm" onClick={() => submit(undefined, { email: 'xiaoming@demo.local', password: 'demo1234' })}>學生：王小明</button>
+            <button className="btn secondary sm" onClick={() => submit(undefined, { email: 'sihan@demo.local', password: 'demo1234' })}>堂數用完：李思涵</button>
+            <button className="btn secondary sm" onClick={() => submit(undefined, { email: 'iris@studio.local', password: 'change-me-now' })}>老師：Iris</button>
           </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-export function Pending() {
-  const me = useMe();
-  const qc = useQueryClient();
-  const nav = useNavigate();
-  const logout = useLogout();
-  // check every 10 s; as soon as Iris approves, go straight in (no re-login)
-  useEffect(() => {
-    const t = window.setInterval(() => qc.invalidateQueries({ queryKey: qk.me }), 10_000);
-    return () => window.clearInterval(t);
-  }, [qc]);
-  // back from LINE sign-up: store the consent choices made before leaving (then forget them)
-  useEffect(() => {
-    if (!me.data) return;
-    let raw: string | null = null;
-    try { raw = sessionStorage.getItem(PENDING_CONSENT); } catch { /* storage blocked */ }
-    if (!raw) return;
-    api.post('/api/me/consents', JSON.parse(raw)).then(() => { try { sessionStorage.removeItem(PENDING_CONSENT); } catch { /* */ } }).catch(() => {});
-  }, [me.data]);
-  if (me.isPending) return null;
-  if (!me.data) return <Navigate to={session.loggingOut ? '/' : '/login'} replace />;
-  if (me.data.status === 'Active') return <Navigate to={home(me.data)} replace />;
-  return (
-    <div className="auth au">
-      <div className="au-card">
-        <Link to="/" className="au-brand" aria-label="回到 Iris 聲樂工作室 首頁" viewTransition><b>IRIS</b><span>聲樂工作室</span></Link>
-        <Journey step={1} />
-        <div className="au-done">
-          {/* not approved yet → a calm "in review" mark, not a success tick */}
-          <span className="au-wait" aria-hidden="true"><Icon name="clock" size={24} /></span>
-          <p className="au-kicker">申請已送出</p>
-          <h1 className="au-h1">等待 Iris 確認</h1>
-          <p className="au-sub">Iris 會親自確認你的帳號，通常會在 1 天內完成。確認後我們會通知你。</p>
         </div>
-        <p className="au-next">確認後，就可以購買堂數並預約第一堂課。</p>
-        <p className="au-switch">{/* space only before a Latin name: 不是 Chandra？ / 不是吳詠晴？ */}不是{/^[A-Za-z]/.test(me.data.name) ? ' ' : ''}{me.data.name}？<button className="au-inline" onClick={() => { nav('/login'); logout.mutate(); }}>切換帳號</button></p>
-      </div>
-    </div>
+      )}
+    </div></div>
   );
 }
 
-/** 建立帳號 → Iris 確認 → 開始預約. `step` = index of the current step. */
 function Journey({ step }: { step: 0 | 1 | 2 }) {
-  const steps = ['建立帳號', 'Iris 確認', '開始預約'];
   return (
-    <ol className="au-journey" aria-label="加入流程">
-      {steps.map((t, i) => (
-        <li key={t} className={i < step ? 'done' : i === step ? 'now' : ''} aria-current={i === step ? 'step' : undefined}>
-          <span className="au-jdot" aria-hidden="true">{i < step ? <Icon name="check" size={12} weight="bold" /> : i + 1}</span>
-          <span className="au-jt">{t}</span>
-        </li>))}
+    <ol className="journey" style={{ listStyle: 'none', padding: 0, margin: 0 }} aria-label="註冊流程">
+      {['建立帳號', 'Iris 確認', '開始預約'].map((t, i) => (
+        <li key={t} className={`st${i <= step ? ' on' : ''}`} aria-current={i === step ? 'step' : undefined}><i />{t}</li>
+      ))}
     </ol>
   );
 }
 
-/**
- * /register: new students create an account (PRD AUTH-1). It starts as Pending until Iris approves it.
- * LINE is the main path (no password to remember); email + password is the fallback.
- */
 export function Register() {
-  const me = useMe();
-  const qc = useQueryClient();
-  const nav = useNavigate();
-  const [f, setF] = useState({ name: '', email: '', password: '' });
-  const [showPw, setShowPw] = useState(false);
-  const [tried, setTried] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const redirect = useRedirectIfSignedIn();
+  const enter = useEnter();
+  const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
+  const [tried, setTried] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'line' | 'email'>('line');
   // consents: terms required; media + marketing optional and UNchecked; a minor needs a guardian
   const [cTried, setCTried] = useState(false); // LINE button checks only the consent block, not the email fields
   const [c, setC] = useState({ terms: false, media: false, marketing: false, minor: false, gName: '', gRel: '', gContact: '', gAgree: false });
-  if (me.data) return <Navigate to={home(me.data)} replace />;
 
   const consentErr = !c.terms ? '請閱讀並勾選同意服務條款與隱私權政策。'
     : c.minor && (!c.gName.trim() || !c.gRel.trim() || !c.gContact.trim() || !c.gAgree) ? '未滿 18 歲，請填寫法定代理人資料並由法定代理人勾選同意。' : '';
   const consents = (): ConsentInput => ({ version: CONSENT_VERSION, terms: c.terms, media: c.media, marketing: c.marketing, minor: c.minor,
     guardian: c.minor ? { name: c.gName.trim(), relation: c.gRel.trim(), contact: c.gContact.trim(), agreed: c.gAgree } : null });
 
-  const errs = {
-    name: !f.name.trim() ? '請填寫姓名。' : '',
-    email: !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim()) ? '請填寫正確的 Email。' : '',
-    password: f.password.length < 8 ? '密碼至少 8 個字元。' : '',
-  };
-  const invalid = Object.values(errs).some(Boolean);
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
-  const show = (k: keyof typeof errs) => (tried && errs[k] ? <p className="field-error" id={`${k}-err`}>{errs[k]}</p> : null);
+  const errs = { name: name.trim() ? '' : '請填寫姓名。', email: EMAIL_RE.test(email.trim()) ? '' : '請填寫正確的 Email。', password: password.length >= 8 ? '' : '' };
 
-  const finish = async () => {
-    await qc.fetchQuery({ queryKey: qk.me, queryFn: () => api.get<Me | null>('/api/me'), staleTime: 0 });
-    nav('/pending', { replace: true, viewTransition: true });
-  };
   const submit = async (e: FormEvent) => {
-    e.preventDefault(); setTried(true); setError(null);
-    if (invalid || consentErr) return;
+    e.preventDefault(); setTried(true); setError('');
+    if (errs.name || errs.email || password.length < 8 || consentErr) return;
     setBusy(true);
-    try { await api.post('/api/auth/register', { name: f.name.trim(), email: f.email.trim(), phone: null, password: f.password, consents: consents() }); await finish(); }
-    catch (x) { setError((x as Error).message); }
-    finally { setBusy(false); }
+    try { await api.post('/api/auth/register', { name: name.trim(), email: email.trim(), phone: null, password, consents: consents() }); await enter(); }
+    catch (err) { setError(err instanceof ApiError ? err.message : '註冊失敗，請再試一次。'); setBusy(false); }
   };
-  const lineRegister = async () => {
-    setCTried(true); if (consentErr) return;
-    setBusy(true);
-    try { await api.post('/api/auth/line/mock-register'); await api.post('/api/me/consents', consents()); await finish(); } finally { setBusy(false); }
-  };
-  // real LINE sign-up: keep the choices for after the redirect (see Pending)
-  const lineRealStart = (e: React.MouseEvent) => {
-    setCTried(true);
-    if (consentErr) { e.preventDefault(); return; }
-    try { sessionStorage.setItem(PENDING_CONSENT, JSON.stringify(consents())); } catch { /* storage blocked: consents can be set later in 同意設定 */ }
-  };
+  if (redirect) return redirect;
 
-  const lineMark = <span className="li-mark" aria-hidden="true"><Icon name="msg" size={14} /></span>;
   return (
-    <div className="auth au">
-      <div className="au-card">
-        <Link to="/" className="au-brand" aria-label="回到 Iris 聲樂工作室 首頁" viewTransition><b>IRIS</b><span>聲樂工作室</span></Link>
-        <Journey step={0} />
-        <div className="au-head">
-          <h1 className="au-h1">建立你的帳號</h1>
-          <p className="au-sub">用 LINE 最快，不用另外記密碼。</p>
-        </div>
+    <div className="auth"><div className="card">
+      <Journey step={0} />
+      <div className="stack s2"><h1 className="h1" style={{ fontSize: 28, lineHeight: '36px' }}>建立帳號</h1><p className="sub">送出後由 Iris 確認，通過就能開始預約。</p></div>
         {/* consents first: they apply to both ways of signing up */}
         <fieldset className="au-consent" aria-describedby="consent-err">
           <legend>開始之前</legend>
@@ -242,24 +182,58 @@ export function Register() {
           )}
           {(tried || cTried) && consentErr && <p className="field-error" id="consent-err">{consentErr}</p>}
         </fieldset>
-        {MOCK
-          ? <button className="au-btn primary" disabled={busy} onClick={lineRegister}>{lineMark}使用 LINE 註冊</button>
-          : <a className="au-btn primary" href="/api/auth/line?returnUrl=/pending" onClick={lineRealStart}>{lineMark}使用 LINE 註冊</a>}
-        <div className="au-divider"><span>或使用 Email</span></div>
-        <form className="au-form" onSubmit={submit} noValidate>
-          <div className="field"><label htmlFor="rn">姓名</label><input id="rn" className="input" autoComplete="name" value={f.name} onChange={set('name')} aria-invalid={tried && !!errs.name} aria-describedby="name-err" />{show('name')}</div>
-          <div className="field"><label htmlFor="re">Email</label><input id="re" className="input" type="email" autoComplete="email" inputMode="email" value={f.email} onChange={set('email')} aria-invalid={tried && !!errs.email} aria-describedby="email-err" />{show('email')}</div>
-          <div className="field"><label htmlFor="rw">密碼</label>
-            <div className="au-pw">
-              <input id="rw" className="input" type={showPw ? 'text' : 'password'} autoComplete="new-password" value={f.password} onChange={set('password')} aria-invalid={tried && !!errs.password} aria-describedby={tried && errs.password ? 'password-err' : 'pw-hint'} />
-              <button type="button" className="au-eye" aria-label={showPw ? '隱藏密碼' : '顯示密碼'} aria-pressed={showPw} onClick={() => setShowPw(!showPw)}><Icon name={showPw ? 'eyeOff' : 'eye'} size={20} /></button>
-            </div>
-            {show('password') ?? <p className={`au-hint${f.password.length >= 8 ? ' ok' : ''}`} id="pw-hint">{f.password.length >= 8 ? '✓ ' : ''}至少 8 個字元</p>}</div>
-          {error && <div className="notice error" role="alert"><Icon name="info" /><span>{error}</span></div>}
-          <button className="au-btn primary" disabled={busy}>{busy ? '建立中…' : '建立帳號'}</button>
+      <Segmented label="註冊方式" value={mode} onChange={setMode} options={[{ value: 'line', label: 'LINE' }, { value: 'email', label: 'Email' }]} />
+      {mode === 'line' ? <LineButton label="使用 LINE 註冊" register consents={consents()} beforeStart={() => { setCTried(true); return !consentErr; }} /> : (
+        <form className="stack" onSubmit={submit} noValidate>
+          <Field id="name" label="姓名" error={tried ? errs.name : ''}>
+            <input id="name" className="input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={(tried && !!errs.name) || undefined} aria-describedby={tried && errs.name ? 'name-err' : undefined} />
+          </Field>
+          <Field id="reg-email" label="Email" error={tried ? errs.email : ''}>
+            <input id="reg-email" className="input" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={(tried && !!errs.email) || undefined} aria-describedby={tried && errs.email ? 'reg-email-err' : undefined} />
+          </Field>
+          <Field id="reg-pw" label="密碼" hint={<span className={password.length >= 8 ? 'hint ok' : 'hint'}>{password.length >= 8 ? '✓ ' : ''}至少 8 個字元</span>}>
+            <PasswordInput id="reg-pw" value={password} onChange={setPassword} invalid={tried && password.length < 8} />
+          </Field>
+          {error && <p className="err" role="alert">{error}</p>}
+          <button className="btn primary block" disabled={busy}>送出申請</button>
         </form>
-        <p className="au-foot">已經有帳號？<Link to="/login" viewTransition>登入</Link></p>
-      </div>
-    </div>
+      )}
+      <p className="cap">已經有帳號？<Link to="/login">登入</Link></p>
+    </div></div>
+  );
+}
+
+/** Pending applicants see only this. It polls /api/me every 10 s and enters the app once Iris approves (AUTH-3). */
+export function Pending() {
+  const me = useMe();
+  const qc = useQueryClient();
+  const logout = useLogout();
+  const nav = useNavigate();
+  useEffect(() => {
+    const t = window.setInterval(() => qc.invalidateQueries({ queryKey: qk.me }), 10_000);
+    return () => window.clearInterval(t);
+  }, [qc]);
+
+  // back from LINE sign-up: store the consent choices made before leaving (then forget them)
+  useEffect(() => {
+    if (!me.data) return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(PENDING_CONSENT); } catch { /* storage blocked */ }
+    if (!raw) return;
+    api.post('/api/me/consents', JSON.parse(raw)).then(() => { try { sessionStorage.removeItem(PENDING_CONSENT); } catch { /* */ } }).catch(() => {});
+  }, [me.data]);
+
+  if (me.isPending) return <div className="auth" aria-busy />;
+  if (!me.data) return <Navigate to="/login" replace />;
+  if (me.data.status === 'Active') return <Navigate to={homeFor(me.data)} replace />;
+
+  return (
+    <div className="auth"><div className="card" style={{ textAlign: 'center', alignItems: 'center' }}>
+      <Journey step={1} />
+      <span className="avatar s56" style={{ background: 'var(--sage-tint)' }}><Icon name="clock" size={28} /></span>
+      <div className="stack s2"><h1 className="h1" style={{ fontSize: 28, lineHeight: '36px' }}>等待 Iris 確認</h1>
+        <p className="sub">{me.data.name}，你的申請已送出。Iris 確認後會自動進入預約畫面，不用重新登入。</p></div>
+      <button className="btn link" onClick={() => { nav('/login'); logout.mutate(); }}>不是 {me.data.name}？切換帳號</button>
+    </div></div>
   );
 }

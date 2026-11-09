@@ -1,7 +1,7 @@
 # Iris Studio — Features
 
 Version 8 Nov 2026 (v2.1, Iris's decisions built in) · every feature below is in the clickable prototype unless marked.
-Status: ✅ built (client + mock API + server code) · 🟡 built, external service still to connect · ⬜ planned.
+Status: ✅ built (client + mock API + backend implementation; backend validated with PostgreSQL integration tests) · 🟡 built, external service still to connect · ⬜ planned.
 Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 
 ---
@@ -30,7 +30,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | B4 | Pending screen | P0 | ✅ | 申請已送出 / 等待 Iris 確認 + review icon; auto-enters when approved; 不是 X？切換帳號 |
 | B5 | LINE Login | P0 | 🟡 | OIDC flow coded with `bot_prompt=aggressive` (add-friend prompt on the login screen); needs LINE channel id/secret + OA linked |
 | B7 | Re-apply after decline | — | ⬜ | **Pending decision** |
-| B6 | Forgot / change password | P1 | ⬜ | |
+| B6 | Forgot / change password | P1 | 🟡 | Email/password recovery complete: single-use 60-minute link, resend cooldown, expired-link UI, and old-session revocation; LINE-only accounts excluded |
 
 ## C. Student app
 
@@ -87,7 +87,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | E8 | Apple-style UI, Phosphor icons, ivory background | ✅ | see `DESIGN-SYSTEM.md` |
 | E9 | Safe areas + bottom-bar padding | ✅ | content never hidden |
 | E10 | Single-file demo build | ✅ | `npm run build:proto` → `dist-proto/index.html` |
-| E11 | LINE push / email delivery | 🟡 | `IAlertChannel` adapter to add |
+| E11 | LINE push / email delivery | 🟡 | LINE and Resend adapters implemented; credentials and provider verification pending |
 | E12 | PWA install | ⬜ | P2 |
 | E13 | Homework, recordings, events RSVP | ⬜ | P2 |
 

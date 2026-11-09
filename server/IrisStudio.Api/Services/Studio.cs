@@ -42,4 +42,7 @@ public class StudioClock(Microsoft.Extensions.Options.IOptions<StudioOptions> op
         TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(date.ToDateTime(t), DateTimeKind.Unspecified), _tz);
 
     public bool IsPast(DateOnly date, TimeOnly t) => date < Today || (date == Today && t <= NowTime);
+
+    /// <summary>A stored UTC instant as studio wall-clock time.</summary>
+    public DateTime ToLocal(DateTime utc) => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), _tz);
 }

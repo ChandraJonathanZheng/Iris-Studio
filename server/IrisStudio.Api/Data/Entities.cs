@@ -49,6 +49,61 @@ public class User
     public string? StatusLabel { get; set; }
     /// <summary>Short note students see, e.g. 放假中，明天回覆.</summary>
     public string? StatusMessage { get; set; }
+
+    // ---- email preferences (account, security and payment emails are always sent) ----
+    /// <summary>Booking, reschedule and credit updates (teacher: new students, receipts, requests, consults).</summary>
+    public bool EmailUpdates { get; set; } = true;
+    /// <summary>24-hour class reminders, low-credit and payment reminders.</summary>
+    public bool EmailReminders { get; set; } = true;
+    /// <summary>Part of every session JWT ("sv"). A password reset bumps it, so all older sessions stop working.</summary>
+    public int SessionVersion { get; set; }
+}
+
+public enum EmailCategory { Transactional, Marketing }
+/// <summary>Queued → Sent, or Skipped (a send-time rule said no), or Failed (retries exhausted).</summary>
+public enum EmailStatus { Queued, Sent, Skipped, Failed }
+
+/// <summary>
+/// Email outbox + delivery log. Written in the SAME transaction as the business change, so an email exists only
+/// if the change committed. DedupeKey makes each business event email at most once. Data holds the template's
+/// variables; for security emails (verify / reset) it is cleared once the row is final, so no link outlives its use.
+/// </summary>
+public class EmailMessage
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public required string Template { get; set; }
+    public EmailCategory Category { get; set; }
+    /// <summary>Null for people without an account (consult applicants).</summary>
+    public Guid? UserId { get; set; }
+    public required string To { get; set; }
+    public string Data { get; set; } = "{}";
+    public required string DedupeKey { get; set; }
+    /// <summary>Same as Alert.Source, so undo drops the email together with the alert.</summary>
+    public string? Source { get; set; }
+    public EmailStatus Status { get; set; } = EmailStatus.Queued;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime SendAfterUtc { get; set; } = DateTime.UtcNow;
+    public int Attempts { get; set; }
+    public DateTime? NextAttemptUtc { get; set; }
+    public DateTime? SentAtUtc { get; set; }
+    /// <summary>Why it was skipped or the last failure type. Never contains addresses or message content.</summary>
+    public string? Outcome { get; set; }
+}
+
+public enum AuthTokenPurpose { VerifyEmail, ResetPassword }
+
+/// <summary>One-time link token. Only its SHA-256 hash is stored; the raw token exists only in the email.</summary>
+public class AuthToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public AuthTokenPurpose Purpose { get; set; }
+    public required string TokenHash { get; set; }
+    /// <summary>The address being verified: a later email change makes an older link useless.</summary>
+    public string? Email { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? UsedAtUtc { get; set; }
 }
 
 /// <summary>What students see about Iris right now: 正常上課 / 放假中 / 暫停接新學生 / 自訂.</summary>
@@ -96,6 +151,7 @@ public class Payment
     public User Student { get; set; } = null!;
     public int PackageSize { get; set; }
     public int Amount { get; set; }
+    public int? PreviousPackageSize { get; set; }
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
     public required string ReceiptPath { get; set; }
     public required string ContentType { get; set; }
@@ -124,6 +180,8 @@ public class Alert
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime SendAfterUtc { get; set; } = DateTime.UtcNow;
     public DateTime? DeliveredAtUtc { get; set; }
+    public int DeliveryAttempts { get; set; }
+    public DateTime? NextAttemptUtc { get; set; }
     /// <summary>What caused it, e.g. "change:{id}", so undo can delete a queued alert.</summary>
     public string? Source { get; set; }
 }
@@ -139,10 +197,14 @@ public class Consult
     public required string PreferredTime { get; set; }
     public string Topic { get; set; } = "";
     public bool Contacted { get; set; }
+    /// <summary>Consultation slot Iris set (studio time). Null until scheduled.</summary>
+    public DateOnly? ScheduledDate { get; set; }
+    public TimeOnly? ScheduledTime { get; set; }
+    public string? ScheduleNote { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Audit trail for every credit change that isn't a booking (Iris's manual +/−, payments).</summary>
+/// <summary>Audit trail for every credit change, including bookings, refunds, payments and undo.</summary>
 public class CreditLog
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -151,6 +213,7 @@ public class CreditLog
     public required string Reason { get; set; }
     public Guid? ByUserId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? UndoneAtUtc { get; set; }
 }
 
 /// <summary>
@@ -165,6 +228,7 @@ public class IdempotencyRecord
     public required string RequestHash { get; set; }
     public int? StatusCode { get; set; }
     public string? ResponseJson { get; set; }
+    public string? ResponseLocation { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 

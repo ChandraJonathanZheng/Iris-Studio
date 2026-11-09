@@ -32,6 +32,8 @@ export interface MUser {
   credits: number; packageSize: number; createdAt: string; declined?: boolean; classType?: 'private' | 'group' | 'trial';
   // teacher profile (教師個人資料)
   avatarUrl?: string | null; emailVerified?: boolean; lineIdPublic?: boolean;
+  // email preferences (undefined = on, like the server default)
+  emailUpdates?: boolean; emailReminders?: boolean;
   teacherStatus?: 'normal' | 'vacation' | 'noNewStudents' | 'custom'; statusLabel?: string | null; statusMessage?: string | null;
 }
 export interface MChange { id: string; lessonId: string; toDate: string; toTime: string; reason: string; status: 'Open' | 'Approved' | 'Declined' | 'Withdrawn'; decidedAt?: number; prev?: { date: string; time: string }; by?: 'student' | 'teacher'; createdAt?: number }
@@ -40,7 +42,7 @@ export interface MAlert extends AlertItem { userId: string; sendAfter: number; s
 export interface MPayment extends Omit<Payment, 'studentName'> { decidedAt?: number }
 export interface MConsent { id: string; userId: string; kind: 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian'; granted: boolean; version: string; scope: string; source: 'register' | 'profile' | 'request'; at: string; guardian?: { name: string; relation: string; contact: string } }
 export interface MPrivacyRequest { id: string; name: string; contact: string; type: 'access' | 'copy' | 'correct' | 'stop' | 'delete' | 'withdraw'; detail: string; status: 'open' | 'done'; createdAt: string; handledAt: string | null; note: string | null }
-export interface MConsult { id: string; name: string; contactType: 'line' | 'email'; contact: string; preferredTime: 'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any'; topic: string; createdAt: string; contacted: boolean }
+export interface MConsult { id: string; name: string; contactType: 'line' | 'email'; contact: string; preferredTime: 'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any'; topic: string; createdAt: string; contacted: boolean; scheduledDate?: string | null; scheduledTime?: string | null; scheduleNote?: string | null }
 
 const id = () => crypto.randomUUID();
 const today = studioToday();

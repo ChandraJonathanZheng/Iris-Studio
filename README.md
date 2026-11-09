@@ -3,11 +3,11 @@
 Website + booking system for Iris's one-teacher singing studio in Taiwan.
 Students sign in with LINE, book / move / cancel lessons and track their sessions; Iris approves requests, confirms bank-transfer receipts and sees every lesson in one place. No payment gateway.
 
-**Stack:** .NET 10 Minimal API · EF Core + PostgreSQL · React 19 + Vite + TypeScript · TanStack Query · React Router 7
+**Stack:** .NET 10 Minimal API · EF Core + SQL Server (local) / PostgreSQL · React 19 + Vite + TypeScript · TanStack Query · React Router 7
 
 ```
 iris-studio/
-├─ docker-compose.yml            PostgreSQL for local development
+├─ docker-compose.yml            optional local PostgreSQL
 ├─ client/                       React app
 │  ├─ src/lib/                   api.ts, queries.ts (cache + optimistic updates), date.ts, prefetch.ts, types.ts
 │  ├─ src/components/            Shell, Sheet (Vaul), CommandMenu (cmdk), SlotPicker, Toast (undo), ui
@@ -15,7 +15,7 @@ iris-studio/
 │  ├─ src/mocks/                 in-browser mock API (same rules as the server) for demos and tests
 │  └─ e2e/smoke.mjs              Playwright checks for the interaction details
 └─ server/IrisStudio.Api/
-   ├─ Program.cs                 wiring: DB, cookie + LINE auth, rate limits, routes
+   ├─ Program.cs                 wiring: DB, JWT + LINE auth, rate limits, routes
    ├─ appsettings.json           studio rules: slots, prices, bank, undo window, alert delay
    ├─ Data/                      Entities, AppDbContext, Seed
    ├─ Services/                  BookingService (all lesson/quota rules), AlertService + outbox, StudioClock, ImageService
@@ -35,23 +35,26 @@ npm run dev:mock          # http://localhost:5173 — pick a demo account on the
 The mock API (`src/mocks`) runs in the browser and follows the same rules as the server (slots, 24 h refund, idempotency, undo windows, delayed alerts).
 
 ### Full stack
-You need the **.NET 10 SDK**, **Node 20+** and **Docker**.
+You need the **.NET 10 SDK**, **Node 20+** and **SQL Server 2022** running as `.\MSSQLDEV2022` on Windows. Development uses Windows Authentication with the account running the API and creates `iris_studio` on first startup.
 ```bash
-docker compose up -d                                   # PostgreSQL
+cd server
+dotnet tool restore                                   # from server/ (local EF tool manifest)
+dotnet run --project IrisStudio.Api                     # http://localhost:5080 (applies committed migrations, seeds Iris + demo students)
 
-cd server/IrisStudio.Api
-dotnet tool install --global dotnet-ef                 # once per machine
-dotnet ef migrations add Initial                       # once: creates the schema migration
-dotnet run                                             # http://localhost:5080 (applies migrations, seeds Iris + demo students)
-
-cd ../../client
+cd ../client
 npm install
 npm run dev                                            # http://localhost:5173, /api is proxied to .NET
 ```
 Logins (Development): Iris `iris@studio.local` / `change-me-now`; demo students `xiaoming@demo.local` (also jiaying, yating, jiahao, sihan) / `demo1234`.
 
-**LINE Login:** create a LINE Login channel, set the callback URL to `https://<your-domain>/api/auth/line/callback`, then
-`dotnet user-secrets set "Line:ChannelId" "…"` and `dotnet user-secrets set "Line:ChannelSecret" "…"`. Without them the LINE button answers "not configured" and email login still works.
+`appsettings.Development.json` supplies `Database:Provider=SqlServer` and an integrated-security connection string. Existing `ConnectionStrings:Db` user secrets or environment variables override that connection; remove an old PostgreSQL override or replace it with the SQL Server connection. The local certificate is trusted only in Development. PostgreSQL/Supabase remains available with `Database__Provider=PostgreSql` and a matching `ConnectionStrings__Db`; see [backend setup](docs/BACKEND.md).
+
+**Authentication:** configure a random `Jwt:SigningKey` of at least 32 bytes using .NET user-secrets (or `Jwt__SigningKey` in production). The backend issues an application JWT in an HttpOnly cookie; `/api/me` reads the current database user from that session.
+
+**LINE Login:** create a LINE Login channel, set the callback URL to `https://<your-public-login-host>/api/auth/line/callback`, then
+`dotnet user-secrets set --project server/IrisStudio.Api "Line:ChannelId" "…"` and `dotnet user-secrets set --project server/IrisStudio.Api "Line:ChannelSecret" "…"` (from the repository root). Without them the LINE button answers "not configured" and email login still works. See [Backend setup and validation](docs/BACKEND.md) for configuration, notification adapters and database integration tests.
+
+With separate development tunnels, login through the frontend tunnel on port 5173 and register that host's callback; `/api` is proxied to the backend on port 5080. New LINE users are saved as Pending until approved; active accounts enter their dashboard after login.
 
 ### Production build
 `cd client && npm run build` type-checks, builds into `server/IrisStudio.Api/wwwroot` and pre-renders the landing page. Then deploy the one .NET app (one domain, no CORS).
@@ -75,7 +78,7 @@ node e2e/smoke.mjs                # 22 checks: idempotency, undo, rollback, back
 | 5 | Undo instead of "are you sure" | `components/Toast.tsx` + `/undo` endpoints (30 s window) + **alerts delayed 10 s** in `AlertService`, so undo deletes them before the student sees them |
 | 6 | Stale-while-revalidate | TanStack Query defaults (`staleTime 30 s`, refetch on focus); slots `staleTime 0` |
 | 7 | Pre-rendering | `entry-server.tsx` + `scripts/prerender.mjs` (landing). Dashboards: code-split + prefetch on hover/touch (`lib/prefetch.ts`) |
-| 8 | Blurred image placeholders | `ImageService.MakeLqipAsync` (16 px JPEG at upload) → `BlurImage` |
+| 8 | Blurred image placeholders | `ImageService.MakeLqipAsync` (SkiaSharp, 16 px JPEG at upload) → `BlurImage` |
 | 9 | View transitions | `viewTransition` on links/navigation; CSS in `styles.css`; off with reduced motion |
 | 10 | Swipe-to-dismiss sheets | `components/Sheet.tsx` (Vaul) |
 | 11 | Interruptible animations | Vaul drag + CSS transitions only |
@@ -105,5 +108,5 @@ node e2e/smoke.mjs                # 22 checks: idempotency, undo, rollback, back
 - [ ] Real content on the landing page (photos, bio, **real, consented** testimonials), real bank details and prices
 - [ ] Strong teacher password via environment variable / user-secrets
 - [ ] HTTPS (the auth cookie is `Secure` outside Development)
-- [ ] LINE Login channel + callback URL; optionally a LINE Messaging `IAlertChannel` for push notifications
-- [ ] Backups for PostgreSQL and `App_Data/receipts`
+- [ ] LINE Login channel + callback URL; LINE Messaging and Gmail SMTP credentials, then `Notifications:Enabled=true` for external notifications
+- [ ] Backups for the database and `App_Data/receipts`

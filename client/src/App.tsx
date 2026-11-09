@@ -20,6 +20,11 @@ export const routes: RouteObject[] = [
   { path: '/login', Component: Login },
   { path: '/register', Component: Register },
   { path: '/pending', Component: Pending },
+  // links from emails (their own small chunk)
+  { path: '/forgot-password', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).ForgotPassword }) },
+  { path: '/reset-password', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).ResetPassword }) },
+  { path: '/verify-email', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).VerifyEmail }) },
+  { path: '/unsubscribe', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).Unsubscribe }) },
   // legal & privacy documents (+ cookie settings, 個資權利申請) — public, their own chunk
   { path: '/legal/:slug', lazy: async () => ({ Component: (await import('./pages/Legal')).LegalPage }) },
   {

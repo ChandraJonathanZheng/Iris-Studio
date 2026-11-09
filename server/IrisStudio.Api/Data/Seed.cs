@@ -20,15 +20,17 @@ public static class Seed
         var email = o.TeacherEmail.Trim().ToLowerInvariant();
         if (!await db.Users.AnyAsync(u => u.Role == Role.Teacher))
         {
-            var t = new User { Name = o.TeacherName, Role = Role.Teacher, Status = UserStatus.Active, Email = email, EmailVerified = true }; // set by the owner in config
+            if (!Infrastructure.Input.IsEmail(email) || o.TeacherPassword.Length < 12 || (!demo && !scope.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment() && o.TeacherPassword == "change-me-now"))
+                throw new InvalidOperationException("Set Studio:TeacherEmail and a strong Studio:TeacherPassword (at least 12 characters) before first startup.");
+            var t = new User { Name = o.TeacherName, Role = Role.Teacher, Status = UserStatus.Active, Email = email, EmailVerified = true };
             t.PasswordHash = hasher.HashPassword(t, o.TeacherPassword);
             db.Users.Add(t);
         }
 
         // Default 可預約時段 (Iris edits it in the app): Mon–Sat 09:30–12:30 + 14:00–20:30, Sunday off; 60 min + 30 min break, 30 days ahead.
+        if (!await db.BookingSettings.AnyAsync()) db.BookingSettings.Add(new BookingSettings());
         if (!await db.WeeklyAvailability.AnyAsync())
         {
-            db.BookingSettings.Add(new BookingSettings());
             for (var w = 0; w < 7; w++)
                 db.WeeklyAvailability.Add(new WeeklyAvailability { Weekday = w, Enabled = w != 0, Ranges = w == 0 ? "" : "09:30-12:30;14:00-20:30" });
             await db.SaveChangesAsync();

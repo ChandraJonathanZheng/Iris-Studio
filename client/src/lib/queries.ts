@@ -1,7 +1,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from './api';
+import { api, newIdempotencyKey } from './api';
 import type {
-  AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, Overview, Payment, PaymentStatus,
+  AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, NotificationPrefs, Overview, Payment, PaymentStatus,
   Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType,
 } from './types';
 
@@ -50,7 +50,7 @@ export const useAlerts = () => useQuery({ queryKey: qk.alerts, queryFn: ({ signa
 export const useMyPayments = () => useQuery({ queryKey: qk.myPayments, queryFn: ({ signal }) => api.get<Payment[]>('/api/student/payments', signal) });
 export const useOverview = (enabled = true) => useQuery({ queryKey: qk.overview, queryFn: ({ signal }) => api.get<Overview>('/api/teacher/overview', signal), enabled });
 export const useStudents = () => useQuery({ queryKey: qk.students, queryFn: ({ signal }) => api.get<StudentSummary[]>('/api/teacher/students', signal) });
-export const useStudent = (id: string) => useQuery({ queryKey: qk.student(id), queryFn: ({ signal }) => api.get<StudentDetail>(`/api/teacher/students/${id}`, signal) });
+export const useStudent = (id: string, options?: { refetchOnMount?: 'always' }) => useQuery({ queryKey: qk.student(id), queryFn: ({ signal }) => api.get<StudentDetail>(`/api/teacher/students/${id}`, signal), ...options });
 export const useRequests = () => useQuery({ queryKey: qk.requests, queryFn: ({ signal }) => api.get<Requests>('/api/teacher/requests', signal) });
 export const usePayments = (status: PaymentStatus | 'All') =>
   useQuery({ queryKey: qk.payments(status), queryFn: ({ signal }) => api.get<Payment[]>(`/api/teacher/payments?status=${status}`, signal) });
@@ -136,6 +136,38 @@ export function useMarkAllRead() {
     qc.invalidateQueries({ queryKey: qk.me });
   };
   return { mutation: m, undo };
+}
+
+/** Email preferences (both roles). Optimistic: the switch moves at once and snaps back on error. */
+export function useSaveNotificationPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: NotificationPrefs) => api.put<NotificationPrefs>('/api/me/notifications', v),
+    onMutate: async (v) => {
+      const snap = await snapshot(qc, qk.me);
+      qc.setQueryData<Me | null>(qk.me, (me) => (me ? { ...me, ...v } : me));
+      return { snap };
+    },
+    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.me }),
+  });
+}
+
+export const useResendVerification = () => useMutation({ mutationFn: () => api.post('/api/me/email/verification') });
+export const useResendConsultConfirmation = () => useMutation({
+  mutationFn: (id: string) => api.post(`/api/teacher/consults/${id}/confirmation`),
+});
+
+export function useScheduleConsult() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; date: string; time: string; note: string }) =>
+      api.post<Consult>(`/api/teacher/consults/${v.id}/schedule`, { date: v.date, time: v.time, note: v.note }),
+    onSuccess: (c) => {
+      qc.setQueryData<Consult[]>(qk.consults, (l) => l?.map((x) => (x.id === c.id ? c : x)));
+      qc.invalidateQueries({ queryKey: qk.overview });
+    },
+  });
 }
 
 export function useUpdateProfile() {
@@ -232,16 +264,21 @@ export function useDecidePayment() {
 
 export function useAdjustCredits(studentId: string) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (v: { delta: number; reason: string }) => api.post<{ credits: number }>(`/api/teacher/students/${studentId}/credits`, v),
-    onMutate: async ({ delta }) => {
-      const snap = await snapshot(qc, qk.student(studentId));
-      qc.setQueryData<StudentDetail>(qk.student(studentId), (s) => (s ? { ...s, credits: Math.max(0, s.credits + delta) } : s));
-      return { snap };
+  const mutation = useMutation({
+    mutationFn: (v: { delta: number; reason: string }) => api.post<{ credits: number; id: string; undoUntil: string }>(`/api/teacher/students/${studentId}/credits`, v, { idempotencyKey: newIdempotencyKey() }),
+    // Credits stay server-authoritative: optimistic changes would apply the delta twice in an open preview.
+    onMutate: () => qc.cancelQueries({ queryKey: qk.student(studentId) }),
+    onSuccess: ({ credits }) => {
+      qc.setQueryData<StudentDetail>(qk.student(studentId), (s) => (s ? { ...s, credits } : s));
     },
-    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
     onSettled: () => { qc.invalidateQueries({ queryKey: qk.student(studentId) }); qc.invalidateQueries({ queryKey: qk.students }); },
   });
+  const undo = async (adjustmentId: string) => {
+    await api.post(`/api/teacher/credit-adjustments/${adjustmentId}/undo`);
+    qc.invalidateQueries({ queryKey: qk.student(studentId) });
+    qc.invalidateQueries({ queryKey: qk.students });
+  };
+  return { ...mutation, undo };
 }
 
 export function useSetClassType(studentId: string) {
@@ -333,7 +370,7 @@ export const useDeleteOverride = () => useAvailabilityEdit<string>(
 export function useSendReminder(studentId: string) {
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: (message: string) => api.post<{ id: string; channel: 'line' | 'email' }>(`/api/teacher/students/${studentId}/remind`, { message }),
+    mutationFn: (message: string) => api.post<{ id: string; channel: 'line' | 'email' | 'both' }>(`/api/teacher/students/${studentId}/remind`, { message }),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.student(studentId) }),
   });
   /** 復原 within the 10 s alert delay: the queued message is deleted before it is sent. */

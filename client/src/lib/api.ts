@@ -1,4 +1,4 @@
-// Thin fetch wrapper. The auth cookie is HttpOnly and same-origin, so we never touch tokens here.
+// The application JWT travels in a same-origin HttpOnly cookie; JavaScript never copies it into storage or URLs.
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {

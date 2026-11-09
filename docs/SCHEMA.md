@@ -8,7 +8,7 @@ Version 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time w
 - Every enum is stored as **text** (`"Booked"`, not `0`), max 16 chars — readable in SQL, safe to extend.
 - Times: `date` + `time` columns are **studio local time** (Asia/Taipei). `…Utc` columns are `timestamp` in UTC.
 - No soft delete: lessons are cancelled (status), never deleted; history stays.
-- First migration not created yet: `dotnet ef migrations add Initial && dotnet ef database update`.
+- Committed migrations: `Initial` and `PaymentUndoMetadata`; applied at startup. Do not generate a second Initial migration.
 
 ---
 
@@ -118,6 +118,7 @@ Rule in code: a student request needs ≥ `Studio:MoveHours` (12) before the les
 | PackageSize | int | | 1 (體驗課) / 4 / 8 |
 | IsTrial | bool | | the one-time 體驗課 package; allowed once per 體驗 student (Rejected doesn't count) |
 | Amount | int | | NT$ |
+| PreviousPackageSize | int | ✓ | last package size before confirmation, restored by undo |
 | Status | text(16) | | Pending / Confirmed / Rejected |
 | ReceiptPath | text | | file under `Studio:ReceiptsFolder` (served only via `/api/receipts/{id}` to owner + teacher) |
 | ContentType | text | | image/jpeg · png · webp (checked by file signature) |
@@ -126,7 +127,7 @@ Rule in code: a student request needs ≥ `Studio:MoveHours` (12) before the les
 | RejectReason | text | ✓ | required when rejected |
 | UploadedAtUtc / DecidedAtUtc | timestamp | / ✓ | |
 
-Index: (Status, UploadedAtUtc). Rule in code: at most one Pending receipt per student; buying is otherwise allowed any time and credits never expire.
+Indexes: (Status, UploadedAtUtc), unique StudentId where Pending, and unique (StudentId, IsTrial) where IsTrial and not Rejected. Buying is otherwise allowed any time and credits never expire.
 
 ### `Alerts` (通知 + outbox)
 | Column | Type | Null | Notes |
@@ -138,7 +139,9 @@ Index: (Status, UploadedAtUtc). Rule in code: at most one Pending receipt per st
 | Read | bool | | |
 | CreatedAtUtc | timestamp | | |
 | SendAfterUtc | timestamp | | now + 10 s for decisions → undo can delete it first |
-| DeliveredAtUtc | timestamp | ✓ | set by `AlertDispatcher` after LINE / email push |
+| DeliveredAtUtc | timestamp | ✓ | set after successful delivery (or in-app processing when external delivery is disabled) |
+| DeliveryAttempts | int | | failed attempts |
+| NextAttemptUtc | timestamp | ✓ | retry backoff; independent of in-app visibility |
 | Source | text | ✓ | `change:{id}`, `cancel:{id}`, `remind:{id}` … used by undo |
 
 Indexes: (UserId, CreatedAtUtc) · (DeliveredAtUtc, SendAfterUtc) · (Source).
@@ -161,8 +164,9 @@ Indexes: (UserId, CreatedAtUtc) · (DeliveredAtUtc, SendAfterUtc) · (Source).
 | Id | uuid | PK |
 | StudentId | uuid | indexed |
 | Delta | int | +/− |
-| Reason | text | `payment:{id}`, `undo-payment:{id}`, `manual`, `manual: 補課：…` |
-| ByUserId | uuid? | who did it |
+| Reason | text | `payment:{id}`, `undo-payment:{id}`, `booking:{id}`, `cancel:{id}`, `undo-cancel:{id}`, `manual: 補課：…`, `undo-credits:{id}` |
+| ByUserId | uuid? | FK to Users; who did it |
+| UndoneAtUtc | timestamp? | marks a manual adjustment already undone |
 | CreatedAtUtc | timestamp | |
 
 ### `IdempotencyRecords`
@@ -172,7 +176,8 @@ Indexes: (UserId, CreatedAtUtc) · (DeliveredAtUtc, SendAfterUtc) · (Source).
 | UserId | uuid | |
 | Endpoint | text | |
 | RequestHash | text | same key + different body → 422 |
-| StatusCode / ResponseJson | int? / jsonb? | replayed on retry |
+| StatusCode / ResponseJson | int? / jsonb? | replayed on retry (JSONB preserves values, not whitespace/order) |
+| ResponseLocation | text? | original Location header for 201 replay |
 | CreatedAtUtc | timestamp | indexed (for cleanup) |
 
 Written in the **same transaction** as the action it protects.
@@ -245,12 +250,12 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 
 | Item | Note |
 |---|---|
-| No FK on `Alerts.UserId`, `CreditLogs.StudentId` | add FKs to `Users` |
+| User references | FKs now cover Alerts, CreditLogs (student and actor), and IdempotencyRecords |
 | Receipts on local disk | back up `App_Data/receipts` with the DB, or move to object storage |
-| `IdempotencyRecords` cleanup | daily job, delete > 24 h |
+| `IdempotencyRecords` cleanup | implemented by StudioMaintenance, daily, delete > 24 h |
 | Group classes with capacity | **pending decision** — would replace `UX_Lesson_Slot_Booked` with a per-slot capacity |
 | Re-apply after decline | **pending decision** — today `Users.Declined` blocks it |
-| New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the Initial migration (none exists yet) |
+| New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the committed Initial migration |
 | Phase 2 | `Homework`, `HomeworkSubmissions`, `Events`, `EventInvites` |
 
 ## 8. Added 8 Nov (later): teacher profile, consents, privacy requests

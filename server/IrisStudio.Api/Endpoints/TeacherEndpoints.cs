@@ -11,7 +11,7 @@ public static class TeacherEndpoints
 {
     public static void MapTeacher(this IEndpointRouteBuilder app)
     {
-        var t = app.MapGroup("/api/teacher").RequireAuthorization("Teacher");
+        var t = app.MapGroup("/api/teacher").RequireAuthorization("Teacher").AddEndpointFilter<StudioMutationFilter>();
 
         t.MapGet("/overview", async (AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
         {
@@ -84,10 +84,13 @@ public static class TeacherEndpoints
                 await consents.SummaryAsync(id, ct)));
         });
 
-        // 通知學生繳學費 — manual payment reminder. It goes through the normal alert outbox: queued for the usual
-        // delay (so 復原 works), then the IAlertChannel delivers it (LINE push if the student signed in with LINE,
-        // otherwise email) and it also shows in the student's in-app 通知.
-        static string? RemindChannel(User u) => u.LineUserId is not null ? "line" : u.Email is not null ? "email" : null;
+        // 通知學生繳學費 — manual payment reminder. It goes through the normal outbox: queued for the usual
+        // delay (so 復原 works), then pushed to LINE (if linked) and emailed (if the student has an email),
+        // and it also shows in the student's in-app 通知.
+        static string? RemindChannel(User u) => (u.LineUserId, u.Email) switch
+        {
+            (not null, not null) => "both", (not null, null) => "line", (null, not null) => "email", _ => null,
+        };
 
         t.MapPost("/students/{id:guid}/remind", async (Guid id, RemindRequest r, AppDbContext db, AlertService alerts, CancellationToken ct) =>
         {
@@ -98,29 +101,37 @@ public static class TeacherEndpoints
             if (RemindChannel(u) is not { } channel) return Problems.Of(409, "no_channel", "這位學生沒有 LINE 或 Email，無法通知。");
             var rid = Guid.NewGuid();
             alerts.Add(u.Id, AlertKind.Reminder, "繳費提醒", text, source: $"remind:{rid}");
+            await alerts.EmailAsync(u, "payment-reminder", new() { ["message"] = text, ["credits"] = u.Credits.ToString() }, $"remind:{rid}", $"remind:{rid}", ct: ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new RemindResult(rid, channel));
         });
 
         t.MapDelete("/reminders/{rid:guid}", async (Guid rid, AlertService alerts, CancellationToken ct) =>
         {
-            await alerts.DropQueuedAsync($"remind:{rid}", ct);
-            return Results.Ok();
+            var removed = await alerts.DropQueuedAsync($"remind:{rid}", ct);
+            return removed > 0 ? Results.Ok() : Problems.Of(409, "undo_expired", "提醒已送出或已經復原，無法再收回。");
         });
 
-        t.MapPost("/students/{id:guid}/credits", async (Guid id, DeltaRequest r, HttpContext http, BookingService booking, CancellationToken ct) =>
-            TypedResults.Ok(new CreditsDto(await booking.AdjustCreditsAsync(id, r.Delta, r.Reason, http.User.UserId(), ct))));
+        t.MapPost("/students/{id:guid}/credits", async (Guid id, DeltaRequest r, HttpContext http, BookingService booking, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
+        {
+            var log = await booking.AdjustCreditsAsync(id, r.Delta, r.Reason, http.User.UserId(), ct);
+            var credits = await db.Users.Where(u => u.Id == id).Select(u => u.Credits).SingleAsync(ct);
+            return Results.Ok(new CreditAdjustmentDto(credits, log.Id, clock.UtcNow.Add(o.Value.UndoWindow)));
+        }).AddEndpointFilter<IdempotencyFilter>();
+        t.MapPost("/credit-adjustments/{id:guid}/undo", async (Guid id, HttpContext http, BookingService booking, CancellationToken ct) =>
+            Results.Ok(new CreditsDto(await booking.UndoCreditsAsync(id, http.User.UserId(), ct))));
 
         t.MapPatch("/students/{id:guid}/class-type", async (Guid id, ClassTypeRequest r, AppDbContext db, CancellationToken ct) =>
         {
-            if (!Enum.TryParse<LessonType>(r.ClassType, ignoreCase: true, out var type)) return Problems.Of(400, "validation", "類型不正確。");
+            if (!Enum.TryParse<LessonType>(r.ClassType, ignoreCase: true, out var type) || !Enum.IsDefined(type)) return Problems.Of(400, "validation", "類型不正確。");
             var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.ClassType, type), ct);
             return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
         });
 
-        t.MapPatch("/students/{id:guid}/grade", async (Guid id, string grade, AppDbContext db, CancellationToken ct) =>
+        t.MapPatch("/students/{id:guid}/grade", async (Guid id, GradeRequest r, AppDbContext db, CancellationToken ct) =>
         {
-            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.Grade, grade.Trim()), ct);
+            if (r.Grade?.Trim().Length > 80) return Problems.Of(400, "validation", "程度不能超過 80 個字。");
+            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.Grade, (r.Grade ?? "").Trim()), ct);
             return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
         });
 
@@ -128,12 +139,15 @@ public static class TeacherEndpoints
         {
             var open = await db.ChangeRequests.AsNoTracking().Include(c => c.Lesson).ThenInclude(l => l.Student)
                 .Where(c => c.Status == ChangeStatus.Open && c.ProposedBy == ChangeBy.Student).OrderBy(c => c.CreatedAtUtc).ToListAsync(ct);
-            var gap = (await availability.GetAsync(ct)).Settings.GapMinutes;
+            var av = await availability.GetAsync(ct);
+            var gap = av.Settings.GapMinutes;
             var dates = open.Select(c => c.ToDate).Distinct().ToList();
             var taken = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && dates.Contains(l.Date)).Select(l => new { l.Id, l.Date, l.Time, l.DurationMinutes }).ToListAsync(ct);
             var changes = open.Select(c => new ChangeRequestDto(c.Id, c.LessonId, c.Lesson.StudentId, c.Lesson.Student.Name,
                 Map.D(c.Lesson.Date), Map.T(c.Lesson.Time), Map.D(c.ToDate), Map.T(c.ToTime), c.Reason,
-                SlotFree: !clock.IsPast(c.ToDate, c.ToTime) && !taken.Any(x => x.Date == c.ToDate && x.Id != c.LessonId && AvailabilityService.Overlaps(c.ToTime, c.Lesson.DurationMinutes, x.Time, x.DurationMinutes, gap)),
+                SlotFree: c.Lesson.Status == LessonStatus.Booked && !clock.IsPast(c.Lesson.Date, c.Lesson.Time)
+                    && c.ToDate <= clock.Today.AddDays(av.Settings.AdvanceDays) && av.CanFit(c.ToDate, c.ToTime, c.Lesson.DurationMinutes)
+                    && !clock.IsPast(c.ToDate, c.ToTime) && !taken.Any(x => x.Date == c.ToDate && x.Id != c.LessonId && AvailabilityService.Overlaps(c.ToTime, c.Lesson.DurationMinutes, x.Time, x.DurationMinutes, gap)),
                 DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc))).ToArray();
             var apps = await db.Users.AsNoTracking().Where(u => u.Role == Role.Student && u.Status == UserStatus.Pending && !u.Declined)
                 .OrderBy(u => u.CreatedAtUtc).Select(u => new ApplicationDto(u.Id, u.Name, u.Email, u.CreatedAtUtc)).ToArrayAsync(ct);
@@ -169,12 +183,15 @@ public static class TeacherEndpoints
                 case "approve" when u.Status == UserStatus.Pending && !u.Declined:
                     u.Status = UserStatus.Active;
                     alerts.Add(u.Id, AlertKind.Welcome, "歡迎加入 Iris 聲樂工作室", "帳號已確認，可以開始預約。", $"app:{u.Id}");
+                    await alerts.EmailAsync(u, "account-approved", [], $"approved:{u.Id}", $"app:{u.Id}", ct: ct);
                     break;
                 case "decline" when u.Status == UserStatus.Pending && !u.Declined:
                     u.Declined = true;
                     break;
                 case "undo":
                     if (u.DecidedAtUtc is null || clock.UtcNow - u.DecidedAtUtc > o.Value.UndoWindow) return Problems.Of(409, "undo_expired", "已超過可以復原的時間。");
+                    if (await db.Lessons.AnyAsync(l => l.StudentId == id, ct) || await db.Payments.AnyAsync(p => p.StudentId == id, ct))
+                        return Problems.Of(409, "account_in_use", "學生已經開始使用帳號，無法復原確認。");
                     u.Status = UserStatus.Pending; u.Declined = false; u.DecidedAtUtc = null;
                     await alerts.DropQueuedAsync($"app:{u.Id}", ct);
                     await db.SaveChangesAsync(ct);
@@ -190,7 +207,7 @@ public static class TeacherEndpoints
         t.MapGet("/payments", async (string? status, AppDbContext db, CancellationToken ct) =>
         {
             var q = db.Payments.AsNoTracking().Include(p => p.Student).AsQueryable();
-            if (Enum.TryParse<PaymentStatus>(status, out var st)) q = q.Where(p => p.Status == st);
+            if (Enum.TryParse<PaymentStatus>(status, ignoreCase: true, out var st) && Enum.IsDefined(st)) q = q.Where(p => p.Status == st);
             var list = await q.OrderByDescending(p => p.UploadedAtUtc).Take(200).ToListAsync(ct);
             return TypedResults.Ok(list.Select(Map.Payment).ToArray());
         });
@@ -222,7 +239,7 @@ public static class TeacherEndpoints
             var list = new List<TimeRange>();
             foreach (var r in rs ?? [])
             {
-                if (!TimeOnly.TryParseExact(r.Start, "HH:mm", out var a) || !TimeOnly.TryParseExact(r.End, "HH:mm", out var b)) return null;
+                if (r is null || !TimeOnly.TryParseExact(r.Start, "HH:mm", out var a) || !TimeOnly.TryParseExact(r.End, "HH:mm", out var b)) return null;
                 list.Add(new TimeRange(a, b));
             }
             return list.ToArray();
@@ -230,11 +247,17 @@ public static class TeacherEndpoints
 
         t.MapGet("/availability", async (AvailabilityService availability, CancellationToken ct) => TypedResults.Ok(await Load(availability, ct)));
 
-        t.MapPut("/availability/settings", async (BookingSettingsDto r, AppDbContext db, AvailabilityService availability, CancellationToken ct) =>
+        t.MapPut("/availability/settings", async (BookingSettingsDto r, AppDbContext db, AvailabilityService availability, StudioClock clock, CancellationToken ct) =>
         {
             if (!AvailabilityService.LessonMinuteOptions.Contains(r.LessonMinutes) || !AvailabilityService.GapMinuteOptions.Contains(r.GapMinutes)
                 || !AvailabilityService.AdvanceDayOptions.Contains(r.AdvanceDays))
                 return Problems.Of(400, "validation", "設定值不正確。");
+            var av = await availability.GetAsync(ct);
+            var activeRanges = av.Weekly.Values.Where(w => w.Enabled).Select(w => w.Ranges)
+                .Concat(av.Overrides.Values.Where(d => !d.Closed && d.Date >= clock.Today).Select(d => d.Ranges));
+            foreach (var ranges in activeRanges)
+                if (AvailabilityService.RangeProblems(AvailabilityService.ParseRanges(ranges), r.LessonMinutes) is [var issue, ..])
+                    return Problems.Of(400, "invalid_range", issue);
             var s = await db.BookingSettings.FirstOrDefaultAsync(ct);
             if (s is null) { s = new BookingSettings(); db.BookingSettings.Add(s); }
             s.LessonMinutes = r.LessonMinutes; s.GapMinutes = r.GapMinutes; s.AdvanceDays = r.AdvanceDays;
@@ -244,7 +267,7 @@ public static class TeacherEndpoints
 
         t.MapPut("/availability/weekly", async (WeeklyDayDto[] r, AppDbContext db, AvailabilityService availability, CancellationToken ct) =>
         {
-            if (r.Length != 7 || r.Select(d => d.Weekday).Distinct().Count() != 7 || r.Any(d => d.Weekday is < 0 or > 6))
+            if (r.Length != 7 || r.Any(d => d is null) || r.Select(d => d.Weekday).Distinct().Count() != 7 || r.Any(d => d.Weekday is < 0 or > 6))
                 return Problems.Of(400, "validation", "資料格式不正確。");
             var lessonMinutes = (await availability.GetAsync(ct)).Settings.LessonMinutes;
             var rows = await db.WeeklyAvailability.ToDictionaryAsync(w => w.Weekday, ct);
@@ -252,7 +275,9 @@ public static class TeacherEndpoints
             {
                 var ranges = Parse(d.Ranges);
                 if (ranges is null) return Problems.Of(400, "validation", "時間格式不正確。");
-                if (d.Enabled && AvailabilityService.RangeProblems(ranges, lessonMinutes) is [var first, ..]) return Problems.Of(400, "invalid_range", first);
+                if (AvailabilityService.FormatRanges(ranges).Length > 200) return Problems.Of(400, "validation", "時段數量過多。");
+                if (d.Enabled && ranges.Length == 0) return Problems.Of(400, "invalid_range", "請至少加一個時段，或關閉當天預約。");
+                if (AvailabilityService.RangeProblems(ranges, d.Enabled ? lessonMinutes : 1) is [var first, ..]) return Problems.Of(400, "invalid_range", first);
                 if (!rows.TryGetValue(d.Weekday, out var row)) { row = new WeeklyAvailability { Weekday = d.Weekday }; db.WeeklyAvailability.Add(row); }
                 row.Enabled = d.Enabled;
                 row.Ranges = AvailabilityService.FormatRanges(ranges); // kept while OFF, so switching a day back on restores its hours
@@ -271,6 +296,7 @@ public static class TeacherEndpoints
                 if (ranges.Length == 0) return Problems.Of(400, "validation", "請至少加一個時段，或改成全天休息。");
                 if (AvailabilityService.RangeProblems(ranges, (await availability.GetAsync(ct)).Settings.LessonMinutes) is [var first, ..]) return Problems.Of(400, "invalid_range", first);
             }
+            if (AvailabilityService.FormatRanges(ranges).Length > 200) return Problems.Of(400, "validation", "時段數量過多。");
             var row = await db.DateOverrides.FirstOrDefaultAsync(o => o.Date == d, ct);
             if (row is null) { row = new DateOverride { Date = d }; db.DateOverrides.Add(row); }
             row.Closed = r.Closed;
@@ -289,13 +315,61 @@ public static class TeacherEndpoints
         });
 
         t.MapGet("/consults", async (AppDbContext db, CancellationToken ct) =>
-            TypedResults.Ok(await db.Consults.AsNoTracking().OrderByDescending(c => c.CreatedAtUtc).Take(200)
-                .Select(c => new ConsultDto(c.Id, c.Name, c.ContactType, c.Contact, c.PreferredTime, c.Topic, c.CreatedAtUtc, c.Contacted)).ToArrayAsync(ct)));
+            TypedResults.Ok((await db.Consults.AsNoTracking().OrderByDescending(c => c.CreatedAtUtc).Take(200).ToListAsync(ct)).Select(Map.Consult).ToArray()));
+
+        // 安排諮詢時間: saves the slot, marks the consult contacted, and emails the applicant when they left an email.
+        // Every change (including the Meet link in 備註) is a new event. Retrying an unchanged save sends nothing.
+        t.MapPost("/consults/{id:guid}/schedule", async (Guid id, ScheduleConsultRequest r, AppDbContext db, AlertService alerts, StudioClock clock, CancellationToken ct) =>
+        {
+            if (!Map.TryParseSlot(r.Date, r.Time, out var d, out var tm) || d < clock.Today || clock.IsPast(d, tm)) return Problems.Of(400, "validation", "請選擇之後的日期和時間。");
+            var note = (r.Note ?? "").Trim();
+            if (note.Length > 200) return Problems.Of(400, "validation", "備註不能超過 200 個字。");
+            var c = await db.Consults.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (c is null) return Problems.Of(404, "not_found", "找不到。");
+            var changed = c.ScheduledDate != d || c.ScheduledTime != tm || (c.ScheduleNote ?? "") != note;
+            c.ScheduledDate = d; c.ScheduledTime = tm; c.ScheduleNote = note.Length == 0 ? null : note; c.Contacted = true;
+            if (changed && c.ContactType == "email") await QueueConsultConfirmation(c, db, alerts, ct);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(Map.Consult(c));
+        });
+
+        // Also lets Iris resend confirmations for consultations scheduled before Meet links were added to the template.
+        t.MapPost("/consults/{id:guid}/confirmation", async (Guid id, AppDbContext db, AlertService alerts, StudioClock clock, CancellationToken ct) =>
+        {
+            var c = await db.Consults.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (c is null) return Problems.Of(404, "not_found", "找不到。");
+            if (c.ContactType != "email") return Problems.Of(400, "validation", "對方沒有留下 Email，請透過 LINE 告知對方。");
+            if (c.ScheduledDate is not { } d || c.ScheduledTime is not { } tm || clock.IsPast(d, tm))
+                return Problems.Of(400, "validation", "請先安排之後的諮詢時間。");
+            var prefix = $"consult-scheduled:{c.Id}:";
+            var since = clock.UtcNow.AddMinutes(-1);
+            if (await db.EmailMessages.AnyAsync(m => m.DedupeKey.StartsWith(prefix) && m.CreatedAtUtc > since, ct))
+                return Problems.Of(429, "cooldown", "請稍候一分鐘再重寄確認信。");
+            await QueueConsultConfirmation(c, db, alerts, ct);
+            return Results.Accepted();
+        });
         t.MapPost("/consults/{id:guid}/contacted", async (Guid id, ContactedRequest r, AppDbContext db, CancellationToken ct) =>
         {
             var n = await db.Consults.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.Contacted, r.Contacted), ct);
             return n == 0 ? Problems.Of(404, "not_found", "找不到。") : Results.NoContent();
         });
+    }
+
+    private static async Task QueueConsultConfirmation(Consult c, AppDbContext db, AlertService alerts, CancellationToken ct)
+    {
+        var prefix = $"consult-scheduled:{c.Id}:";
+        // Includes legacy slot-based keys. Keep a history, but never send superseded queued confirmations,
+        // even if Iris changes A → B → A or the earlier delivery is waiting to retry.
+        await db.EmailMessages.Where(m => m.DedupeKey.StartsWith(prefix) && m.Status == EmailStatus.Queued)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Status, EmailStatus.Skipped)
+                .SetProperty(m => m.Outcome, "consult_changed").SetProperty(m => m.NextAttemptUtc, (DateTime?)null), ct);
+        var d = c.ScheduledDate!.Value;
+        var tm = c.ScheduledTime!.Value;
+        await alerts.EmailGuestAsync(c.Contact, c.Name, "consult-scheduled", new()
+        {
+            ["consultDate"] = EmailFormat.Date(d), ["consultTime"] = EmailFormat.Time(tm), ["note"] = c.ScheduleNote ?? "",
+            [EmailGuard.ConsultId] = c.Id.ToString(), [EmailGuard.ConsultSlot] = EmailFormat.SlotKey(d, tm),
+        }, prefix + Guid.NewGuid(), ct);
     }
 
     /// <summary>List-row data for students: credits, booked count, next lesson, payment waiting.</summary>

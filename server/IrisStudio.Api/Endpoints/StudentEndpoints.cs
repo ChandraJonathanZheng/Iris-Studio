@@ -12,12 +12,12 @@ public static class StudentEndpoints
     public static void MapSlotsAndStudent(this IEndpointRouteBuilder app)
     {
         // ---------- slots (any signed-in user) ----------
-        var slots = app.MapGroup("/api/slots").RequireAuthorization();
+        var slots = app.MapGroup("/api/slots").RequireAuthorization().AddEndpointFilter<ActiveUserFilter>();
 
         // Days and slots are generated from Iris's 可預約時段 (AvailabilityService), minus anything already booked.
         slots.MapGet("/days", async (string from, int? count, AppDbContext db, StudioClock clock, AvailabilityService availability, CancellationToken ct) =>
         {
-            if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", out var start)) return Problems.Of(400, "validation", "日期格式不正確。");
+            if (!DateOnly.TryParseExact(from, "yyyy-MM-dd", out var start) || start > DateOnly.MaxValue.AddDays(-62)) return Problems.Of(400, "validation", "日期格式不正確。");
             var n = Math.Clamp(count ?? 15, 1, 62);
             var end = start.AddDays(n - 1);
             var av = await availability.GetAsync(ct);
@@ -53,7 +53,7 @@ public static class StudentEndpoints
         });
 
         // ---------- student ----------
-        var s = app.MapGroup("/api/student").RequireAuthorization("Student").AddEndpointFilter<ActiveStudentFilter>();
+        var s = app.MapGroup("/api/student").RequireAuthorization("Student").AddEndpointFilter<StudioMutationFilter>().AddEndpointFilter<ActiveStudentFilter>();
 
         s.MapGet("/lessons", async (string from, string to, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, CancellationToken ct) =>
         {
@@ -113,21 +113,29 @@ public static class StudentEndpoints
         s.MapPost("/alerts/read", async (ReadRequest r, HttpContext http, AppDbContext db, CancellationToken ct) =>
         {
             var me = http.User.UserId();
+            if (r.Ids is null || r.Ids.Length > 100) return Problems.Of(400, "validation", "通知資料不正確。");
             await db.Alerts.Where(a => a.UserId == me && r.Ids.Contains(a.Id)).ExecuteUpdateAsync(x => x.SetProperty(a => a.Read, r.Read), ct);
             return Results.NoContent();
         });
 
-        s.MapPut("/profile", async (ProfileRequest r, HttpContext http, AppDbContext db, CancellationToken ct) =>
+        s.MapPut("/profile", async (ProfileRequest r, HttpContext http, AppDbContext db, AccountTokens tokens, CancellationToken ct) =>
         {
             // Only safe fields. Credits, status, grade and role can never be set here (mass assignment).
             var u = await db.Users.FirstAsync(x => x.Id == http.User.UserId(), ct);
-            if (r.Name is { } n) { if (string.IsNullOrWhiteSpace(n)) return Problems.Of(400, "validation", "姓名不能是空的。"); u.Name = n.Trim(); }
+            if (r.Name is { } n) { if (string.IsNullOrWhiteSpace(n) || n.Trim().Length > 80) return Problems.Of(400, "validation", "姓名不能是空的。"); u.Name = n.Trim(); }
             if (r.Email is not null)
             {
                 var e = r.Email.Trim().ToLowerInvariant();
+                if (e.Length > 200 || (e.Length > 0 && !Input.IsEmail(e))) return Problems.Of(400, "validation", "請填寫正確的 Email。");
+                if (e.Length == 0 && u.PasswordHash is not null) return Problems.Of(400, "validation", "Email 登入帳號需要保留 Email。");
                 if (e.Length > 0 && await db.Users.AnyAsync(x => x.Email == e && x.Id != u.Id, ct)) return Problems.Of(409, "email_taken", "這個 Email 已經被使用。");
+                var changed = (e.Length == 0 ? null : e) != u.Email;
                 u.Email = e.Length == 0 ? null : e;
+                // a new address must be confirmed again (older verification links stop working: they name the old address)
+                if (changed) { u.EmailVerified = false; await tokens.SendVerificationAsync(u, ct); }
             }
+            if (r.Phone?.Trim().Length > 30 || r.LineId?.Trim().Length > 80 || r.VoiceType?.Trim().Length > 80 || r.Goal?.Trim().Length > 300)
+                return Problems.Of(400, "validation", "個人資料超過長度限制。");
             if (r.Phone is not null) u.Phone = r.Phone.Trim();
             if (r.LineId is not null) u.LineId = r.LineId.Trim();
             if (r.VoiceType is not null) u.VoiceType = r.VoiceType.Trim();
@@ -143,7 +151,7 @@ public static class StudentEndpoints
             return TypedResults.Ok(list.Select(Map.Payment).ToArray());
         });
 
-        s.MapPost("/payments", async (IFormCollection form, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, IWebHostEnvironment env, CancellationToken ct) =>
+        s.MapPost("/payments", async (IFormCollection form, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, ReceiptStorage receipts, StudioClock clock, AlertService alerts, CancellationToken ct) =>
         {
             var me = http.User.UserId();
             var u = await db.Users.FirstAsync(x => x.Id == me, ct);
@@ -163,28 +171,31 @@ public static class StudentEndpoints
             if (type is null) return Problems.Of(400, "bad_image", "只接受 JPG、PNG 或 WEBP 圖片。");
             var lqip = await ImageService.MakeLqipAsync(mem, ct);
 
-            var folder = Path.Combine(env.ContentRootPath, o.Value.ReceiptsFolder);
-            Directory.CreateDirectory(folder);
-            var name = $"{Guid.NewGuid():N}{type switch { "image/png" => ".png", "image/webp" => ".webp", _ => ".jpg" }}";
-            await File.WriteAllBytesAsync(Path.Combine(folder, name), mem.ToArray(), ct);
+            var name = await receipts.SaveAsync(mem.ToArray(), type, ct);
 
             var note = form["note"].ToString().Trim();
-            var p = new Payment { StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, IsTrial = pkg.Trial, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
+            var p = new Payment { UploadedAtUtc = clock.UtcNow, StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, IsTrial = pkg.Trial, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
             db.Payments.Add(p);
+            Dictionary<string, string> Receipt() => new()
+            {
+                ["studentName"] = u.Name, ["packageName"] = EmailFormat.Package(p), ["amount"] = EmailFormat.Money(p.Amount), ["uploadedAt"] = EmailFormat.Local(clock.LocalNow),
+            };
+            await alerts.EmailAsync(u, "receipt-uploaded", Receipt(), $"receipt:{p.Id}", delay: false, ct: ct);
+            await alerts.EmailTeacherAsync("teacher-payment-pending", Receipt(), $"teacher-receipt:{p.Id}", ct);
             await db.SaveChangesAsync(ct);
             p.Student = u;
             return Results.Created($"/api/receipts/{p.Id}", Map.Payment(p));
         }).AddEndpointFilter<IdempotencyFilter>().DisableAntiforgery();
 
         // Receipt images: only the uploader or Iris (bank details are private).
-        app.MapGet("/api/receipts/{id:guid}", async (Guid id, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, IWebHostEnvironment env, CancellationToken ct) =>
+        app.MapGet("/api/receipts/{id:guid}", async (Guid id, HttpContext http, AppDbContext db, ReceiptStorage receipts, CancellationToken ct) =>
         {
             var p = await db.Payments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             var me = http.User.UserId();
             if (p is null || (!http.User.IsInRole("Teacher") && p.StudentId != me)) return Results.NotFound();
-            var path = Path.Combine(env.ContentRootPath, o.Value.ReceiptsFolder, Path.GetFileName(p.ReceiptPath));
+            var path = receipts.PathFor(p.ReceiptPath);
             http.Response.Headers.CacheControl = "private, max-age=3600";
             return File.Exists(path) ? Results.File(path, p.ContentType) : Results.NotFound();
-        }).RequireAuthorization();
+        }).RequireAuthorization().AddEndpointFilter<ActiveUserFilter>();
     }
 }

@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="IrisStudio.Api.Tests/IrisStudio.Api.Tests.csproj" />
   <Project Path="IrisStudio.Api/IrisStudio.Api.csproj" />
 </Solution>

@@ -245,7 +245,7 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 |---|---|---|---|
 | GET | `/api/public/studio` | anyone | lessonMinutes, cancelHours, moveHours, packages (trial flag), bank, teacher (name, avatar, status, message, LINE ID if public) |
 | POST | `/api/public/consults` | anyone (rate-limited) | free-consult request |
-| GET | `/api/me` | anyone | current user (+ classType, trialAvailable) or 401 |
+| GET | `/api/me` | anyone | current user (+ classType, trialAvailable), or JSON null when signed out |
 | POST | `/api/auth/register` · `/login` · `/logout` | anyone | email accounts (login rate-limited); register requires `consents` (terms; guardian for minors) |
 | GET | `/api/auth/line` | anyone | start LINE Login |
 | GET | `/api/slots/days?from&count` | signed in | day states (open/closed/full/past/later) |
@@ -264,7 +264,8 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 | POST | `/api/teacher/lessons?studentId=` | teacher | book for a student (idempotent) |
 | POST | `/api/teacher/lessons/{id}/proposals` · `/api/teacher/proposals/{id}/withdraw` | teacher | propose a new time / take it back |
 | GET | `/api/teacher/students` · `/students/{id}` | teacher | list / detail (+ remindChannel, lastRemindedAt) |
-| POST | `/api/teacher/students/{id}/credits` | teacher | 調整堂數 {delta, reason} |
+| POST | `/api/teacher/students/{id}/credits` | teacher | 調整堂數 {delta, reason}; returns {credits, id, undoUntil}; idempotent |
+| POST | `/api/teacher/credit-adjustments/{id}/undo` | teacher | undo a specific manual adjustment once, within 30 s |
 | PATCH | `/api/teacher/students/{id}/class-type` · `/grade` | teacher | 編輯 |
 | POST | `/api/teacher/students/{id}/remind` · DELETE `/reminders/{rid}` | teacher | 通知學生繳學費 / undo |
 | GET | `/api/teacher/requests` | teacher | 改時間 (student requests) + 新學生 + proposals |
@@ -289,9 +290,10 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 ## 6. Background work
 | Job | When | Does |
 |---|---|---|
-| `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (in-app only today; LINE / email adapters plug in) → sets `DeliveredAtUtc` |
-| `RetentionService` | every 6 h | deletes expired data: idempotency 24 h, consults 12 mo, read alerts 12 mo, handled privacy requests 3 y (`Studio:Retention`, proposed values) |
-| `AttendanceSettler` | every minute (inside `AlertDispatcher`) | Booked lessons whose end time has passed → **Attended**; open change requests on them → Declined |
+| `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (LINE / Resend adapters; external delivery enabled via configuration) → sets `DeliveredAtUtc` |
+| `AttendanceSettler` | every minute (independent `StudioMaintenance`) | Booked lessons whose end time has passed → **Attended**; open change requests on them → Declined |
+| Idempotency cleanup | daily (`StudioMaintenance`) | delete `IdempotencyRecords` older than 24 h |
+| `RetentionService` | every 6 h | removes expired consults, read alerts and handled privacy requests (`Studio:Retention`) |
 
 ---
 

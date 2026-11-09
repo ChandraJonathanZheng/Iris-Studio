@@ -13,6 +13,13 @@ public static class AttendanceSettler
 {
     public static async Task<int> RunAsync(AppDbContext db, StudioClock clock, CancellationToken ct)
     {
+        if (db.Database.CurrentTransaction is null)
+        {
+            await using var tx = await Infrastructure.StudioTransaction.BeginAsync(db, ct);
+            var count = await RunAsync(db, clock, ct);
+            await tx.CommitAsync(ct);
+            return count;
+        }
         var today = clock.Today;
         // only today and earlier can have ended; the end-time check needs .NET (studio time zone), so filter in two steps
         var candidates = await db.Lessons.Where(l => l.Status == LessonStatus.Booked && l.Date <= today).ToListAsync(ct);

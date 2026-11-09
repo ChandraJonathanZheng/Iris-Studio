@@ -1,573 +1,495 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
-import { Icon } from '../components/Icon';
-import { useCurrentUser } from '../components/Shell';
-import { RouteSheet } from '../components/Sheet';
-import { SlotPicker } from '../components/SlotPicker';
 import { TeacherStatusCard } from '../components/TeacherStatus';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
-import { useToast } from '../components/Toast';
-import { DateBox, Empty, ErrorCard, ListSkeleton, PageHead, PageSkeleton, Quota, Tag } from '../components/ui';
+import { useMyConsents, useSaveConsents } from '../lib/queries';
+import { useMemo, useRef, useState } from 'react';
+import { Link, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ApiError, newIdempotencyKey } from '../lib/api';
-import { compareSlot, fmtDate, fmtMoney, fmtRelative, fmtSlot, monthGrid, studioToday, dayNum, initialOf, fmtDuration, LESSON_TYPE_LABEL } from '../lib/date';
+import {
+  CLASS_TYPE_LABEL, compareSlot, dayNum, fmtDate, fmtDuration, fmtMoney, fmtRelative, fmtSlot, LESSON_TYPE_LABEL, monthGrid, monthNum,
+  studioNowTime, studioToday,
+} from '../lib/date';
 import { monthRange } from '../lib/prefetch';
 import {
-  useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useDays, useLessons, useMarkAllRead, useMyConsents, useMyPayments, useSaveConsents, useStudio,
-  useLogout, useUpdateProfile, useUploadReceipt, useWithdrawMove,
+  useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useLessons, useMarkAllRead, useMyPayments, useStudio, useUpdateProfile,
+  useLogout, useUploadReceipt, useWithdrawMove,
 } from '../lib/queries';
-import type { AlertKind, Lesson, Me } from '../lib/types';
+import type { Lesson, Payment } from '../lib/types';
+import { useCurrentUser } from '../components/Shell';
+import { Icon } from '../components/Icon';
+import { RouteSheet, useSheetClose } from '../components/Sheet';
+import { SlotPicker, type Picked } from '../components/SlotPicker';
+import { useToast } from '../components/Toast';
+import { EmailSettings } from '../components/EmailSettings';
+import { DateBox, Empty, ErrorCard, ListSkeleton, PageHead, PageSkeleton, Quota, Segmented, Tag } from '../components/ui';
 
-const greeting = () => { const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: 'numeric', hour12: false }).format(new Date())); return h < 11 ? '早安' : h < 18 ? '午安' : '晚安'; };
-const firstName = (n: string) => (n.length >= 3 ? n.slice(1) : n);
+const MOVE_HOURS_FALLBACK = 12;
+const errText = (e: unknown, fallback = '發生錯誤，請稍後再試。') => (e instanceof ApiError ? e.message : fallback);
+
+/** Studio time is UTC+8 all year (Taiwan has no daylight saving). */
+const hoursUntil = (l: { date: string; time: string }) => (new Date(`${l.date}T${l.time}:00+08:00`).getTime() - Date.now()) / 3_600_000;
+const isUpcoming = (l: Lesson) => l.status === 'Booked' && compareSlot(l, { date: studioToday(), time: studioNowTime() }) >= 0;
 
 function useMyLessons() {
   const [from, to] = monthRange();
   return useLessons('student', from, to);
 }
-function lessonTag(l: Lesson) {
-  if (l.status === 'Attended') return <Tag tone="grey">已上課</Tag>;
-  if (l.status === 'Cancelled') return <Tag tone="bad">已取消</Tag>;
-  if (l.change) return <Tag tone="warn">{l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</Tag>;
+const dayWord = (date: string) => {
+  const n = Math.round((Date.parse(date) - Date.parse(studioToday())) / 86_400_000);
+  return n <= 0 ? '今天上課' : n === 1 ? '明天上課' : `${n} 天後上課`;
+};
+
+/* ---------------------------------------------------------------- 首頁 */
+function LessonStatus({ l }: { l: Lesson }) {
+  if (l.change?.by === 'student') return <Tag tone="warn">等待老師回覆</Tag>;
   return <Tag tone="ok">已確認</Tag>;
 }
 
-/* =================== Home =================== */
-/** "今天上課 / 明天上課 / 3 天後上課" — counts calendar days in studio time. */
-function untilLabel(date: string, today: string): string {
-  const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5);
-  return days <= 0 ? '今天上課' : days === 1 ? '明天上課' : `${days} 天後上課`;
-}
-
-/** ms timestamp when a lesson starts (studio time is UTC+8) */
-const startOf = (l: { date: string; time: string }) => new Date(`${l.date}T${l.time}:00+08:00`).getTime();
-/** 改時間 closes moveHours (12) before the lesson — after that the student can only cancel */
-function useCanMove(l: Lesson | undefined) {
-  const studio = useStudio();
-  const hours = studio.data?.moveHours ?? 12;
-  return { canMove: !!l && startOf(l) - Date.now() >= hours * 36e5, hours };
-}
-
-/** ••• menu for one lesson: the less common actions live here so they don't compete with the main ones. */
-function LessonMenu({ l }: { l: Lesson }) {
-  const [open, setOpen] = useState(false);
-  const { canMove, hours } = useCanMove(l);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('pointerdown', onDown); document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [open]);
-  const id = `lm-${l.id}`;
-  return (
-    <div className="sh-menu" ref={ref}>
-      <button className="icon-btn flat hit" aria-label={`${fmtSlot(l.date, l.time)} 的更多動作`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}><Icon name="more" /></button>
-      {open && (
-        <div className="sh-pop" id={id}>
-          {!l.change && (canMove
-            ? <Link to={`/app/lessons/${l.id}/move`} viewTransition onClick={() => setOpen(false)}>改時間</Link>
-            : <span className="sh-pop-off" aria-disabled="true">改時間<small>上課前 {hours} 小時內不能改</small></span>)}
-          <Link to={`lessons/${l.id}/cancel`} className="danger" onClick={() => setOpen(false)}>取消預約</Link>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * 老師提議改時間 — Iris can't move a lesson on her own (decided 8 Nov), so she proposes and the student answers here.
- * It sits at the top of home: it is the only thing on the screen that waits for the student.
- */
 function ProposalCard({ l }: { l: Lesson }) {
   const answer = useAnswerProposal();
   const toast = useToast();
   const c = l.change!;
-  const reply = (accept: boolean) => answer.mutateAsync({ id: c.id, accept })
-    .then(() => toast({ text: accept ? `已改到 ${fmtSlot(c.toDate, c.toTime)}` : '已回覆老師：不方便。課程維持原時間。' }))
-    .catch((e) => toast({ text: (e as Error).message, kind: 'error' }));
+  const reply = (accept: boolean) => answer.mutate({ id: c.id, accept }, {
+    onSuccess: () => toast({ text: accept ? `已改到 ${fmtSlot(c.toDate, c.toTime)}` : '已保留原本的時間' }),
+    onError: (e) => toast({ text: errText(e, '這個時段剛被預約了，請稍後與 Iris 聯絡。'), kind: 'error' }),
+  });
   return (
-    <section className="sh-card sh-prop" aria-labelledby={`prop-${l.id}`}>
-      <p className="overline" id={`prop-${l.id}`}><Icon name="repeat" size={14} weight="bold" /> 老師想調整上課時間</p>
-      <p className="sh-prop-time">
-        <span className="sh-prop-old"><span className="sr-only">原時段 </span>{fmtSlot(l.date, l.time)}</span>
-        <span aria-hidden="true">→</span>
-        <b><span className="sr-only">改到 </span>{fmtSlot(c.toDate, c.toTime)}</b>
-      </p>
-      {c.reason && <p className="sh-prop-msg">老師：「{c.reason}」</p>}
-      <p className="sh-prop-note">你同意後才會改。不方便的話，原本的時段會保留。</p>
-      <div className="sh-prop-actions">
-        <button className="btn secondary" disabled={answer.isPending} onClick={() => reply(false)}>不方便</button>
-        <button className="btn primary" disabled={answer.isPending} onClick={() => reply(true)}>可以，改到這個時間</button>
+    <section className="card proposal" aria-label="老師的提議">
+      <div className="over" style={{ color: 'var(--warn)' }}><Icon name="repeat" size={14} /> 老師想調整上課時間</div>
+      <div><span className="strike">{fmtSlot(l.date, l.time)}</span> <Icon name="arrow" size={14} /> <b className="hero-num" style={{ fontSize: 18 }}>{fmtSlot(c.toDate, c.toTime)}</b></div>
+      {c.reason && <p>老師：「{c.reason}」</p>}
+      <p className="cap">按「可以」後，這堂課才會改到新時間；不方便就維持原本時間。</p>
+      <div className="row">
+        <button className="btn secondary grow" disabled={answer.isPending} onClick={() => reply(false)}>不方便</button>
+        <button className="btn primary wide" disabled={answer.isPending} onClick={() => reply(true)}>可以，改到這個時間</button>
       </div>
     </section>
+  );
+}
+
+function NextLesson({ l, moveHours }: { l: Lesson; moveHours: number }) {
+  const withdraw = useWithdrawMove();
+  const toast = useToast();
+  const tooLate = hoursUntil(l) < moveHours;
+  const pending = l.change?.by === 'student' ? l.change : null;
+  return (
+    <section className="card hero" aria-label="下一堂課">
+      <div className="over">{dayWord(l.date)}</div>
+      <div className="row top">
+        <DateBox date={l.date} />
+        <div className="grow stack s2" style={{ gap: 2 }}>
+          <div className="hero-num">{fmtDate(l.date)} {l.time}</div>
+          <div className="sub">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]} · {l.room}</div>
+          <LessonStatus l={l} />
+        </div>
+      </div>
+      {pending && <div className="info">已申請改到 <b>{fmtSlot(pending.toDate, pending.toTime)}</b>，原時段保留到 Iris 回覆。</div>}
+      <div className="row">
+        {pending
+          ? <button className="btn secondary grow" disabled={withdraw.isPending} onClick={() => withdraw.mutate(pending.id, { onSuccess: () => toast({ text: '已撤回改時間申請' }) })}>撤回申請</button>
+          : <Link className="btn secondary grow" to={`/app/lessons/${l.id}/move`} aria-disabled={tooLate} onClick={(e) => tooLate && e.preventDefault()}>改時間</Link>}
+        <Link className="btn dtext" to={`/app/lessons/${l.id}/cancel`}>取消預約</Link>
+      </div>
+      {tooLate && !pending && <p className="reason">上課前 {moveHours} 小時內不能改時間，需要的話請取消預約。</p>}
+    </section>
+  );
+}
+
+function OtherLesson({ l, moveHours }: { l: Lesson; moveHours: number }) {
+  const [open, setOpen] = useState(false);
+  const tooLate = hoursUntil(l) < moveHours;
+  return (
+    <>
+      <div className="li">
+        <div className="grow"><div className="name" style={{ fontSize: 16 }}>{fmtDate(l.date)} {l.time}</div><div className="cap">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]}</div></div>
+        <LessonStatus l={l} />
+        <button className="iconbtn" aria-label={`${fmtDate(l.date)} 的更多操作`} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name="more" /></button>
+      </div>
+      {open && (
+        <div className="li" style={{ background: 'var(--ivory)', justifyContent: 'flex-end' }}>
+          {tooLate ? <span className="reason">上課前 {moveHours} 小時內不能改</span> : <Link className="btn secondary sm" to={`/app/lessons/${l.id}/move`}>改時間</Link>}
+          <Link className="btn dtext" to={`/app/lessons/${l.id}/cancel`}>取消預約</Link>
+        </div>
+      )}
+    </>
   );
 }
 
 export function StudentHome() {
   const me = useCurrentUser();
   const lessons = useMyLessons();
-  const today = studioToday();
-  const upcoming = useMemo(() => (lessons.data ?? []).filter((l) => l.status === 'Booked' && l.date >= today).sort(compareSlot), [lessons.data, today]);
-  const next = upcoming[0];
-  const others = upcoming.slice(1); // the next class is already the hero — don't list it twice
-  const proposals = upcoming.filter((l) => l.change?.by === 'teacher');
-  const studioInfo = useStudio();
-  const { canMove: nextCanMove } = useCanMove(next);
+  const studio = useStudio();
+  const moveHours = studio.data?.moveHours ?? MOVE_HOURS_FALLBACK;
+
+  const { proposals, upcoming } = useMemo(() => {
+    const all = (lessons.data ?? []).filter(isUpcoming).sort(compareSlot);
+    return { proposals: all.filter((l) => l.change?.by === 'teacher'), upcoming: all };
+  }, [lessons.data]);
+  const [next, ...others] = upcoming;
+  const free = me.credits;
+  const attended = Math.max(0, Math.min(me.attended, me.packageSize - me.booked - free));
 
   return (
-    <>
-      <PageHead title={`${greeting()}，${firstName(me.name)}`} over={fmtDate(today)}
-        right={<Link to="/app/alerts" className="icon-btn mobile-only sh-bell" aria-label={`通知${me.unreadAlerts ? '，有未讀' : ''}`} viewTransition><Icon name="bell" />{me.unreadAlerts > 0 && <span className="sh-dot" aria-hidden="true" />}</Link>} />
-      {lessons.isPending ? <PageSkeleton blocks={[160, 200]} /> : lessons.isError ? <ErrorCard error={lessons.error} retry={lessons.refetch} /> : (
-        <div className="sh">
-          {/* 0. Iris is waiting for an answer */}
-          {proposals.map((l) => <ProposalCard key={l.id} l={l} />)}
-          {/* Iris's status (放假中 / 暫停接新學生 …) — only when there is something to know */}
-          {studioInfo.data && (studioInfo.data.teacher.status !== 'normal' || studioInfo.data.teacher.statusMessage) && <TeacherStatusCard t={studioInfo.data.teacher} />}
-          {/* 1. next class */}
-          <section className="sh-card sh-next" aria-labelledby="next-t">
-            <p className="overline" id="next-t">下一堂課</p>
-            {next ? (
-              <>
-                <p className="sh-until">{untilLabel(next.date, today)}</p>
-                <div className="sh-when">
-                  <DateBox date={next.date} />
-                  <div className="sh-when-text">
-                    <p className="sh-time">{fmtSlot(next.date, next.time)}</p>
-                    <p className="sh-meta">{fmtDuration(next.minutes)} · {LESSON_TYPE_LABEL[next.type]}</p>
-                    <p className="sh-meta">{next.room}</p>
-                  </div>
-                </div>
-                {next.change
-                  ? <p className="sh-status wait">{next.change.by === 'teacher'
-                    ? `● 老師提議改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 請在上方回覆`
-                    : `● 申請改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 等待老師回覆`}</p>
-                  : <p className="sh-status ok">● 已確認</p>}
-                <div className="sh-actions">
-                  {!next.change && nextCanMove && <Link to={`/app/lessons/${next.id}/move`} className="btn secondary sh-move" viewTransition><Icon name="repeat" size={18} />改時間</Link>}
-                  <Link to={`lessons/${next.id}/cancel`} className="sh-cancel" aria-label={`取消預約：${fmtSlot(next.date, next.time)}`}>取消預約</Link>
-                </div>
-              </>
-            ) : <Empty text="還沒有預約的課。" action={<Link to="/app/book" className="btn primary" viewTransition>預約課程</Link>} />}
-          </section>
-
-          {/* 2. balance */}
-          <QuotaCard me={me} withBook />
-
-          {/* 3. later reservations */}
-          {others.length > 0 && (
-            <section className="sh-card" aria-labelledby="others-t">
-              <p className="overline" id="others-t">其他預約 · {others.length}</p>
-              <ul className="sh-list">{others.map((l) => (
-                <li key={l.id}>
-                  <div className="sh-li-text">
-                    <p className="sh-li-time">{fmtSlot(l.date, l.time)}</p>
-                    {l.change
-                      ? <><p className="sh-li-sub">{l.change.by === 'teacher' ? '老師提議改到' : '申請改到'} {fmtSlot(l.change.toDate, l.change.toTime)}</p><p className="sh-status wait">● {l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</p></>
-                      : <p className="sh-li-sub">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]}</p>}
-                  </div>
-                  <LessonMenu l={l} />
-                </li>))}</ul>
+    <div className="page">
+      <PageHead title={`哈囉，${me.name}`} over="首頁" />
+      {studio.data && <TeacherStatusCard t={studio.data.teacher} />}
+      {lessons.isPending ? <PageSkeleton blocks={[170, 190]} />
+        : lessons.isError ? <ErrorCard error={lessons.error} retry={() => lessons.refetch()} />
+        : (
+          <>
+            {proposals.map((l) => <ProposalCard key={l.change!.id} l={l} />)}
+            {next ? <NextLesson l={next} moveHours={moveHours} />
+              : <section className="card"><Empty text="還沒有預約的課。" action={<Link className="btn primary" to="/app/book">預約課程</Link>} /></section>}
+            <section className="card hero" aria-label="我的堂數">
+              <div className="row between"><h2 className="sec">我的堂數</h2><span className="hero-num">剩餘 {free} 堂</span></div>
+              {me.packageSize > 0 && <Quota attended={attended} booked={me.booked} free={free} />}
+              <div className="row">
+                <Link className="btn primary grow" to="/app/book">預約課程</Link>
+              </div>
+              <Link className="btn link" style={{ alignSelf: 'flex-start' }} to="/app/quota">查看堂數與付款紀錄 →</Link>
             </section>
-          )}
-        </div>
-      )}
+            {others.length > 0 && (
+              <section className="stack s2" aria-label="其他預約"><h2 className="sec">其他預約</h2>
+                <div className="list">{others.map((l) => <OtherLesson key={l.id} l={l} moveHours={moveHours} />)}</div></section>
+            )}
+          </>
+        )}
       <Outlet />
-    </>
+    </div>
   );
 }
 
-/**
- * 我的堂數. Hierarchy: remaining number → credit boxes → legend (meaning) → 預約課程 → history link.
- * Deliberately not uniform: the number is heavy while its words are light, boxes are bigger than chips elsewhere,
- * the history link sits left-aligned as plain text, and spacing steps 24 / 16 / 32 / 16 rather than one gap everywhere.
- */
-function QuotaCard({ me, withBook }: { me: Me; withBook?: boolean }) {
-  const total = Math.max(me.packageSize, me.attended + me.booked + me.credits);
-  const attended = Math.max(0, Math.min(me.attended, total - me.booked - me.credits));
-  return (
-    <section className="card quota-card" aria-labelledby="quota-t">
-      <p className="overline" id="quota-t">我的堂數</p>
-      <p className="qc-remaining"><span>剩餘</span><b>{me.credits}</b><span>堂</span></p>
-      <div className="qc-boxes"><Quota attended={attended} booked={me.booked} free={me.credits} /></div>
-      <ul className="qc-legend" aria-label="圖示說明">
-        <li><span className="qc-key a" aria-hidden="true"><Icon name="check" size={12} weight="bold" /></span>已上課</li>
-        <li><span className="qc-key b" aria-hidden="true">●</span>已預約</li>
-        <li><span className="qc-key f" aria-hidden="true">○</span>可預約</li>
-      </ul>
-      {withBook && (me.credits > 0
-        ? <Link to="/app/book" className="btn primary block qc-book" viewTransition><Icon name="book" size={20} />預約課程</Link>
-        : <div className="stack g2 qc-book-wrap"><button className="btn primary block qc-book" disabled>預約課程</button><p className="caption">{me.trialAvailable ? <>先購買體驗課，就可以預約。<Link to="/app/quota">購買體驗課</Link></> : <>堂數已用完。<Link to="/app/quota">上傳匯款證明購買新方案</Link></>}</p></div>)}
-      {withBook && <Link to="/app/quota" className="qc-history" viewTransition>查看堂數與付款紀錄<Icon name="arrow" size={16} /></Link>}
-    </section>
-  );
-}
-
-/* =================== Cancel (sheet route) =================== */
+/* ---------------------------------------------------------------- 取消 */
 export function CancelSheet() {
   const { id } = useParams();
   const lessons = useMyLessons();
   const studio = useStudio();
   const { cancel, undo } = useCancelLesson();
   const toast = useToast();
-  const nav = useNavigate();
+  const close = useSheetClose('/app');
   const l = lessons.data?.find((x) => x.id === id);
-  if (!l) return null;
-  const start = new Date(`${l.date}T${l.time}:00+08:00`).getTime();
-  const refund = start - Date.now() >= (studio.data?.cancelHours ?? 24) * 36e5;
+  const cancelHours = studio.data?.cancelHours ?? 24;
+  const refund = l ? hoursUntil(l) >= cancelHours : false;
 
   return (
-    <RouteSheet title="取消這堂課？" dismissible={!cancel.isPending}>
-      <div className="inner stack g1"><p className="t">{fmtSlot(l.date, l.time)}</p><p className="caption">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]} · {l.room}</p></div>
-      <div className={`notice${refund ? '' : ' quiet'}`}><Icon name={refund ? 'check' : 'info'} />
-        <span>{refund ? <><b>堂數會退回。</b>距離上課超過 24 小時。</> : <><b>堂數不會退回。</b>距離上課不到 24 小時。</>}</span></div>
-      {cancel.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(cancel.error as Error).message}</span></div>}
-      <button className="btn danger block" disabled={cancel.isPending}
-        onClick={() => cancel.mutate(l.id, {
-          onSuccess: (r) => {
-            nav('/app', { replace: true });
-            toast({ text: `已取消 ${fmtDate(l.date)}${r.refunded ? '，堂數已退回 1 堂' : ''}`, undo: async () => { await undo(l.id); } });
-          },
-        })}>
-        {cancel.isPending ? '取消中…' : `取消 ${fmtDate(l.date)} 的課`}
-      </button>
-      <button className="btn secondary block" disabled={cancel.isPending} onClick={() => nav(-1)}>保留這堂課</button>
-    </RouteSheet>
-  );
-}
-
-/* =================== Book =================== */
-export function Book() {
-  const me = useCurrentUser();
-  const [sp, setSp] = useSearchParams();
-  const nav = useNavigate();
-  const [onlyFree, setOnlyFree] = useState(false);
-  const today = studioToday();
-  const days = useDays(addDaysSafe(today, -1));
-  const firstOpen = days.data?.find((d) => d.state === 'open')?.date ?? null;
-  const date = sp.get('date') ?? firstOpen;
-  const time = sp.get('time');
-  const setDate = (d: string) => setSp({ date: d }, { replace: true });
-  const setTime = useCallback((t: string | null) => setSp((p) => { const n = new URLSearchParams(p); if (t) n.set('time', t); else n.delete('time'); if (!n.get('date') && date) n.set('date', date); return n; }, { replace: true }), [setSp, date]);
-  const ready = !!date && !!time && me.credits > 0;
-  const label = date && time ? fmtSlot(date, time) : '';
-  const lessonMinutes = useStudio().data?.lessonMinutes ?? 60; // from Iris's 預約設定
-
-  return (
-    <>
-      <PageHead title="預約課程" over={`剩餘 ${me.credits} 堂`} back />
-      <div className="split">
-        <section className="card">
-          <SlotPicker date={date} time={time} onDate={setDate} onTime={setTime} onlyFree={onlyFree} setOnlyFree={setOnlyFree} />
-        </section>
-        <div className="stack g4">
-          <section className={`card bk-sum${date && time ? ' is-ready' : ''}`} aria-live="polite">
-            <p className="overline">預約明細</p>
-            {date && time ? (
-              <>
-                <p className="bk-when">{label}</p>
-                <p className="bk-meta">{fmtDuration(lessonMinutes)} · {LESSON_TYPE_LABEL.private}</p>
-                <p className="bk-left">預約後剩餘 <b>{Math.max(me.credits - 1, 0)}</b> 堂 <span>（使用 1 堂）</span></p>
-              </>
-            ) : <p className="caption">{date ? '再選一個時段。' : '請選擇日期和時段。'}</p>}
-            {me.credits <= 0 && <p className="caption" style={{ color: 'var(--bad)' }}>堂數已用完，請先<Link to="/app/quota">購買新方案</Link>。</p>}
-          </section>
-          <div className="notice quiet"><Icon name="info" /><span>上課前 24 小時以上取消，使用的堂數將退回。</span></div>
-          <div className="sticky-cta">
-            <button className="btn primary block" disabled={!ready}
-              onClick={() => nav(`confirm?date=${date}&time=${time}`)}>
-              <Icon name="book" size={18} />{me.credits <= 0 ? '堂數已用完' : ready ? '確認預約' : '請選擇時段'}
-            </button>
-          </div>
-        </div>
-      </div>
-      <Outlet />
-    </>
-  );
-}
-function addDaysSafe(d: string, n: number) { const [y, m, dd] = d.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd + n)).toISOString().slice(0, 10); }
-
-/** Confirm sheet: the idempotency key is created when the sheet opens, so a double tap or retry books once (#19). */
-export function BookConfirm() {
-  const [sp] = useSearchParams();
-  // Freeze the slot when the sheet opens. After booking, the slot list refreshes, the slot becomes "full" and the
-  // booking page clears ?time= from the URL; reading it live would then show "null".
-  const [{ date, time }] = useState(() => ({ date: sp.get('date')!, time: sp.get('time')! }));
-  const me = useCurrentUser();
-  const lessonMinutes = useStudio().data?.lessonMinutes ?? 60;
-  const [key] = useState(newIdempotencyKey);
-  const book = useBook();
-  const nav = useNavigate();
-  const toast = useToast();
-  const label = fmtSlot(date, time);
-
-  if (book.isSuccess) return (
-    <RouteSheet title="預約成功" onClose={() => nav('/app', { replace: true })}>
-      <div className="stack g3" style={{ alignItems: 'center', textAlign: 'center' }}>
-        <span className="ico" style={{ width: 56, height: 56, background: 'var(--sage-700)', color: '#fff' }}><Icon name="check" size={28} /></span>
-        <div className="stack g1">
-          <p className="t" style={{ fontSize: 17, lineHeight: '24px' }}>{fmtSlot(book.data.lesson.date, book.data.lesson.time)}</p>
-          <p style={{ margin: 0 }}>{fmtDuration(book.data.lesson.minutes)} · {LESSON_TYPE_LABEL[book.data.lesson.type]}</p>
-          <p className="caption" style={{ marginTop: 4 }}>剩餘 {book.data.creditsLeft} 堂</p>
-        </div>
-      </div>
-      <button className="btn primary block" onClick={() => { nav('/app', { replace: true }); toast({ text: '已預約，課程已加到行事曆' }); }}>回到首頁</button>
-    </RouteSheet>
-  );
-
-  const taken = book.error instanceof ApiError && book.error.code === 'slot_taken';
-  return (
-    <RouteSheet title="確認預約" dismissible={!book.isPending}>
-      <dl className="dl" style={{ fontSize: 'var(--fs-body)', lineHeight: '24px' }}>
-        <dt>日期時間</dt><dd>{label}</dd><dt>課程</dt><dd>{fmtDuration(lessonMinutes)} · {LESSON_TYPE_LABEL.private}</dd><dt>使用課堂</dt><dd>1 堂</dd><dt>預約後剩餘</dt><dd>{Math.max(me.credits - 1, 0)} 堂</dd>
-      </dl>
-      {book.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(book.error as Error).message}</span></div>}
-      {!taken && (
-        <button className="btn primary block" disabled={book.isPending} onClick={() => book.mutate({ date, time, key })}>
-          {book.isPending ? '預約中…' : book.isError ? '再試一次' : '確認預約'}
-        </button>
+    <RouteSheet title="取消預約" parent="/app">
+      {!l ? <p className="sub">{lessons.isPending ? '載入中…' : '找不到這堂課。'}</p> : (
+        <>
+          <p><b>{fmtSlot(l.date, l.time)}</b>（{fmtDuration(l.minutes)}）</p>
+          <div className="info">{refund ? `距離上課超過 ${cancelHours} 小時，會退回 1 堂。` : `距離上課不到 ${cancelHours} 小時，這堂不會退回。`}</div>
+          {cancel.isError && <p className="err" role="alert">{errText(cancel.error)}</p>}
+          <button className="btn danger block" disabled={cancel.isPending} onClick={() => cancel.mutate(l.id, {
+            onSuccess: (r) => { close(); toast({ text: r.refunded ? '已取消，退回 1 堂' : '已取消（未退回堂數）', undo: () => undo(l.id) }); },
+          })}>取消這堂課</button>
+          <button className="btn secondary block" onClick={close}>先不要取消</button>
+        </>
       )}
-      <button className="btn secondary block" disabled={book.isPending}
-        onClick={() => (taken ? nav(`/app/book?date=${date}`, { replace: true }) : nav(-1))}>{taken ? '選擇其他時段' : '再想想'}</button>
     </RouteSheet>
   );
 }
 
-/* =================== Move =================== */
+/* ---------------------------------------------------------------- 改時間 */
 export function Move() {
   const { id } = useParams();
-  const lessons = useMyLessons();
-  const ask = useAskMove();
   const nav = useNavigate();
+  const lessons = useMyLessons();
+  const studio = useStudio();
+  const ask = useAskMove();
   const toast = useToast();
-  const [date, setDate] = useState<string | null>(null);
-  const [time, setTime] = useState<string | null>(null);
-  const [onlyFree, setOnlyFree] = useState(false);
+  const [pick, setPick] = useState<Picked | null>(null);
   const [reason, setReason] = useState('');
   const l = lessons.data?.find((x) => x.id === id);
-  const { canMove, hours } = useCanMove(l);
-  if (lessons.isPending) return <PageSkeleton />;
-  if (!l) return <ErrorCard error={new Error('找不到這堂課。')} />;
-  if (!canMove) return (
-    <>
-      <PageHead title="申請改時間" back />
-      <div className="notice" role="alert"><Icon name="info" /><span>上課前 {hours} 小時內不能改時間。如果無法上課，請<Link to={`/app/lessons/${l.id}/cancel`}>取消預約</Link>。</span></div>
-    </>
-  );
-  const onTime = (t: string | null) => setTime(t);
+  const moveHours = studio.data?.moveHours ?? MOVE_HOURS_FALLBACK;
+
+  if (lessons.isPending) return <div className="page"><PageSkeleton /></div>;
+  if (!l) return <div className="page"><PageHead title="改時間" back /><Empty text="找不到這堂課。" action={<Link className="btn secondary" to="/app">回首頁</Link>} /></div>;
+  const tooLate = hoursUntil(l) < moveHours;
 
   return (
-    <>
-      <PageHead title="申請改時間" back />
-      <div className="inner"><p className="overline" style={{ marginBottom: 8 }}>目前時段</p>
-        <div className="row"><div className="grow stack g1"><p className="t">{fmtSlot(l.date, l.time)}</p><p className="caption">{l.room}</p></div><Tag tone="ok">已確認</Tag></div></div>
-      <form className="stack g4" onSubmit={(e) => { e.preventDefault(); if (!date || !time) return;
-        ask.mutate({ lessonId: l.id, date, time, reason }, { onSuccess: () => { nav('/app', { replace: true, viewTransition: true }); toast({ text: '已送出申請，等待老師回覆' }); } }); }}>
-        <section className="card">
-          <SlotPicker date={date} time={time} onDate={(d) => { setDate(d); setTime(null); }} onTime={onTime} onlyFree={onlyFree} setOnlyFree={setOnlyFree} exclude={{ date: l.date, time: l.time }} />
-          <div className="field"><label htmlFor="why">原因（老師會看到）</label><textarea id="why" className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} /></div>
-        </section>
-        <div className="notice"><Icon name="info" /><span>老師確認前，原本的時段會幫你保留。改時間不會扣堂數。</span></div>
-        {ask.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(ask.error as Error).message}</span></div>}
-        <button className="btn primary block" disabled={!date || !time || ask.isPending}>{ask.isPending ? '送出中…' : date && time ? `申請改到 ${fmtSlot(date, time)}` : '請選擇新時段'}</button>
-      </form>
-    </>
+    <div className="page">
+      <PageHead title="改時間" over="目前時段" back />
+      <div className="card"><b>{fmtSlot(l.date, l.time)}</b><span className="cap">新時段要等 Iris 同意，在那之前原時段會保留。</span></div>
+      {tooLate ? (
+        <div className="card"><p>上課前 {moveHours} 小時內不能改時間。</p><Link className="btn danger" to={`/app/lessons/${l.id}/cancel`}>改為取消預約</Link></div>
+      ) : (
+        <>
+          <section className="stack s2"><h2 className="sec">選擇新時段</h2><SlotPicker value={pick} onChange={setPick} ignore={{ date: l.date, time: l.time }} /></section>
+          <div className="field"><label htmlFor="why">原因</label><textarea id="why" className="textarea" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} placeholder="例如：臨時要加班" /></div>
+          {ask.isError && <p className="err" role="alert">{errText(ask.error)}</p>}
+          <button className="btn primary block" disabled={!pick || !reason.trim() || ask.isPending}
+            onClick={() => pick && ask.mutate({ lessonId: l.id, date: pick.date, time: pick.time, reason: reason.trim() }, { onSuccess: () => { toast({ text: '已送出申請，等 Iris 回覆' }); nav('/app'); } })}>
+            {!pick ? '請選擇時段' : !reason.trim() ? '請填寫原因' : '送出申請'}
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
-/* =================== Calendar =================== */
+/* ---------------------------------------------------------------- 預約 */
+export function Book() {
+  const me = useCurrentUser();
+  const nav = useNavigate();
+  const [sp] = useSearchParams();
+  const d = sp.get('d'), t = sp.get('t');
+  const pick: Picked | null = d && t ? { date: d, time: t } : null;
+  const noCredit = me.credits < 1;
+
+  return (
+    <div className="page">
+      <PageHead title="預約課程" over={`剩餘 ${me.credits} 堂`} />
+      {noCredit && <div className="card"><p>目前沒有剩餘堂數。</p><Link className="btn primary" to="/app/quota">購買堂數</Link></div>}
+      <SlotPicker value={pick} onChange={(p) => nav(p ? `?d=${p.date}&t=${p.time}` : '?', { replace: true })} />
+      <div className="cta-float">
+        <button className="btn primary block" disabled={!pick || noCredit} onClick={() => pick && nav(`confirm?d=${pick.date}&t=${pick.time}`)}>
+          {noCredit ? '沒有剩餘堂數' : pick ? `確認預約 ${fmtSlot(pick.date, pick.time)}` : '請選擇時段'}
+        </button>
+      </div>
+      <div className="cta-spacer" />
+      <Outlet />
+    </div>
+  );
+}
+
+export function BookConfirm() {
+  const me = useCurrentUser();
+  const studio = useStudio();
+  const nav = useNavigate();
+  const [sp] = useSearchParams();
+  const toast = useToast();
+  const book = useBook();
+  const key = useRef(newIdempotencyKey());
+  const [done, setDone] = useState(false);
+  const date = sp.get('d') ?? '', time = sp.get('t') ?? '';
+  const close = useSheetClose('/app/book');
+
+  const confirm = () => book.mutate({ date, time, key: key.current }, {
+    onSuccess: () => setDone(true),
+    onError: (e) => {
+      toast({ text: e instanceof ApiError && e.code === 'slot_taken' ? '沒有扣堂數，請選其他時段' : errText(e), kind: 'error' });
+      close();
+    },
+  });
+
+  return (
+    <RouteSheet title={done ? '預約完成' : '確認預約'} parent="/app/book">
+      {done ? (
+        <>
+          <div className="info"><b>{fmtSlot(date, time)}</b><br />我們已幫你保留這個時段。</div>
+          <button className="btn primary block" onClick={() => nav('/app', { replace: true })}>回首頁</button>
+        </>
+      ) : (
+        <>
+          <div className="card flat"><div className="hero-num">{fmtSlot(date, time)}</div><div className="sub">{fmtDuration(studio.data?.lessonMinutes ?? 60)} · {CLASS_TYPE_LABEL[me.classType]}</div></div>
+          <p className="sub">這堂會用掉 1 堂，預約後剩 {Math.max(0, me.credits - 1)} 堂。</p>
+          <div className="row"><button className="btn secondary grow" onClick={close}>返回</button><button className="btn primary wide" disabled={book.isPending} onClick={confirm}>確認預約</button></div>
+        </>
+      )}
+    </RouteSheet>
+  );
+}
+
+/* ---------------------------------------------------------------- 行事曆 */
+const markOf = (l: Lesson) => (l.change ? { c: '◆', k: 'mk-chg' } : l.status === 'Attended' ? { c: '○', k: 'mk-done' } : { c: '●', k: 'mk-up' });
+
 export function StudentCalendar() {
   const lessons = useMyLessons();
-  const withdraw = useWithdrawMove();
-  const toast = useToast();
   const today = studioToday();
   const [view, setView] = useState<'month' | 'list'>('month');
-  const [filter, setFilter] = useState<'past' | 'today' | 'up'>('up');
-  const [ym, setYm] = useState(() => [Number(today.slice(0, 4)), Number(today.slice(5, 7))]);
+  const [filter, setFilter] = useState<'upcoming' | 'today' | 'past'>('upcoming');
+  const [ym, setYm] = useState(() => ({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) }));
   const [sel, setSel] = useState(today);
-  const byDay = useMemo(() => { const m = new Map<string, Lesson[]>(); (lessons.data ?? []).filter((l) => l.status !== 'Cancelled').forEach((l) => m.set(l.date, [...(m.get(l.date) ?? []), l])); return m; }, [lessons.data]);
-  const grid = monthGrid(ym[0], ym[1]);
-  const shift = (d: number) => setYm(([y, m]) => { const t = m + d; return t < 1 ? [y - 1, 12] : t > 12 ? [y + 1, 1] : [y, t]; });
-  const listed = (lessons.data ?? []).filter((l) => l.status !== 'Cancelled' && (filter === 'past' ? l.date < today : filter === 'today' ? l.date === today : l.date > today));
-  if (filter === 'past') listed.reverse();
+  const shown = (lessons.data ?? []).filter((l) => l.status !== 'Cancelled');
+  const byDate = (d: string) => shown.filter((l) => l.date === d).sort(compareSlot);
+  const step = (n: number) => setYm(({ y, m }) => { const t = new Date(Date.UTC(y, m - 1 + n, 1)); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1 }; });
+
+  const list = shown.filter((l) => (filter === 'today' ? l.date === today : filter === 'past' ? l.date < today : l.date >= today)).sort((a, b) => (filter === 'past' ? compareSlot(b, a) : compareSlot(a, b)));
 
   const row = (l: Lesson) => (
-    <div className="li" key={l.id}><DateBox date={l.date} />
-      <div className="grow stack g1"><p className="t">{l.time} – {endTime(l.time)}</p><p className="caption">{l.change ? `${l.change.by === 'teacher' ? '老師提議改到' : '申請改到'} ${fmtSlot(l.change.toDate, l.change.toTime)}` : l.room}</p></div>
-      {lessonTag(l)}
-      {l.change?.by === 'student' && <button className="btn sm secondary" disabled={withdraw.isPending} onClick={() => withdraw.mutate(l.change!.id, { onSuccess: () => toast({ text: '已撤回改時間申請' }) })}>撤回</button>}
+    <div key={l.id} className="li">
+      <DateBox date={l.date} />
+      <div className="grow"><div className="name" style={{ fontSize: 16 }}>{l.time} · {LESSON_TYPE_LABEL[l.type]}</div><div className="cap">{fmtDate(l.date)} · {fmtDuration(l.minutes)}</div></div>
+      {l.change ? <Tag tone="warn">改時間中</Tag> : l.status === 'Attended' ? <Tag tone="grey">已上課</Tag> : <Tag tone="accent">已預約</Tag>}
     </div>
   );
 
   return (
-    <>
-      <PageHead title="行事曆" over={`${ym[0]} 年 ${ym[1]} 月`} />
-      <div className="seg" role="tablist" aria-label="檢視方式">
-        <button role="tab" aria-selected={view === 'month'} onClick={() => setView('month')}>月</button>
-        <button role="tab" aria-selected={view === 'list'} onClick={() => setView('list')}>列表</button>
-      </div>
-      {lessons.isPending ? <PageSkeleton blocks={[320]} /> : view === 'month' ? (
-        <div className="split">
-          <section className="card" style={{ padding: 16 }}>
-            <div className="row between"><button className="icon-btn flat" aria-label="上個月" onClick={() => shift(-1)}><Icon name="back" /></button>
-              <p className="t">{ym[0]} 年 {ym[1]} 月</p><button className="icon-btn flat" aria-label="下個月" onClick={() => shift(1)}><Icon name="chev" /></button></div>
-            <div className="cal">
-              {['一', '二', '三', '四', '五', '六', '日'].map((w) => <span className="wd" key={w}>{w}</span>)}
-              {grid.map((d) => {
-                const ls = byDay.get(d) ?? [];
-                const cls = ls.some((l) => l.change) ? 'warn' : ls.length ? (d < today ? 'past' : 'up') : '';
+    <div className="page">
+      <PageHead title="行事曆" />
+      <Segmented label="檢視方式" value={view} onChange={setView} options={[{ value: 'month', label: '月曆' }, { value: 'list', label: '列表' }]} />
+      {lessons.isPending ? <PageSkeleton blocks={[300]} /> : lessons.isError ? <ErrorCard error={lessons.error} retry={() => lessons.refetch()} /> : view === 'month' ? (
+        <>
+          <div className="card">
+            <div className="row between"><button className="iconbtn" aria-label="上個月" onClick={() => step(-1)}><Icon name="back" /></button><h2 className="sec">{ym.y} 年 {ym.m} 月</h2><button className="iconbtn" aria-label="下個月" onClick={() => step(1)}><Icon name="chev" /></button></div>
+            <div className="cal" role="grid">
+              {['一', '二', '三', '四', '五', '六', '日'].map((w) => <div key={w} className="wd">{w}</div>)}
+              {monthGrid(ym.y, ym.m).map((d) => {
+                const ls = byDate(d);
                 return (
-                  <button key={d} className={`${d.slice(5, 7) !== String(ym[1]).padStart(2, '0') ? 'out' : ''}${d === today ? ' today' : ''}`}
-                    aria-pressed={sel === d} aria-label={`${fmtDate(d)}${ls.length ? `，${ls.length} 堂課` : ''}`} onClick={() => setSel(d)}>
-                    <span>{dayNum(d)}</span><i className={cls} />
+                  <button key={d} className={`${monthNum(d) !== ym.m ? 'out' : ''} ${d === today ? 'today' : ''}`} aria-pressed={d === sel} onClick={() => setSel(d)} aria-label={`${monthNum(d)} 月 ${dayNum(d)} 日${ls.length ? `，${ls.length} 堂課` : ''}`}>
+                    {dayNum(d)}<span className="marks" aria-hidden>{ls.slice(0, 3).map((l) => <span key={l.id} className={markOf(l).k}>{markOf(l).c}</span>)}</span>
                   </button>
                 );
               })}
             </div>
-            <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}><Tag tone="accent">即將上課</Tag><Tag tone="grey">已上課</Tag><Tag tone="warn">改時間中</Tag></div>
-          </section>
-          <section className="card"><p className="overline">{fmtDate(sel)}</p>
-            {(byDay.get(sel) ?? []).length ? <div className="list">{byDay.get(sel)!.map(row)}</div> : <Empty text="這天沒有課。" action={sel >= today ? <Link className="btn secondary sm" to={`/app/book?date=${sel}`}>預約這天</Link> : undefined} />}
-          </section>
-        </div>
+            <div className="legend"><span className="mk-up">● 即將上課</span><span className="mk-done">○ 已上課</span><span className="mk-chg">◆ 改時間中</span></div>
+          </div>
+          <section className="stack s2"><h2 className="sec">{fmtDate(sel)}</h2>
+            {byDate(sel).length ? <div className="list">{byDate(sel).map(row)}</div> : <Empty text="這天沒有課。" action={sel >= today ? <Link className="btn secondary sm" to="/app/book">預約課程</Link> : undefined} />}</section>
+        </>
       ) : (
         <>
-          <div className="fchips" role="group" aria-label="篩選">
-            {(['past', 'today', 'up'] as const).map((f) => <button key={f} className="fchip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{{ past: '過去', today: '今天', up: '即將' }[f]}</button>)}
+          <div className="chips" role="group" aria-label="篩選">
+            {([['upcoming', '即將'], ['today', '今天'], ['past', '過去']] as const).map(([k, t]) => <button key={k} className="chip filter" aria-pressed={filter === k} onClick={() => setFilter(k)}>{t}</button>)}
           </div>
-          <section className="card tight">{listed.length ? <div className="list">{listed.map(row)}</div> : <p className="caption" style={{ padding: '16px 0' }}>沒有課程。</p>}</section>
+          {list.length ? <div className="list">{list.map(row)}</div> : <Empty text="沒有符合的課。" />}
         </>
       )}
-    </>
+    </div>
   );
 }
-const endTime = (t: string) => { const [h, m] = t.split(':').map(Number); const x = h * 60 + m + 45; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
 
-/* =================== Quota & payments =================== */
+/* ---------------------------------------------------------------- 堂數與付款 */
+const PAY_TAG = { Pending: <Tag tone="pending">確認中</Tag>, Confirmed: <Tag tone="ok">已確認</Tag>, Rejected: <Tag tone="bad">已退回</Tag> } as const;
+const MAX_RECEIPT = 5 * 1024 * 1024;
+
 export function QuotaPage() {
   const me = useCurrentUser();
   const studio = useStudio();
-  const pays = useMyPayments();
+  const payments = useMyPayments();
   const upload = useUploadReceipt();
   const toast = useToast();
-  // 體驗 students who haven't tried yet see only the trial; everyone else sees the normal packages
-  const offered = studio.data?.packages.filter((p) => !!p.trial === me.trialAvailable) ?? [];
-  const [picked, setPkg] = useState<number | null>(null);
-  const pkg = picked ?? offered[0]?.size ?? 4;
+  const [size, setSize] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState('');
-  const [key, setKey] = useState(newIdempotencyKey);
-  const pending = pays.data?.some((p) => p.status === 'Pending');
-  // buy any time (credits are added on top) — only blocked while a receipt is waiting
-  const canBuy = !pending;
+  const [fileErr, setFileErr] = useState('');
+  const key = useRef(newIdempotencyKey());
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
-    const fd = new FormData(); fd.set('packageSize', String(pkg)); fd.set('receipt', file); if (note) fd.set('note', note);
-    upload.mutate({ form: fd, key }, { onSuccess: () => { toast({ text: '已送出，老師確認後會通知你' }); setFile(null); setNote(''); setKey(newIdempotencyKey()); } });
+  const all = studio.data?.packages ?? [];
+  // A 體驗 student who hasn't tried yet sees only the 體驗課 package (ST-6).
+  const visible = me.classType === 'trial' && me.trialAvailable ? all.filter((p) => p.trial) : all.filter((p) => !p.trial);
+  const waiting = (payments.data ?? []).some((p) => p.status === 'Pending');
+  const free = me.credits;
+  const attended = Math.max(0, Math.min(me.attended, me.packageSize - me.booked - free));
+  const chosen = size ?? visible[0]?.size ?? null;
+
+  const pickFile = (f: File | undefined) => {
+    setFileErr('');
+    if (!f) return setFile(null);
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { setFileErr('請選擇 JPG、PNG 或 WEBP 圖片。'); return setFile(null); }
+    if (f.size > MAX_RECEIPT) { setFileErr('圖片請小於 5 MB。'); return setFile(null); }
+    setFile(f);
+  };
+  const submit = () => {
+    if (!file || chosen == null) return;
+    const form = new FormData(); form.append('packageSize', String(chosen)); form.append('receipt', file); if (note.trim()) form.append('note', note.trim());
+    upload.mutate({ form, key: key.current }, {
+      onSuccess: () => { toast({ text: '收據已送出，等 Iris 確認' }); setFile(null); setNote(''); key.current = newIdempotencyKey(); },
+      onError: (e) => toast({ text: errText(e), kind: 'error' }),
+    });
   };
 
   return (
-    <>
+    <div className="page">
       <PageHead title="堂數與付款" back />
-      <div className="split">
-        <div className="stack g4">
-          <QuotaCard me={me} />
-          <section className="card"><p className="overline">付款紀錄</p>
-            {pays.isPending ? <ListSkeleton rows={2} /> : pays.data?.length ? (
-              <div className="list">{pays.data.map((p) => (
-                <div className="li" key={p.id}><div className="grow stack g1"><p className="t">{p.trial ? '體驗課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)}</p>
-                  <p className="caption">{fmtRelative(p.uploadedAt)} 上傳{p.rejectReason ? ` · 退回原因：${p.rejectReason}` : ''}</p></div>
-                  <Tag tone={p.status === 'Confirmed' ? 'ok' : p.status === 'Rejected' ? 'bad' : 'warn'}>{{ Confirmed: '已確認', Rejected: '已退回', Pending: '確認中' }[p.status]}</Tag></div>
-              ))}</div>
-            ) : <p className="caption">還沒有付款紀錄。</p>}
-          </section>
+      <section className="card hero">
+        <div className="row between"><h2 className="sec">我的堂數</h2><span className="hero-num">剩餘 {free} 堂</span></div>
+        {me.packageSize > 0 && <Quota attended={attended} booked={me.booked} free={free} />}
+        <p className="cap">堂數沒有期限，新買的會加在剩下的堂數上。</p>
+      </section>
+
+      <section className="card">
+        <h2 className="sec">匯款資料</h2>
+        {studio.data ? <div className="info"><b>{studio.data.bank.name}</b><br />帳號 {studio.data.bank.account}<br />戶名 {studio.data.bank.holder}</div> : <p className="sub">載入中…</p>}
+        <div className="stack s2" role="radiogroup" aria-label="選擇方案">
+          {visible.map((p) => (
+            <button key={p.size} role="radio" aria-checked={chosen === p.size} className="chip choice" style={{ borderRadius: 14, textAlign: 'left', padding: '0 16px', display: 'flex', justifyContent: 'space-between' }} onClick={() => setSize(p.size)}>
+              <span>{p.trial ? '體驗課' : '方案'} · {p.size} 堂</span><span>{fmtMoney(p.price)}</span>
+            </button>
+          ))}
         </div>
-        <form className="card" onSubmit={submit}>
-          <p className="overline">{me.trialAvailable ? '購買體驗課' : '購買新方案'}</p>
-          <p className="caption">{me.trialAvailable ? '第一次上課：1 堂體驗課，老師確認收據後就可以預約。' : '隨時都可以購買，老師確認後，堂數會加在目前剩餘的堂數上。'}</p>
-          <div className="list">{offered.map((p) => (
-            <label className="li" key={p.size} style={{ cursor: canBuy ? 'pointer' : 'default' }}>
-              <input type="radio" name="pkg" value={p.size} checked={pkg === p.size} disabled={!canBuy} onChange={() => setPkg(p.size)} style={{ width: 22, height: 22, accentColor: 'var(--sage-700)' }} />
-              <span className="grow t">{p.trial ? `體驗課 · ${p.size} 堂` : `${p.size} 堂`}</span><span className="t">{fmtMoney(p.price)}</span>
-            </label>))}</div>
-          {studio.data && <div className="inner stack g1"><p className="caption">匯款帳號</p><p className="t">{studio.data.bank.name} · {studio.data.bank.account}</p><p className="caption">戶名 {studio.data.bank.holder}</p></div>}
-          <div className="field"><label htmlFor="rc">匯款證明（JPG、PNG、WEBP，5 MB 以內）</label>
-            <input id="rc" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={!canBuy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ paddingTop: 10 }} /></div>
-          <div className="field"><label htmlFor="nt">備註（選填）</label><input id="nt" className="input" value={note} disabled={!canBuy} onChange={(e) => setNote(e.target.value)} placeholder="例如：帳號末五碼" /></div>
-          {upload.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(upload.error as Error).message}</span></div>}
-          <button className="btn primary block" disabled={!canBuy || !file || upload.isPending}><Icon name="upload" size={18} />{upload.isPending ? '上傳中…' : '上傳匯款證明'}</button>
-          {!canBuy && <p className="caption">已經有一張收據在等老師確認，確認後就可以再購買。</p>}
-        </form>
-      </div>
-    </>
+        {waiting ? <div className="info">已有一張收據在等 Iris 確認，確認後就可以再上傳。</div> : (
+          <>
+            <div className="field"><label htmlFor="rc">轉帳收據（JPG／PNG／WEBP，5 MB 內）</label>
+              <input id="rc" className="input" style={{ paddingTop: 10 }} type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => pickFile(e.target.files?.[0])} aria-describedby={fileErr ? 'rc-err' : undefined} />
+              {fileErr && <span id="rc-err" className="err">{fileErr}</span>}</div>
+            <div className="field"><label htmlFor="rn">備註（選填，例如帳號末五碼）</label><input id="rn" className="input" value={note} maxLength={60} onChange={(e) => setNote(e.target.value)} /></div>
+            <button className="btn primary block" disabled={!file || chosen == null || upload.isPending} onClick={submit}><Icon name="upload" size={18} />上傳收據</button>
+          </>
+        )}
+      </section>
+
+      <section className="stack s2"><h2 className="sec">付款紀錄</h2>
+        {payments.isPending ? <ListSkeleton rows={2} /> : !payments.data?.length ? <Empty text="還沒有付款紀錄。" /> : (
+          <div className="list">{payments.data.map((p: Payment) => (
+            <div key={p.id} className="li"><div className="grow"><div className="name" style={{ fontSize: 16 }}>{p.trial ? '體驗課' : '方案'} · {p.packageSize} 堂</div>
+              <div className="cap">{fmtRelative(p.uploadedAt)} · {fmtMoney(p.amount)}{p.status === 'Rejected' && p.rejectReason ? ` · 「${p.rejectReason}」` : ''}</div></div>{PAY_TAG[p.status]}</div>
+          ))}</div>
+        )}
+      </section>
+    </div>
   );
 }
 
-/* =================== Alerts =================== */
-const ALERT_ICON: Record<AlertKind, string> = { moved: 'repeat', approved: 'repeat', declined: 'repeat', payment: 'receipt', added: 'calendar', welcome: 'sparkle', cancelled: 'calendar', reminder: 'receipt', proposal: 'repeat' };
+/* ---------------------------------------------------------------- 通知 */
 export function Alerts() {
   const alerts = useAlerts();
   const { mutation, undo } = useMarkAllRead();
   const toast = useToast();
   const unread = (alerts.data ?? []).filter((a) => !a.read).map((a) => a.id);
+
   return (
-    <>
-      <PageHead title="通知" right={<button className="btn secondary sm" disabled={!unread.length}
-        onClick={() => mutation.mutate(unread, { onSuccess: () => toast({ text: '已全部標為已讀', undo: () => undo(unread) }), onError: () => toast({ text: '沒有成功，請再試一次。', kind: 'error' }) })}>全部標為已讀</button>} />
-      {alerts.isPending ? <ListSkeleton /> : alerts.isError ? <ErrorCard error={alerts.error} retry={alerts.refetch} /> : (
-        <section className="card tight">
-          {alerts.data!.length === 0 ? <p className="caption" style={{ padding: '16px 0' }}>目前沒有通知。</p> : (
-            <div className="list">{alerts.data!.map((a) => (
-              <div className="li" key={a.id} style={{ alignItems: 'flex-start' }}>
-                {a.read ? <span style={{ width: 8 }} aria-hidden="true" /> : <span className="dot-unread" style={{ marginTop: 16 }} role="img" aria-label="未讀" />}
-                <span className="ico"><Icon name={ALERT_ICON[a.kind]} /></span>
-                <div className="grow stack g1"><p className="t" style={{ fontWeight: a.read ? 400 : 600, color: a.read ? 'var(--muted)' : undefined }}>{a.title}</p>
-                  <p className="caption" style={{ whiteSpace: 'pre-line' }}>{a.body}</p>
-                  {a.kind === 'proposal' && <Link to="/app" className="sd-link" viewTransition>到首頁回覆 <span aria-hidden="true">→</span></Link>}
-                  <p className="caption">{fmtRelative(a.createdAt)}</p></div>
-              </div>))}</div>
-          )}
-        </section>
+    <div className="page">
+      <PageHead title="通知" right={unread.length > 0 && (
+        <button className="btn link" onClick={() => mutation.mutate(unread, { onSuccess: () => toast({ text: '已全部標為已讀', undo: () => undo(unread) }) })}>全部已讀</button>
+      )} />
+      {alerts.isPending ? <ListSkeleton /> : alerts.isError ? <ErrorCard error={alerts.error} retry={() => alerts.refetch()} /> : !alerts.data.length ? <Empty text="目前沒有通知。" /> : (
+        <div className="list">{alerts.data.map((a) => (
+          <div key={a.id} className="li" style={{ alignItems: 'flex-start' }}>
+            <span aria-hidden style={{ width: 10, paddingTop: 8 }}>{!a.read && <i className="dot" style={{ position: 'static', display: 'block' }} />}</span>
+            <div className="grow"><div className="name" style={{ fontSize: 16 }}>{a.title}{!a.read && <span className="sr">（未讀）</span>}</div>
+              <p className="sub">{a.body}</p>
+              {a.kind === 'proposal' && <Link className="btn link" to="/app">到首頁回覆 →</Link>}
+              <div className="cap">{fmtRelative(a.createdAt)}</div></div>
+          </div>
+        ))}</div>
       )}
-    </>
+    </div>
   );
 }
 
-/* =================== Profile =================== */
+/* ---------------------------------------------------------------- 我的 */
 export function Profile() {
   const me = useCurrentUser();
+  const update = useUpdateProfile();
+  const toast = useToast();
+  const [f, setF] = useState({ name: me.name, email: me.email ?? '', phone: me.phone ?? '', lineId: me.lineId ?? '', voiceType: me.voiceType ?? '', goal: me.goal ?? '' });
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const bad = !f.name.trim() || (f.email.trim() !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim()));
+
+  return (
+    <div className="page">
+      <PageHead title="我的" />
+      <form className="card" onSubmit={(e) => { e.preventDefault(); if (!bad) update.mutate({ name: f.name.trim(), email: f.email.trim() || null, phone: f.phone.trim() || null, lineId: f.lineId.trim() || null, voiceType: f.voiceType.trim() || null, goal: f.goal.trim() || null }, { onSuccess: () => toast({ text: '已儲存' }), onError: (er) => toast({ text: errText(er), kind: 'error' }) }); }}>
+        <div className="field"><label htmlFor="p-name">姓名</label><input id="p-name" className="input" autoComplete="name" value={f.name} onChange={set('name')} aria-invalid={!f.name.trim() || undefined} /></div>
+        <div className="field"><label htmlFor="p-mail">Email</label><input id="p-mail" className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} /></div>
+        <div className="field"><label htmlFor="p-tel">電話</label><input id="p-tel" className="input" type="tel" autoComplete="tel" value={f.phone} onChange={set('phone')} /></div>
+        <div className="field"><label htmlFor="p-line">LINE ID</label><input id="p-line" className="input" value={f.lineId} onChange={set('lineId')} /></div>
+        <div className="field"><label htmlFor="p-voice">聲部</label>
+          <select id="p-voice" className="select" value={f.voiceType} onChange={set('voiceType')}><option value="">還不確定</option>{['女高音', '女中音', '女低音', '男高音', '男中音', '男低音'].map((v) => <option key={v}>{v}</option>)}</select></div>
+        <div className="field"><label htmlFor="p-goal">想達成的目標</label><textarea id="p-goal" className="textarea" value={f.goal} maxLength={300} onChange={set('goal')} /></div>
+        <button className="btn primary block" disabled={bad || update.isPending}>儲存</button>
+      </form>
+      <EmailSettings />
+      <ConsentSettings />
+      <LogoutButton />
+    </div>
+  );
+}
+
+function LogoutButton() {
   const logout = useLogout();
   const nav = useNavigate();
-  const save = useUpdateProfile();
-  const toast = useToast();
-  const [f, setF] = useState({ name: me.name, phone: me.phone ?? '', email: me.email ?? '', lineId: me.lineId ?? '', voiceType: me.voiceType ?? '', goal: me.goal ?? '' });
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
-  return (
-    <>
-      <PageHead title="個人資料" />
-      <div className="inner row" style={{ gap: 16 }}><span className="avatar lg">{initialOf(me.name)}</span>
-        <div className="grow stack g1"><p className="h3">{me.name}</p><p className="caption">{me.lineLinked ? '透過 LINE 登入' : 'Email 登入'} · 程度 {me.grade ?? '未設定'}（老師設定）</p></div></div>
-      <Link to="/app/quota" className="inner row between" style={{ textDecoration: 'none', color: 'inherit' }} viewTransition>
-        <span className="stack g1"><span className="t">堂數與付款</span><span className="caption">剩餘 {me.credits} 堂 · 上傳匯款證明</span></span><Icon name="chev" />
-      </Link>
-      <form className="card" onSubmit={(e) => { e.preventDefault(); save.mutate(f, { onSuccess: () => toast({ text: '已儲存' }), onError: (er) => toast({ text: (er as Error).message, kind: 'error' }) }); }}>
-        {/* #15: autocomplete lets the phone fill these in */}
-        <div className="field"><label htmlFor="p-name">姓名</label><input id="p-name" className="input" autoComplete="name" required value={f.name} onChange={set('name')} /></div>
-        <div className="field"><label htmlFor="p-tel">電話</label><input id="p-tel" className="input" type="tel" autoComplete="tel" inputMode="tel" value={f.phone} onChange={set('phone')} /></div>
-        <div className="field"><label htmlFor="p-mail">Email</label><input id="p-mail" className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} /></div>
-        <div className="field"><label htmlFor="p-line">LINE ID</label><input id="p-line" className="input" autoComplete="off" value={f.lineId} onChange={set('lineId')} /></div>
-        <div className="field"><label htmlFor="p-voice">聲部</label>
-          <select id="p-voice" className="input" value={f.voiceType} onChange={set('voiceType')}><option value="">還不確定</option>{['女高音', '女中音', '女低音', '男高音', '男中音', '男低音'].map((v) => <option key={v}>{v}</option>)}</select></div>
-        <div className="field"><label htmlFor="p-goal">學習目標</label><textarea id="p-goal" className="input" value={f.goal} onChange={set('goal')} maxLength={300} /></div>
-        <button className="btn primary block" disabled={save.isPending}>{save.isPending ? '儲存中…' : '儲存'}</button>
-      </form>
-      <ConsentSettings />
-      <button className="btn ghost block mobile-only" onClick={() => { nav('/'); logout.mutate(); }}><Icon name="logout" size={18} />登出</button>
-    </>
-  );
+  return <button className="btn secondary block" onClick={() => { nav('/'); logout.mutate(); }}><Icon name="logout" size={18} />登出</button>;
 }
 
 const KIND_LABEL = { terms: '服務條款', privacy: '隱私權政策（告知）', media: '肖像影音宣傳', marketing: '行銷訊息', guardian: '法定代理人同意' } as const;

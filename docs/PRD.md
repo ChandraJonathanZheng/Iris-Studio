@@ -4,7 +4,7 @@
 |---|---|
 | Product | Iris Studio — public website + booking & admin app for Iris's singing studio |
 | Owner | Chandra (developer) · Iris (studio owner, primary user) |
-| Status | Clickable prototype done (React + mock API); .NET 10 server written, not yet compiled |
+| Status | Clickable prototype done (React + mock API); .NET 10 backend implemented with committed migrations and PostgreSQL integration tests |
 | Version | v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
 | Related docs | `FEATURES.md` · `DESIGN-SYSTEM.md` · `SCHEMA.md` · `FLOW.md` |
 
@@ -146,7 +146,7 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | LINE Messaging API (push) | Students who signed in with LINE and added the OA as a friend | 輕用量 plan: free, 200 push messages / month |
 | Email (Resend) | Students without LINE | Free plan: 3,000 / month, 100 / day |
 
-All alerts go through one outbox (`Alert.SendAfterUtc`) and one `IAlertChannel`. Real LINE / email delivery is plugged in once Iris's LINE OA and Resend account exist.
+All alerts go through one outbox (`Alert.SendAfterUtc`) and one `IAlertChannel`. LINE / Resend adapters are implemented. External delivery remains disabled until Iris's credentials are configured (`BACKEND.md`).
 
 ## 7. Success metrics (2 months after launch)
 
@@ -169,7 +169,7 @@ All alerts go through one outbox (`Alert.SendAfterUtc`) and one `IAlertChannel`.
 
 ## 9. Tech stack
 
-React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sheets) · cmdk (⌘K) · Phosphor icons · MSW (mock API) — .NET 10 Minimal API · EF Core 10 + Npgsql · PostgreSQL · cookie auth + LINE OIDC · ImageSharp (receipt previews).
+React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sheets) · cmdk (⌘K) · Phosphor icons · MSW (mock API) — .NET 10 Minimal API · EF Core 10 + Npgsql · PostgreSQL · cookie auth + LINE OIDC · SkiaSharp (receipt previews; see `BACKEND.md`).
 
 ## 10. Decisions (8 Nov 2026) and what is still open
 
@@ -193,7 +193,8 @@ Still open: real content (photos, bio, testimonials with consent), the real 體�
 
 ## 11. Release checklist
 
-- [ ] `dotnet build`, then `dotnet ef migrations add Initial` + `database update`
+- [x] Backend build, committed migrations, and PostgreSQL integration tests
+- [ ] Apply the committed migrations to the deployment database (automatic at startup)
 - [ ] Real content, prices and bank details (env / user-secrets)
 - [ ] Strong teacher password; HTTPS; `Cookie.SecurePolicy = Always`
 - [ ] LINE Login + Messaging channels under the same provider, and the Official Account **linked to the LOGIN channel** (needed for the add-friend prompt); Resend domain verified

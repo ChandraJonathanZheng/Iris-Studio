@@ -1,156 +1,98 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { Photo } from './ui';
+
+const prefersReduced = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * Photo carousel built on native horizontal scroll + scroll-snap.
- * Why native scroll instead of a JS slider: swipe on phones, trackpad and keyboard scrolling all work for free,
- * and the browser handles momentum. JS only syncs the dots and the prev/next buttons.
+ * Benefits (WEB-4): phone = swipe row with snap, the next card peeks, page dots (tap = jump), no autoplay;
+ * desktop = 3 columns (CSS). Keyboard: the row is focusable and scrolls with arrow keys.
  */
-export function PhotoCarousel({ slides, label }: { slides: { caption: string; src?: string; lqip?: string }[]; label: string }) {
-  const track = useRef<HTMLDivElement>(null);
-  const [i, setI] = useState(0);
+export function BenefitsRow({ items }: { items: { title: string; body: ReactNode }[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [on, setOn] = useState(0);
 
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const onScroll = () => setI(Math.round(el.scrollLeft / el.clientWidth));
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
+  const onScroll = useCallback(() => {
+    const el = ref.current; if (!el) return;
+    const kids = [...el.children] as HTMLElement[];
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    let best = 0, dist = Infinity;
+    kids.forEach((k, i) => { const d = Math.abs(k.offsetLeft + k.offsetWidth / 2 - mid); if (d < dist) { dist = d; best = i; } });
+    setOn(best);
   }, []);
 
-  const go = (n: number) => {
-    const el = track.current;
-    if (!el) return;
-    const to = Math.max(0, Math.min(slides.length - 1, n));
-    el.scrollTo({ left: to * el.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  const jump = (i: number) => {
+    const el = ref.current; const k = el?.children[i] as HTMLElement | undefined;
+    if (el && k) el.scrollTo({ left: k.offsetLeft - (el.clientWidth - k.offsetWidth) / 2, behavior: prefersReduced() ? 'auto' : 'smooth' });
   };
 
   return (
-    <div className="carousel" role="region" aria-roledescription="carousel" aria-label={label}>
-      <div className="carousel-track" ref={track} tabIndex={0} aria-live="polite">
-        {slides.map((s, n) => (
-          <div className="carousel-slide" key={n} role="group" aria-roledescription="slide" aria-label={`${n + 1} / ${slides.length}`}>
-            <Photo caption={s.caption} src={s.src} lqip={s.lqip} style={{ width: '100%', height: '100%' }} />
-          </div>
-        ))}
-      </div>
-      <button className="icon-btn carousel-prev" aria-label="上一張" disabled={i === 0} onClick={() => go(i - 1)}><Icon name="back" /></button>
-      <button className="icon-btn carousel-next" aria-label="下一張" disabled={i === slides.length - 1} onClick={() => go(i + 1)}><Icon name="chev" /></button>
-      <div className="carousel-dots">
-        {slides.map((_, n) => (
-          <button key={n} aria-label={`第 ${n + 1} 張`} aria-current={i === n} onClick={() => go(n)}><span /></button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** One-at-a-time card carousel (testimonials). Same native scroll-snap approach; dots + buttons sit below the cards. */
-export function CardCarousel({ children, label }: { children: React.ReactNode[]; label: string }) {
-  const track = useRef<HTMLDivElement>(null);
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const onScroll = () => setI(Math.round(el.scrollLeft / el.clientWidth));
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-  const go = (n: number) => {
-    const el = track.current;
-    if (!el) return;
-    const to = Math.max(0, Math.min(children.length - 1, n));
-    el.scrollTo({ left: to * el.clientWidth, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  };
-  return (
-    <div className="card-carousel" role="region" aria-roledescription="carousel" aria-label={label}>
-      <div className="card-carousel-track" ref={track} tabIndex={0}>
-        {children.map((c, n) => (
-          <div className="card-carousel-slide" key={n} role="group" aria-roledescription="slide" aria-label={`${n + 1} / ${children.length}`}>{c}</div>
-        ))}
-      </div>
-      <div className="row between">
-        <div className="carousel-dots static">
-          {children.map((_, n) => <button key={n} aria-label={`第 ${n + 1} 則`} aria-current={i === n} onClick={() => go(n)}><span /></button>)}
-        </div>
-        <div className="row g2">
-          <button className="icon-btn" aria-label="上一則" disabled={i === 0} onClick={() => go(i - 1)}><Icon name="back" /></button>
-          <button className="icon-btn" aria-label="下一則" disabled={i === children.length - 1} onClick={() => go(i + 1)}><Icon name="chev" /></button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export interface Feature { icon: string; title: string; points: string[]; note: string; photo: { caption: string; src?: string; lqip?: string } }
-
-/**
- * Auto-advancing feature carousel: each slide shows 5 s, then slides to the next and loops.
- * Accessibility (WCAG 2.2.2, moving content): a visible pause button, it pauses while hovered/focused or after
- * the visitor swipes, and it never auto-plays when the device asks for reduced motion.
- */
-export function FeatureCarousel({ items, label, interval = 5000 }: { items: Feature[]; label: string; interval?: number }) {
-  const track = useRef<HTMLDivElement>(null);
-  const [i, setI] = useState(0);
-  const [playing, setPlaying] = useState(() => typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const [hover, setHover] = useState(false);
-  const running = playing && !hover;
-
-  const go = (n: number) => {
-    const el = track.current;
-    if (!el) return;
-    const to = ((n % items.length) + items.length) % items.length;
-    el.scrollTo({ left: to * el.clientWidth, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  };
-
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    const onScroll = () => setI(Math.round(el.scrollLeft / el.clientWidth));
-    const stopOnSwipe = () => setPlaying(false); // the visitor took control: don't fight them
-    el.addEventListener('scroll', onScroll, { passive: true });
-    el.addEventListener('touchstart', stopOnSwipe, { passive: true });
-    el.addEventListener('wheel', stopOnSwipe, { passive: true });
-    return () => { el.removeEventListener('scroll', onScroll); el.removeEventListener('touchstart', stopOnSwipe); el.removeEventListener('wheel', stopOnSwipe); };
-  }, []);
-
-  useEffect(() => {
-    if (!running) return;
-    const t = window.setTimeout(() => go(i + 1), interval);
-    return () => window.clearTimeout(t);
-  }, [i, running, interval]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div className="feature-carousel" role="region" aria-roledescription="carousel" aria-label={label}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      onFocus={() => setHover(true)} onBlur={() => setHover(false)}>
-      <div className="feature-track" ref={track} tabIndex={0} aria-label={`${label}，可用方向鍵左右捲動`} aria-live={running ? 'off' : 'polite'}>
-        {items.map((f, n) => (
-          <article className="feature-slide" key={f.title} role="group" aria-roledescription="slide" aria-label={`${n + 1} / ${items.length}：${f.title}`}>
-            <div className="feature-photo"><Photo caption={f.photo.caption} src={f.photo.src} lqip={f.photo.lqip} style={{ width: '100%', height: '100%' }} /></div>
-            <div className="feature-body">
-              <span className="ico"><Icon name={f.icon} /></span>
-              <h3 className="h2">{f.title}</h3>
-              <ul className="dots">{f.points.map((p) => <li key={p}>{p}</li>)}</ul>
-              <p className="caption">{f.note}</p>
-            </div>
+    <>
+      <div className="benefits" ref={ref} onScroll={onScroll} tabIndex={0} aria-label="學習好處，可左右滑動">
+        {items.map((b, i) => (
+          <article key={b.title} className={`card benefit${i === on ? ' on' : ''}`}>
+            <h3 className="sec">{b.title}</h3><p className="sub" style={{ fontSize: 15.5, lineHeight: '24px' }}>{b.body}</p>
           </article>
         ))}
       </div>
+      <div className="dots m" role="group" aria-label="頁數">
+        {items.map((b, i) => (
+          <button key={b.title} className={i === on ? 'on' : ''} aria-label={`第 ${i + 1} 張`} aria-current={i === on} onClick={() => jump(i)}><i /></button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+export interface Story { initials: string; who: string; text: string }
+const STORY_MS = 7000;
+
+/**
+ * Student stories (WEB-5): one at a time, characters rise in like lyrics, 7 s autoplay with a progress line.
+ * Pauses on hover / focus / touch and with ⏸; swipe and arrow keys move. Reduced motion = static, no autoplay.
+ */
+export function Stories({ stories }: { stories: Story[] }) {
+  const [i, setI] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [hold, setHold] = useState(false); // hover / focus / touch
+  const reduced = prefersReduced();
+  const touchX = useRef<number | null>(null);
+  const n = stories.length;
+  const go = useCallback((d: number) => setI((v) => (v + d + n) % n), [n]);
+  const running = !paused && !hold && !reduced;
+
+  useEffect(() => {
+    if (!running) return;
+    const t = window.setTimeout(() => go(1), STORY_MS);
+    return () => window.clearTimeout(t);
+  }, [running, i, go]);
+
+  const s = stories[i];
+  return (
+    <div className="stack">
+      <div className="stage" role="group" aria-roledescription="輪播" aria-label="學員心聲" tabIndex={0}
+        onMouseEnter={() => setHold(true)} onMouseLeave={() => setHold(false)} onFocus={() => setHold(true)} onBlur={() => setHold(false)}
+        onTouchStart={(e) => { setHold(true); touchX.current = e.touches[0].clientX; }}
+        onTouchEnd={(e) => { setHold(false); if (touchX.current !== null) { const dx = e.changedTouches[0].clientX - touchX.current; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); } touchX.current = null; }}
+        onKeyDown={(e) => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); }}>
+        <blockquote key={i} className="quote" aria-live={running ? 'off' : 'polite'} style={{ margin: 0 }}>
+          <span className="sr">{s.text}</span>
+          <span aria-hidden>
+            「{[...s.text].map((c, k) => <span key={k} className="ch" style={{ ['--i' as string]: reduced ? 0 : k, animation: reduced ? 'none' : undefined }}>{c}</span>)}」
+          </span>
+        </blockquote>
+        <div className="cap">— {s.who}（示意文字，待學員同意後替換）</div>
+        <div className="progress" aria-hidden>{running && <i key={i} style={{ animationDuration: `${STORY_MS}ms` }} />}</div>
+      </div>
       <div className="row between">
-        <div className="row g2">
-          <div className="carousel-dots static">
-            {items.map((f, n) => <button key={f.title} aria-label={`第 ${n + 1} 項：${f.title}`} aria-current={i === n} onClick={() => go(n)}><span /></button>)}
-          </div>
-          <div className="feature-progress" aria-hidden="true"><span key={`${i}-${running}`} className={running ? 'run' : ''} style={{ animationDuration: `${interval}ms` }} /></div>
+        <div className="row" style={{ gap: 4 }}>
+          {stories.map((t, k) => (
+            <button key={t.initials} className="chip choice" aria-pressed={k === i} aria-label={`${t.who} 的心聲`} onClick={() => setI(k)} style={{ minWidth: 44, padding: 0 }}>{t.initials}</button>
+          ))}
         </div>
-        <div className="row g2">
-          <button className="icon-btn" aria-label={playing ? '暫停自動輪播' : '開始自動輪播'} onClick={() => setPlaying(!playing)}>
-            {playing ? <Icon name="pause" size={18} /> : <Icon name="play" size={18} />}
-          </button>
-          <button className="icon-btn" aria-label="上一項" onClick={() => go(i - 1)}><Icon name="back" /></button>
-          <button className="icon-btn" aria-label="下一項" onClick={() => go(i + 1)}><Icon name="chev" /></button>
+        <div className="row" style={{ gap: 4 }}>
+          <button className="iconbtn" aria-label="上一則" onClick={() => go(-1)}><Icon name="back" /></button>
+          {!reduced && <button className="iconbtn" aria-label={paused ? '繼續播放' : '暫停播放'} onClick={() => setPaused(!paused)}><Icon name={paused ? 'play' : 'pause'} /></button>}
+          <button className="iconbtn" aria-label="下一則" onClick={() => go(1)}><Icon name="chev" /></button>
         </div>
       </div>
     </div>

@@ -27,7 +27,14 @@ export interface Me {
   classType: LessonType;
   /** a 體驗 student who hasn't bought the trial yet: the 體驗課 package is offered */
   trialAvailable: boolean;
+  /** the email above was confirmed through the link we sent */
+  emailVerified: boolean;
+  /** email preferences — account, security and payment emails are always sent */
+  emailUpdates: boolean;
+  emailReminders: boolean;
 }
+
+export interface NotificationPrefs { emailUpdates: boolean; emailReminders: boolean }
 
 export type LessonStatus = 'Booked' | 'Attended' | 'Cancelled';
 /** private = 一對一, group = 團體課, trial = 體驗課 */
@@ -166,6 +173,10 @@ export interface Consult {
   topic: string;
   createdAt: string;
   contacted: boolean;
+  /** consultation slot Iris set (studio time), null until scheduled */
+  scheduledDate: string | null;
+  scheduledTime: string | null;
+  scheduleNote: string | null;
 }
 
 export interface StudioInfo {

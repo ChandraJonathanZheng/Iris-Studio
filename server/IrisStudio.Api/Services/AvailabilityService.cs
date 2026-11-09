@@ -25,6 +25,9 @@ public class AvailabilityService(AppDbContext db)
             return Weekly.TryGetValue((int)date.DayOfWeek, out var w) && w.Enabled ? ParseRanges(w.Ranges) : [];
         }
 
+        public bool CanFit(DateOnly date, TimeOnly time, int minutes) => SlotTimesFor(date).Contains(time)
+            && RangesFor(date).Any(r => time >= r.Start && time.ToTimeSpan() + TimeSpan.FromMinutes(minutes) <= r.End.ToTimeSpan());
+
         public IReadOnlyList<TimeOnly> SlotTimesFor(DateOnly date) =>
             RangesFor(date).SelectMany(r => StartsInRange(r, Settings.LessonMinutes, Settings.GapMinutes)).Distinct().Order().ToArray();
     }

@@ -1,7 +1,4 @@
-// Icons: Phosphor (phosphoricons.com) via @phosphor-icons/react.
-// Pages keep using <Icon name="calendar" /> — the name → Phosphor mapping lives only here, so swapping a glyph
-// (or the whole icon set) is a one-line change instead of a hunt through every page.
-// Named imports only: Vite tree-shakes the rest of the ~1,500 icons out of the bundle.
+// Icons: Phosphor via @phosphor-icons/react. The name → glyph map lives only here (DESIGN-SYSTEM §7).
 import {
   ArrowRight, Bell, CalendarBlank, CalendarPlus, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsThree, EnvelopeSimple,
   Eye, EyeSlash, GearSix, House, Image, Info, MagnifyingGlass, Microphone, Minus, MusicNotes, Package, Pause, Play,
@@ -19,11 +16,8 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-/**
- * weight: "regular" everywhere by default (the calm outline look of the Guidebook);
- * "fill" marks the active tab in the navigation; "bold" for tiny glyphs that must stay legible (e.g. ✓ in 12px dots).
- */
-export function Icon({ name, size = 20, label, weight = 'regular' }: { name: IconName | string; size?: number; label?: string; weight?: IconWeight }) {
-  const Glyph = ICONS[name as IconName] ?? Info;
-  return <Glyph size={size} weight={weight} aria-hidden={label ? undefined : true} role={label ? 'img' : undefined} aria-label={label} />;
+/** Decorative unless `label` is given. weight: regular by default, fill = active tab, bold = tiny ✓ marks. */
+export function Icon({ name, size = 20, label, weight = 'regular' }: { name: IconName; size?: number; label?: string; weight?: IconWeight }) {
+  const G = ICONS[name];
+  return <G size={size} weight={weight} aria-hidden={label ? undefined : true} aria-label={label} role={label ? 'img' : undefined} />;
 }
