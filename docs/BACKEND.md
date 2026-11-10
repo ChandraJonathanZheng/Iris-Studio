@@ -38,7 +38,7 @@ Production has no database connection or teacher password in `appsettings.json`.
 | `ConnectionStrings__Db` | connection string for the selected database provider |
 | `Studio__TeacherEmail`, `Studio__TeacherPassword`, `Studio__TeacherName` | initial teacher account |
 | `Studio__Bank__Name`, `Studio__Bank__Account`, `Studio__Bank__Holder` | bank transfer information |
-| `Studio__Packages__0__Price` (and subsequent indices) | actual package prices; confirm trial price before release |
+| `Studio__Packages__0__Price` (and subsequent indices) | package prices; 單堂課 defaults to NT$1,500 |
 | `Studio__ReceiptsFolder` | persistent private receipt directory; must be outside `wwwroot` |
 | `Line__ChannelId`, `Line__ChannelSecret` | LINE Login, callback `/api/auth/line/callback` |
 | `Jwt__SigningKey` | required application JWT secret: a random value of at least 32 bytes, separate from the LINE Channel Secret |

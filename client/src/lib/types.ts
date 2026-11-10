@@ -25,7 +25,7 @@ export interface Me {
   unreadAlerts: number;
   /** what kind of student this is (set by Iris) — decides the lesson type when booking */
   classType: LessonType;
-  /** a 體驗 student who hasn't bought the trial yet: the 體驗課 package is offered */
+  /** Iris confirmed a consultation/interview and the one-time 單堂課 has not been purchased */
   trialAvailable: boolean;
   /** the email above was confirmed through the link we sent */
   emailVerified: boolean;
@@ -37,7 +37,7 @@ export interface Me {
 export interface NotificationPrefs { emailUpdates: boolean; emailReminders: boolean }
 
 export type LessonStatus = 'Booked' | 'Attended' | 'Cancelled';
-/** private = 一對一, group = 團體課, trial = 體驗課 */
+/** private = 一對一, group = 團體課, trial = 單堂課 */
 export type LessonType = 'private' | 'group' | 'trial';
 
 export interface ChangeInfo {
@@ -94,11 +94,11 @@ export interface Payment {
   receiptUrl: string;
   /** tiny blurred preview as a data: URL, made by the server at upload (#8) */
   lqip: string | null;
-  /** bought the one-time 體驗課 package */
+  /** bought the one-time 單堂課 package */
   trial?: boolean;
 }
 
-/** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 體驗課 */
+/** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 單堂課 */
 export type ClassType = 'private' | 'group' | 'trial';
 
 export interface StudentSummary {
@@ -115,6 +115,8 @@ export interface StudentSummary {
 }
 
 export interface StudentDetail extends StudentSummary {
+  /** Iris confirmed a completed consultation or interview. */
+  consultationCompleted: boolean;
   email: string | null;
   phone: string | null;
   grade: string | null;
@@ -185,7 +187,7 @@ export interface StudioInfo {
   cancelHours: number;
   /** 改時間 only allowed this many hours before the lesson (12) */
   moveHours: number;
-  /** trial = the 1-lesson 體驗課, only offered while me.trialAvailable */
+  /** trial = the 1-lesson 單堂課, only offered while me.trialAvailable */
   packages: { size: number; price: number; trial?: boolean }[];
   bank: { name: string; account: string; holder: string };
   /** what students may see about Iris (lineId only when she made it public) */

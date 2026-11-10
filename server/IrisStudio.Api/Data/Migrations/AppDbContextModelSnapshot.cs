@@ -645,6 +645,9 @@ namespace IrisStudio.Api.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<bool>("ConsultationCompleted")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 

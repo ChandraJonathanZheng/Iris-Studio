@@ -20,7 +20,7 @@ public class StudioOptions
 
     public TimeSpan UndoWindow => TimeSpan.FromSeconds(UndoSeconds);
 }
-/// <summary>Trial = the one-time 體驗課 (1 lesson) that only 體驗 students can buy, once.</summary>
+/// <summary>Trial is the legacy flag for 單堂課 (1 lesson), available once after Iris confirms a consultation or interview.</summary>
 public class PackageOption { public int Size { get; set; } public int Price { get; set; } public bool Trial { get; set; } }
 public class BankOption { public string Name { get; set; } = ""; public string Account { get; set; } = ""; public string Holder { get; set; } = ""; }
 

@@ -84,6 +84,7 @@ export function RequestsPage() {
   return (
     <div className="page">
       <InboxTabs />
+      <section className="rq-panel">
       <Tabs value={tab} onChange={setTab} options={[
         { value: 'changes', label: `改時間${d?.changes.length ? ` (${d.changes.length})` : ''}` },
         { value: 'proposals', label: `你的提議${open ? ` (${open})` : ''}` },
@@ -107,6 +108,7 @@ export function RequestsPage() {
           ) : <Empty text="沒有等待確認的新學生。" />)}
         </>
       )}
+      </section>
       <Outlet />
     </div>
   );
@@ -173,7 +175,7 @@ function PaymentRow({ p }: { p: Payment }) {
     <article className="card">
       <div className="row between"><div className="name" style={{ fontSize: 18 }}>{p.studentName}</div>
         {p.status === 'Pending' ? <Tag tone="pending">確認中</Tag> : p.status === 'Confirmed' ? <Tag tone="ok">已確認</Tag> : <Tag tone="bad">已退回</Tag>}</div>
-      <div className="sub">{p.trial ? '體驗課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)} · {fmtRelative(p.uploadedAt)}</div>
+      <div className="sub">{p.trial ? '單堂課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)} · {fmtRelative(p.uploadedAt)}</div>
       {p.note && <p>「{p.note}」</p>}
       {p.rejectReason && <p className="sub">退回原因：「{p.rejectReason}」</p>}
       <button className="btn secondary sm" style={{ alignSelf: 'flex-start' }} onClick={() => setOpen(true)}><Icon name="image" size={18} />查看收據</button>
@@ -197,9 +199,11 @@ export function PaymentsPage() {
   return (
     <div className="page">
       <InboxTabs />
+      <section className="rq-panel">
       <Tabs value={tab} onChange={setTab} options={PAY_TABS} />
       {pays.isPending ? <ListSkeleton /> : pays.isError ? <ErrorCard error={pays.error} retry={() => pays.refetch()} /> : !pays.data.length ? <Empty text={tab === 'Pending' ? '沒有等待確認的收據。' : '這裡還沒有紀錄。'} />
         : <div className="stack">{pays.data.map((p) => <PaymentRow key={p.id} p={p} />)}</div>}
+      </section>
       <Outlet />
     </div>
   );

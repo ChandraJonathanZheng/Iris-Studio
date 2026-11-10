@@ -159,8 +159,8 @@ public static class StudentEndpoints
             // Still one receipt waiting at a time, so a double upload can't make the student pay twice.
             if (await db.Payments.AnyAsync(p => p.StudentId == me && p.Status == PaymentStatus.Pending, ct)) return Problems.Of(409, "pending_exists", "已經有一張收據在等老師確認。");
             if (!int.TryParse(form["packageSize"], out var size) || o.Value.Packages.FirstOrDefault(p => p.Size == size) is not { } pkg) return Problems.Of(400, "validation", "請選擇方案。");
-            if (pkg.Trial && (u.ClassType != LessonType.Trial || await db.Payments.AnyAsync(p => p.StudentId == me && p.IsTrial && p.Status != PaymentStatus.Rejected, ct)))
-                return Problems.Of(409, "trial_not_available", "體驗課只限第一次上課的學生購買一次。");
+            if (pkg.Trial && (!u.ConsultationCompleted || await db.Payments.AnyAsync(p => p.StudentId == me && p.IsTrial && p.Status != PaymentStatus.Rejected, ct)))
+                return Problems.Of(409, "trial_not_available", "單堂課限已完成諮詢或面談的學生購買一次。");
             var file = form.Files["receipt"];
             if (file is null || file.Length == 0) return Problems.Of(400, "validation", "請上傳收據圖片。");
             if (file.Length > ImageService.MaxBytes) return Problems.Of(400, "too_large", "圖片不能超過 5 MB。");

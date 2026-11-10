@@ -220,6 +220,7 @@ export function ConsultsPage() {
   return (
     <div className="page">
       <InboxTabs />
+      <section className="rq-panel solo">
       {consults.isPending ? <ListSkeleton /> : consults.isError ? <ErrorCard error={consults.error} retry={() => consults.refetch()} /> : !consults.data.length ? <Empty text="還沒有人留下諮詢。" /> : (
         <div className="stack">{consults.data.map((c) => (
           <article key={c.id} className="card">
@@ -246,6 +247,7 @@ export function ConsultsPage() {
           </article>
         ))}</div>
       )}
+      </section>
     </div>
   );
 }
@@ -277,25 +279,24 @@ export function TeacherMore() {
   return (
     <>
       <PageHead title="更多" />
-      <Link to="/teacher/profile" className="mo-me mo-list" viewTransition>
+      <Link to="/teacher/profile" className="mo-me mo-list mo-id" viewTransition>
         <span className="avatar">{studio.data?.teacher.avatarUrl ? <img src={studio.data.teacher.avatarUrl} alt="" /> : initialOf(me.name)}</span>
-        <span className="mo-body"><span className="mo-t">{me.name}</span><span className="mo-s">教師個人資料 · 狀態：{studio.data ? statusLabelOf(studio.data.teacher) : '…'}</span></span>
-        <Icon name="chev" size={18} />
+        <span className="mo-body"><span className="mo-over">你的工作室</span><span className="mo-name">{me.name}</span>
+          <span className="mo-status">{studio.data ? statusLabelOf(studio.data.teacher) : '…'}</span></span>
+        <span className="mo-edit">編輯個人資料<Icon name="chev" size={16} /></span>
       </Link>
+      <h2 className="mo-h">工作室</h2>
       <section className="mo-list" aria-label="工作室">
         {row('/teacher/availability', 'clock', '可預約時段', '每週時段、特殊日期')}
         {row('/teacher/more/packages', 'receipt', '課程方案', '堂數與價格')}
         {row('/teacher/availability?tab=settings', 'gear', '設定', '每堂課時長、課程間隔、可提前預約')}
       </section>
+      <h2 className="mo-h">隱私與法律</h2>
       <section className="mo-list" aria-label="隱私">
         {row('/teacher/privacy-requests', 'info', '個資權利申請', '查詢、更正、刪除、撤回同意 · 法定期限內回覆')}
         {row('/legal/privacy', 'eye', '法律與隱私文件', '服務條款、隱私權政策等（草案）')}
       </section>
-      <section className="mo-list" aria-label="帳號">
-        <button className="mo-row mo-out" onClick={() => { nav('/'); logout.mutate(); }}>
-          <span className="mo-ic" aria-hidden="true"><Icon name="logout" size={20} /></span><span className="mo-body"><span className="mo-t">登出</span></span>
-        </button>
-      </section>
+      <button className="mo-out-link" onClick={() => { nav('/'); logout.mutate(); }}><Icon name="logout" size={18} />登出</button>
       <Outlet />
     </>
   );
@@ -455,8 +456,8 @@ function ProfileForm({ p }: { p: TeacherProfile }) {
           {save.isPending ? '儲存中…' : saved && !dirty ? '✓ 已儲存' : '儲存'}</button>
       </form>
 
-      <AccountBindings p={p} />
-      <EmailSettings />
+      <div className="tp-acc-group"><AccountBindings p={p} />
+      <EmailSettings /></div>
     </>
   );
 }
@@ -518,8 +519,8 @@ export function PackagesSheet() {
   return (
     <RouteSheet title="課程方案">
       <ul className="mo-pk">{studio.data?.packages.map((p) => (
-        <li key={p.size + String(p.trial)}><span className="mo-t">{p.trial ? '體驗課 · ' : ''}{p.size} 堂</span>
-          <span className="mo-s">{p.trial ? '只限體驗學生，一次' : `每堂 ${fmtMoney(Math.round(p.price / p.size))}`}</span><b>{fmtMoney(p.price)}</b></li>))}</ul>
+        <li key={p.size + String(p.trial)}><span className="mo-t">{p.trial ? '單堂課 · ' : ''}{p.size} 堂</span>
+          <span className="mo-s">{p.trial ? '限完成諮詢／面談，限購一次' : `每堂 ${fmtMoney(Math.round(p.price / p.size))}`}</span><b>{fmtMoney(p.price)}</b></li>))}</ul>
       <p className="caption">學生隨時都可以購買，確認收據後堂數會加在剩餘的堂數上，沒有使用期限。要調整方案或價格，請聯絡網站管理員。</p>
       <button className="btn secondary block" onClick={() => nav(-1)}>關閉</button>
     </RouteSheet>

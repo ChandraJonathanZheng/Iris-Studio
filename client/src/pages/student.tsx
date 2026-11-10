@@ -365,12 +365,12 @@ export function QuotaPage() {
   const key = useRef(newIdempotencyKey());
 
   const all = studio.data?.packages ?? [];
-  // A 體驗 student who hasn't tried yet sees only the 體驗課 package (ST-6).
-  const visible = me.classType === 'trial' && me.trialAvailable ? all.filter((p) => p.trial) : all.filter((p) => !p.trial);
+  // Consultation-qualified students get 單堂課 alongside the regular packages.
+  const visible = all.filter((p) => !p.trial || me.trialAvailable);
   const waiting = (payments.data ?? []).some((p) => p.status === 'Pending');
   const free = me.credits;
   const attended = Math.max(0, Math.min(me.attended, me.packageSize - me.booked - free));
-  const chosen = size ?? visible[0]?.size ?? null;
+  const chosen = visible.some((p) => p.size === size) ? size : visible[0]?.size ?? null;
 
   const pickFile = (f: File | undefined) => {
     setFileErr('');
@@ -400,10 +400,11 @@ export function QuotaPage() {
       <section className="card">
         <h2 className="sec">匯款資料</h2>
         {studio.data ? <div className="info"><b>{studio.data.bank.name}</b><br />帳號 {studio.data.bank.account}<br />戶名 {studio.data.bank.holder}</div> : <p className="sub">載入中…</p>}
+        {me.trialAvailable && <p className="cap">已完成諮詢／面談，可選單堂課 NT$1,500（限購一次），或直接購買堂數方案。</p>}
         <div className="stack s2" role="radiogroup" aria-label="選擇方案">
           {visible.map((p) => (
             <button key={p.size} role="radio" aria-checked={chosen === p.size} className="chip choice" style={{ borderRadius: 14, textAlign: 'left', padding: '0 16px', display: 'flex', justifyContent: 'space-between' }} onClick={() => setSize(p.size)}>
-              <span>{p.trial ? '體驗課' : '方案'} · {p.size} 堂</span><span>{fmtMoney(p.price)}</span>
+              <span>{p.trial ? '單堂課' : '方案'} · {p.size} 堂</span><span>{fmtMoney(p.price)}</span>
             </button>
           ))}
         </div>
@@ -421,7 +422,7 @@ export function QuotaPage() {
       <section className="stack s2"><h2 className="sec">付款紀錄</h2>
         {payments.isPending ? <ListSkeleton rows={2} /> : !payments.data?.length ? <Empty text="還沒有付款紀錄。" /> : (
           <div className="list">{payments.data.map((p: Payment) => (
-            <div key={p.id} className="li"><div className="grow"><div className="name" style={{ fontSize: 16 }}>{p.trial ? '體驗課' : '方案'} · {p.packageSize} 堂</div>
+            <div key={p.id} className="li"><div className="grow"><div className="name" style={{ fontSize: 16 }}>{p.trial ? '單堂課' : '方案'} · {p.packageSize} 堂</div>
               <div className="cap">{fmtRelative(p.uploadedAt)} · {fmtMoney(p.amount)}{p.status === 'Rejected' && p.rejectReason ? ` · 「${p.rejectReason}」` : ''}</div></div>{PAY_TAG[p.status]}</div>
           ))}</div>
         )}

@@ -90,7 +90,7 @@ SF for Latin + digits, PingFang TC for Chinese; Noto Sans TC (Google Fonts) only
 | Overline | 12–13 / 16 | 600 | letter-spacing .06em, sage-text or muted |
 | Testimonial | 20/34 phone · 24/40 desktop | 500 | |
 
-**Copy conventions:** UI in Traditional Chinese (台灣). Dates `MM-DD(週)` with half-width parentheses and a space before the time: `11-05(四) 16:30`. Duration `1 個小時` (multiples of 60) else `90 分鐘`. Student quotes in 「」. One label set for lesson types **and** student class types: 一對一 / 團體課 / 體驗課 (`CLASS_TYPE_LABEL = LESSON_TYPE_LABEL`).
+**Copy conventions:** UI in Traditional Chinese (台灣). Dates `MM-DD(週)` with half-width parentheses and a space before the time: `11-05(四) 16:30`. Duration `1 個小時` (multiples of 60) else `90 分鐘`. Student quotes in 「」. One label set for lesson types **and** student class types: 一對一 / 團體課 / 單堂課 (`CLASS_TYPE_LABEL = LESSON_TYPE_LABEL`).
 
 ---
 

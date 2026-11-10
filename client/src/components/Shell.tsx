@@ -24,7 +24,6 @@ const TEACHER: Item[] = [
   { to: '/teacher/students', label: '學生', icon: 'users' },
   { to: '/teacher/inbox', label: '收件匣', icon: 'inbox', match: ['/teacher/requests', '/teacher/payments', '/teacher/consults'] },
   { to: '/teacher/more', label: '更多', icon: 'more', match: ['/teacher/availability', '/teacher/profile', '/teacher/privacy-requests'] },
-  { to: '/teacher/availability', label: '可預約時段', icon: 'clock', desktopOnly: true },
 ];
 
 export const inboxCount = (c?: { changes: number; applications: number; receipts: number; consults: number }) => c ? c.changes + c.applications + c.receipts + c.consults : 0;

@@ -3,7 +3,7 @@ import { Link, Outlet, useParams } from 'react-router';
 import { ApiError, newIdempotencyKey } from '../lib/api';
 import { CLASS_TYPE_LABEL, compareSlot, fmtDate, fmtDuration, fmtMoney, fmtRelative, fmtSlot, LESSON_TYPE_LABEL } from '../lib/date';
 import {
-  useAdjustCredits, useProposals, useSendReminder, useSetClassType, useStudent, useStudents, useTeacherBook,
+  useAdjustCredits, useProposals, useSendReminder, useSetClassType, useSetConsultationCompleted, useStudent, useStudents, useTeacherBook,
 } from '../lib/queries';
 import type { ClassType, Lesson, Payment, StudentSummary } from '../lib/types';
 import { Icon } from '../components/Icon';
@@ -18,7 +18,7 @@ const PAY_TAG = { Pending: <Tag tone="pending">確認中</Tag>, Confirmed: <Tag 
 /* ---------------------------------------------------------------- 學生列表 */
 type Filter = 'all' | ClassType | 'low' | 'pending';
 const FILTERS: { v: Filter; t: string }[] = [
-  { v: 'all', t: '全部' }, { v: 'private', t: '一對一' }, { v: 'group', t: '團體課' }, { v: 'trial', t: '體驗課' }, { v: 'low', t: '快用完／用完' }, { v: 'pending', t: '確認中' },
+  { v: 'all', t: '全部' }, { v: 'private', t: '一對一' }, { v: 'group', t: '團體課' }, { v: 'trial', t: '單堂課' }, { v: 'low', t: '快用完／用完' }, { v: 'pending', t: '確認中' },
 ];
 
 function creditTone(s: StudentSummary) { return s.credits === 0 ? 'var(--bad)' : s.credits <= 1 ? 'var(--warn)' : 'var(--ink)'; }
@@ -98,6 +98,7 @@ export function StudentDetailPage() {
                 <div className="sub">{CLASS_TYPE_LABEL[s!.classType]}{s!.voiceType ? ` · ${s!.voiceType}` : ''}{s!.grade ? ` · ${s!.grade}` : ''}</div>
                 {s!.status === 'Pending' && <Tag tone="pending">確認中</Tag>}</div></div>
             {(s!.email || s!.phone) && <div className="cap">{[s!.email, s!.phone].filter(Boolean).join(' · ')}</div>}
+            <p className="cap">諮詢／面談：{s!.consultationCompleted ? '已完成' : '尚未確認'}</p>
             {s!.goal && <p className="sub">目標：「{s!.goal}」</p>}
             <p className={`sd-consent ${s!.consent.mediaWithdrawn ? 'warn' : s!.consent.media ? 'ok' : ''}`}>
               {s!.consent.media ? '● 同意肖像影音宣傳' : s!.consent.mediaWithdrawn ? `◆ 已撤回肖像影音授權${s!.consent.mediaAt ? `（${new Date(s!.consent.mediaAt!).toLocaleDateString('zh-TW')}）` : ''}，請移除已公開的內容` : '○ 未同意肖像影音宣傳，請勿公開照片或影片'}
@@ -274,11 +275,23 @@ export function EditStudentSheet() {
   const { id = '' } = useParams();
   const st = useStudent(id);
   const set = useSetClassType(id);
+  const consultation = useSetConsultationCompleted(id);
   const toast = useToast();
   const close = useSheetClose(`/teacher/students/${id}`);
   const cur = st.data?.classType;
   return (
     <RouteSheet title="編輯學生" parent={`/teacher/students/${id}`}>
+      <div className="stack s2">
+        <label className="row">
+          <input type="checkbox" checked={st.data?.consultationCompleted ?? false} disabled={!st.data || consultation.isPending}
+            onChange={(e) => consultation.mutate(e.target.checked, {
+              onSuccess: () => toast({ text: '已更新諮詢／面談狀態' }),
+              onError: (e) => toast({ text: errText(e), kind: 'error' }),
+            })} />
+          <span>已完成諮詢／面談</span>
+        </label>
+        <p className="cap">確認後，學生可選購單堂課 NT$1,500（限購一次），也可直接購買 4 堂等方案。</p>
+      </div>
       <div className="stack s2" role="radiogroup" aria-label="課程類型"><span className="label">課程類型</span>
         <p className="cap">預約時會自動套用到每堂課。</p>
         <div className="chips" style={{ flexWrap: 'wrap' }}>{(Object.keys(CLASS_TYPE_LABEL) as ClassType[]).map((t) => (
@@ -295,7 +308,7 @@ export function PaymentHistorySheet() {
     <RouteSheet title="付款紀錄" parent={`/teacher/students/${id}`}>
       {!st.data?.payments.length ? <Empty text="還沒有付款紀錄。" /> : (
         <div className="list">{st.data.payments.map((p: Payment) => (
-          <div key={p.id} className="li"><div className="grow"><div className="name" style={{ fontSize: 16 }}>{p.trial ? '體驗課' : '方案'} · {p.packageSize} 堂 · {fmtMoney(p.amount)}</div>
+          <div key={p.id} className="li"><div className="grow"><div className="name" style={{ fontSize: 16 }}>{p.trial ? '單堂課' : '方案'} · {p.packageSize} 堂 · {fmtMoney(p.amount)}</div>
             <div className="cap">{fmtRelative(p.uploadedAt)}{p.rejectReason ? ` · 「${p.rejectReason}」` : ''}</div></div>{PAY_TAG[p.status]}</div>
         ))}</div>
       )}

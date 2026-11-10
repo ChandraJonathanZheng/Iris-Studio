@@ -89,7 +89,7 @@ public static class PublicAuthEndpoints
             var booked = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Booked && (l.Date > today || (l.Date == today && l.Time > now)), ct);
             var attended = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Attended, ct);
             var unread = await db.Alerts.CountAsync(a => a.UserId == id && !a.Read && a.SendAfterUtc <= clock.UtcNow, ct);
-            var trialAvailable = u.ClassType == LessonType.Trial
+            var trialAvailable = u.Role == Role.Student && u.Status == UserStatus.Active && u.ConsultationCompleted
                 && !await db.Payments.AnyAsync(p => p.StudentId == id && p.IsTrial && p.Status != PaymentStatus.Rejected, ct);
             return Results.Json<MeDto?>(new MeDto(u.Id, u.Name, u.Role.ToString(), u.Status.ToString(), u.Email, u.Phone, u.LineId, u.LineUserId != null,
                 u.VoiceType, u.Goal, u.Grade, u.AvatarUrl, u.Credits, booked, attended, u.PackageSize, unread,

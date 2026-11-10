@@ -80,8 +80,14 @@ export function Login() {
   if (redirect) return redirect;
 
   return (
-    <div className="auth"><div className="card">
-      <div className="stack s2"><Link to="/" className="over">IRIS STUDIO</Link><h1 className="h1" style={{ fontSize: 28, lineHeight: '36px' }}>歡迎回來</h1><p className="sub">登入後預約課程、查看堂數。</p></div>
+    <main className="auth pw-done-wrap" aria-labelledby="login-title"><div className="pw-done login-card">
+      <div className="login-head">
+        <Link to="/" className="pw-done-brand">IRIS STUDIO</Link>
+        <span className="pw-done-rule" aria-hidden="true" />
+        <span className="pw-done-mark" aria-hidden="true"><Icon name="user" size={34} /></span>
+        <h1 className="pw-done-title" id="login-title">歡迎回來</h1>
+        <p className="pw-done-lead fp-lead">登入後可以預約課程、查看堂數，<br />繼續你的學習旅程。</p>
+      </div>
       {lineError && <p className="err" role="alert">{lineError}</p>}
       {search.get('reset') === 'success' && <p className="info" role="status">密碼已更新，請使用新密碼登入。</p>}
       <LineButton label="使用 LINE 登入" />
@@ -99,9 +105,9 @@ export function Login() {
             <button className="btn primary block" disabled={busy || !email || !password}>登入</button>
           </form>
         )}
-      <div className="row between">
-        <button className="btn link" onClick={() => { setMode('email'); setEmail('iris@studio.local'); setPassword(''); }}>老師登入 →</button>
-        <Link className="btn link" to="/register">建立帳號 →</Link>
+      <div className="fp-actions login-actions">
+        <button type="button" className="fp-link" onClick={() => { setMode('email'); setEmail('iris@studio.local'); setPassword(''); }}>老師登入<Icon name="arrow" size={18} /></button>
+        <Link className="fp-link" to="/register">建立帳號<Icon name="arrow" size={18} /></Link>
       </div>
       {DEMO && (
         <div className="info stack s2" aria-label="示範帳號">
@@ -113,7 +119,7 @@ export function Login() {
           </div>
         </div>
       )}
-    </div></div>
+    </div></main>
   );
 }
 

@@ -141,7 +141,7 @@ Iris's settings page shows the exact same result as a preview (`可預約 6 堂�
 1. Student opens 預約 → `GET /api/slots/days?from=…` + `GET /api/slots?date=…`.
 2. Picks a time → confirm sheet → `POST /api/student/lessons` with `Idempotency-Key`.
 3. Server transaction: idempotency row → `EnsureValidSlotAsync` (in availability, future, within AdvanceDays) → per-date advisory lock → `IsTakenAsync` (overlap) → credits ≥ 1 → insert lesson (DurationMinutes = setting) → credits −1.
-4. The lesson's `Type` is copied from the student's class type (一對一 / 團體課 / 體驗課).
+4. The lesson's `Type` is copied from the student's class type (一對一 / 團體課 / 單堂課).
 5. If this booking used the **last credit**, an automatic 繳費提醒 is queued (see 4.8b).
 6. 409 `slot_taken` if someone was faster: "沒有扣堂數，請選其他時段" and the slots refresh.
 7. **Iris books for a student**: 學生詳細 → ＋ 預約課程 → same slot picker → `POST /api/teacher/lessons?studentId=` (idempotent). Same rules and transaction, uses one of the student's credits, student gets 老師新增了一堂課 (+10 s).
@@ -193,8 +193,8 @@ Entry points for Iris: 學生詳細 (提議改時間 per lesson), 行事曆 day 
 
 ### 4.7 Payment (收據)
 1. Any time, as long as no receipt is already waiting → student uploads receipt (`POST /api/student/payments`, multipart, ≤ 5 MB, image checked by content, LQIP made).
-   - Packages: 4 / 8 堂, and the one-time **體驗課 1 堂** only for students whose class type is 體驗 and who haven't bought it (a rejected receipt doesn't count). Credits never expire.
-   - Trial journey: 15-min free chat → student registers → Iris approves → student buys 體驗課 → books. Done.
+   - Packages: 4 / 8 堂, and the one-time **單堂課 1 堂** at **NT$1,500**, additionally offered after Iris confirms a completed 諮詢／面談 in 學生 → 編輯 and only if it has not been purchased (a rejected receipt doesn't count). Credits never expire.
+   - Single-lesson journey: completed consultation/interview → student registers → Iris approves and marks 已完成諮詢／面談 → student chooses 單堂課 or a regular package → books. Submitting/scheduling a consult alone does not qualify.
 2. Iris → 付款 → receipt **modal** → 確認，加 N 堂 (`/confirm`, idempotent; credits + package; CreditLog `payment:{id}`) or 退回 (`/reject`, reason required).
 3. Toast + 復原 (`/undo` removes the credits again, CreditLog `undo-payment:{id}`). Confirmed credits are **added on top** of what's left.
 4. Student gets a Payment alert after 10 s.
@@ -276,6 +276,7 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 | GET | `/api/teacher/availability` | teacher | settings + weekly + overrides |
 | PUT | `/api/teacher/availability/settings` · `/weekly` · `/overrides/{date}` | teacher | edit |
 | DELETE | `/api/teacher/availability/overrides/{date}` | teacher | remove special date |
+| PATCH | `/api/teacher/students/{id}/consultation` | teacher | `{consultationCompleted}` confirms/revokes completed 諮詢／面談; controls single-lesson eligibility independently of class type |
 | GET | `/api/teacher/consults` · POST `/consults/{id}/contacted` | teacher | 諮詢 |
 | GET/PUT | `/api/teacher/profile` | teacher | 教師個人資料 (name, LINE ID + public flag, status, message) |
 | POST/DELETE | `/api/teacher/profile/avatar` | teacher | avatar (JPG/PNG/WEBP by content, ≤ 2 MB) → `/api/public/avatars/{file}` |

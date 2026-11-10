@@ -21,7 +21,7 @@ public record NextLessonDto(string Date, string Time);
 public record StudentSummaryDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType);
 public record StudentDetailDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType,
     string? Email, string? Phone, string? Grade, string? Goal, int Attended, int PackageSize, LessonDto[] Upcoming, LessonDto[] Past, PaymentDto[] Payments,
-    string? RemindChannel, DateTime? LastRemindedAt, StudentConsentDto Consent);
+    string? RemindChannel, DateTime? LastRemindedAt, StudentConsentDto Consent, bool ConsultationCompleted);
 public record RemindRequest(string Message);
 public record RemindResult(Guid Id, string Channel);
 public record ChangeRequestDto(Guid Id, Guid LessonId, Guid StudentId, string StudentName, string FromDate, string FromTime, string ToDate, string ToTime, string Reason, bool SlotFree, DateTime CreatedAt);
@@ -76,6 +76,7 @@ public record ResetPasswordRequest(string? Token, string? Password);
 /// <summary>Email preferences. Account, security and payment emails can't be turned off.</summary>
 public record NotificationPrefsDto(bool EmailUpdates, bool EmailReminders);
 public record ClassTypeRequest(string ClassType);
+public record ConsultationCompletedRequest(bool ConsultationCompleted);
 public record GradeRequest(string? Grade);
 
 public static class Map

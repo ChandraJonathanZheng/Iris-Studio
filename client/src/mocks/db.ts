@@ -16,7 +16,7 @@ export const availability: Availability = {
 export const STUDIO: Omit<StudioInfo, 'lessonMinutes' | 'teacher'> = {
   cancelHours: 24,
   moveHours: 12,
-  packages: [{ size: 1, price: 800, trial: true }, { size: 4, price: 3200 }, { size: 8, price: 6200 }],
+  packages: [{ size: 1, price: 1500, trial: true }, { size: 4, price: 3200 }, { size: 8, price: 6200 }],
   // Real bank details come from a local, git-ignored env file (.env.proto.local), never from the public repo.
   bank: {
     name: import.meta.env.VITE_BANK_NAME || '[銀行名稱]',
@@ -29,7 +29,7 @@ export interface MUser {
   id: string; name: string; role: 'Student' | 'Teacher'; status: 'Pending' | 'Active';
   email: string | null; password?: string; phone: string | null; lineId: string | null; lineLinked: boolean;
   voiceType: string | null; goal: string | null; grade: string | null;
-  credits: number; packageSize: number; createdAt: string; declined?: boolean; classType?: 'private' | 'group' | 'trial';
+  credits: number; packageSize: number; createdAt: string; declined?: boolean; consultationCompleted?: boolean; classType?: 'private' | 'group' | 'trial';
   // teacher profile (教師個人資料)
   avatarUrl?: string | null; emailVerified?: boolean; lineIdPublic?: boolean;
   // email preferences (undefined = on, like the server default)

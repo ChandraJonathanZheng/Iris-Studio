@@ -3,7 +3,7 @@ namespace IrisStudio.Api.Data;
 public enum Role { Student, Teacher }
 public enum UserStatus { Pending, Active }
 public enum LessonStatus { Booked, Attended, Cancelled }
-/// <summary>private = 一對一, group = 團體課, trial = 體驗課</summary>
+/// <summary>private = 一對一, group = 團體課, trial = 單堂課</summary>
 public enum LessonType { Private, Group, Trial }
 public enum ChangeStatus { Open, Approved, Declined, Withdrawn }
 public enum PaymentStatus { Pending, Confirmed, Rejected }
@@ -32,8 +32,10 @@ public class User
     /// <summary>Sessions not yet booked. DB check keeps it ≥ 0.</summary>
     public int Credits { get; set; }
     public int PackageSize { get; set; }
-    /// <summary>Student class type set by Iris: Private = 一對一, Group = 團體課, Trial = 體驗課 (same labels as lessons). New sign-ups start as Trial.</summary>
+    /// <summary>Student class type set by Iris: Private = 一對一, Group = 團體課, Trial = 單堂課 (same labels as lessons). New sign-ups start as Trial.</summary>
     public LessonType ClassType { get; set; } = LessonType.Trial;
+    /// <summary>Iris confirmed a completed consultation or interview. Required for the one-time single lesson.</summary>
+    public bool ConsultationCompleted { get; set; }
     public bool Declined { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     /// <summary>When Iris approved/declined the application (for the undo window).</summary>
@@ -158,7 +160,7 @@ public class Payment
     /// <summary>Tiny blurred preview (data: URL, ~300 bytes) made at upload, shown while the receipt loads.</summary>
     public string? Lqip { get; set; }
     public string? Note { get; set; }
-    /// <summary>Bought the 體驗課 package (only once per student).</summary>
+    /// <summary>Bought the 單堂課 package (only once per student).</summary>
     public bool IsTrial { get; set; }
     public string? RejectReason { get; set; }
     public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;

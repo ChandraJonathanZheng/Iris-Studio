@@ -81,7 +81,7 @@ public static class TeacherEndpoints
                 RemindChannel(u),
                 await db.Alerts.Where(a => a.UserId == id && a.Kind == AlertKind.Reminder).MaxAsync(a => (DateTime?)a.CreatedAtUtc, ct) is { } last
                     ? DateTime.SpecifyKind(last, DateTimeKind.Utc) : null,
-                await consents.SummaryAsync(id, ct)));
+                await consents.SummaryAsync(id, ct), u.ConsultationCompleted));
         });
 
         // 通知學生繳學費 — manual payment reminder. It goes through the normal outbox: queued for the usual
@@ -125,6 +125,14 @@ public static class TeacherEndpoints
         {
             if (!Enum.TryParse<LessonType>(r.ClassType, ignoreCase: true, out var type) || !Enum.IsDefined(type)) return Problems.Of(400, "validation", "類型不正確。");
             var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.ClassType, type), ct);
+            return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
+        });
+
+        // Completed consultations/interviews are confirmed by Iris, including those arranged outside the website.
+        t.MapPatch("/students/{id:guid}/consultation", async (Guid id, ConsultationCompletedRequest r, AppDbContext db, CancellationToken ct) =>
+        {
+            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.ConsultationCompleted, r.ConsultationCompleted), ct);
             return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
         });
 

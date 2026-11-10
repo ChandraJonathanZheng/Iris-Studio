@@ -294,18 +294,73 @@ public class BackendTests(StudioFactory app) : IClassFixture<StudioFactory>, IAs
         Assert.Equal(0, await app.Db(db => db.Alerts.CountAsync()));
     }
 
-    [Fact]
-    public async Task Trial_package_is_once_per_trial_student_and_rejected_receipt_can_be_replaced()
+    [Theory]
+    [InlineData(LessonType.Private)]
+    [InlineData(LessonType.Group)]
+    [InlineData(LessonType.Trial)]
+    public async Task Single_lesson_requires_teacher_confirmed_consultation_regardless_of_class_type(LessonType type)
     {
-        var (_, privateStudent) = await app.Student();
-        Assert.Equal(HttpStatusCode.Conflict, (await Upload(privateStudent, Image(), size: 1)).StatusCode);
-        var (_, trial) = await app.Student(0, LessonType.Trial);
+        var (id, student) = await app.Student(0, type);
         using var teacher = await app.Login();
-        var first = await Json(await Upload(trial, Image(), size: 1));
+        var route = $"/api/teacher/students/{id}/consultation";
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        var blocked = await Upload(student, Image(), size: 1);
+        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+        Assert.Equal("trial_not_available", (await blocked.Content.ReadFromJsonAsync<JsonObject>())!["code"]!.GetValue<string>());
+        Assert.Equal(HttpStatusCode.Forbidden, (await student.PatchAsJsonAsync(route, new { consultationCompleted = true })).StatusCode);
+        using var anonymous = app.Anonymous();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PatchAsJsonAsync(route, new { consultationCompleted = true })).StatusCode);
+
+        (await teacher.PatchAsJsonAsync(route, new { consultationCompleted = true })).EnsureSuccessStatusCode();
+        Assert.True((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        Assert.True((await Json(await teacher.GetAsync($"/api/teacher/students/{id}")))["consultationCompleted"]!.GetValue<bool>());
+        (await teacher.PatchAsJsonAsync(route, new { consultationCompleted = false })).EnsureSuccessStatusCode();
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(student, Image(), size: 1)).StatusCode);
+        // Regular packages remain available both before and after the consultation.
+        var regular = await Json(await Upload(student, Image(), size: 4));
+        (await Post(teacher, $"/api/teacher/payments/{regular["id"]}/reject", new { reason = "更換方案" })).EnsureSuccessStatusCode();
+        (await teacher.PatchAsJsonAsync(route, new { consultationCompleted = true })).EnsureSuccessStatusCode();
+        regular = await Json(await Upload(student, Image(), size: 4));
+        (await Post(teacher, $"/api/teacher/payments/{regular["id"]}/reject", new { reason = "更換方案" })).EnsureSuccessStatusCode();
+
+        var first = await Json(await Upload(student, Image(), size: 1));
+        Assert.Equal(1500, first["amount"]!.GetValue<int>());
+        Assert.True(first["trial"]!.GetValue<bool>());
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
         (await Post(teacher, $"/api/teacher/payments/{first["id"]}/reject", new { reason = "請重新上傳" })).EnsureSuccessStatusCode();
-        var second = await Json(await Upload(trial, Image(), size: 1));
+        Assert.True((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        var second = await Json(await Upload(student, Image(), size: 1));
         (await Post(teacher, $"/api/teacher/payments/{second["id"]}/confirm", new { })).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.Conflict, (await Upload(trial, Image(), size: 1)).StatusCode);
+        Assert.Equal(1, await Credits(id));
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(student, Image(), size: 1)).StatusCode);
+        (await Upload(student, Image(), size: 4)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Consultation_form_and_account_approval_do_not_unlock_single_lesson()
+    {
+        var (id, student) = await app.Student(0, LessonType.Trial, active: false);
+        using var teacher = await app.Login();
+        var email = await app.Db(db => db.Users.Where(u => u.Id == id).Select(u => u.Email).SingleAsync());
+        (await Post(student, "/api/public/consults", new { name = "學生", contactType = "email", contact = email, preferredTime = "any", topic = "" })).EnsureSuccessStatusCode();
+        (await teacher.PostAsync($"/api/teacher/applications/{id}/approve", null)).EnsureSuccessStatusCode();
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        Assert.Equal(HttpStatusCode.Conflict, (await Upload(student, Image(), size: 1)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Pending_student_cannot_buy_even_after_consultation_is_confirmed()
+    {
+        var (id, student) = await app.Student(0, LessonType.Trial, active: false);
+        using var teacher = await app.Login();
+        (await teacher.PatchAsJsonAsync($"/api/teacher/students/{id}/consultation", new { consultationCompleted = true })).EnsureSuccessStatusCode();
+        Assert.False((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        Assert.Equal(HttpStatusCode.Forbidden, (await Upload(student, Image(), size: 1)).StatusCode);
+        (await teacher.PostAsync($"/api/teacher/applications/{id}/approve", null)).EnsureSuccessStatusCode();
+        Assert.True((await Json(await student.GetAsync("/api/me")))["trialAvailable"]!.GetValue<bool>());
+        (await Upload(student, Image(), size: 1)).EnsureSuccessStatusCode();
     }
 
     [Fact]

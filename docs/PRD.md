@@ -88,7 +88,7 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | ST-3b | **Iris's proposal**: 可以 moves the lesson (if the slot is still free), 不方便 keeps it. Nothing moves without the student's answer. |
 | ST-4 | **取消**: refund the credit if ≥ 24 h before the lesson; the sheet says which case applies before confirming; 30 s undo. |
 | ST-5 | **行事曆**: month view with shaped marks (● upcoming ○ done ◆ changing) + list view with filters. |
-| ST-6 | **堂數與付款**: credit boxes, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. A 體驗 student who hasn't tried yet sees only the 體驗課 package. |
+| ST-6 | **堂數與付款**: credit boxes, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. After Iris confirms a completed consultation/interview, the student also sees 單堂課 NT$1,500 alongside the regular 4 / 8 lesson packages; single lesson is available once. |
 | ST-7 | **通知**: alerts list, unread dot (not a number). |
 | ST-8 | **我的**: profile (name, email, phone, LINE ID, voice type, goal), **同意設定** (media + marketing switches, withdraw any time, consent history), logout. |
 | ST-9 | Home shows Iris's status card (放假中 / 暫停接新學生 / 自訂 + message, public LINE ID) when it isn't 正常上課. |
@@ -127,9 +127,9 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | Attendance | A Booked lesson becomes **Attended** when its end time has passed (no check-in); open change requests on it are closed | `AttendanceSettler` (runs every minute) |
 | Undo window | 30 s | `Studio:UndoSeconds` |
 | Alert delay | 10 s (so undo can pull it back) | `Studio:AlertDelaySeconds` |
-| Packages | 體驗課 1 堂 NT$ 800 (placeholder price) · 4 堂 NT$ 3,200 · 8 堂 NT$ 6,200 | `Studio:Packages` (`Trial: true`) |
+| Packages | 單堂課 1 堂 NT$ 1,500 · 4 堂 NT$ 3,200 · 8 堂 NT$ 6,200 | `Studio:Packages` (`Trial: true`) |
 | Buy a package | Any time; only one receipt pending at a time; credits are added on top | server rule |
-| 體驗課 | Only for students whose class type is 體驗, once (a rejected receipt doesn't count) | `Payment.IsTrial` |
+| 單堂課 | Only after Iris confirms a completed 諮詢／面談, once; class type does not grant eligibility (a rejected receipt doesn't count) | `User.ConsultationCompleted` + `Payment.IsTrial` |
 | Credit expiry | None | — |
 | Lesson type | Copied from the student's class type when booked | `BookAsync` |
 | Automatic 繳費提醒 | When a booking uses the last credit; skipped if a receipt is pending or a reminder went out in the last 24 h; dropped if that lesson is cancelled with refund | `AutoRemindAsync` |
@@ -178,18 +178,18 @@ React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sh
 | 1 | When does a lesson count as attended? | Automatically when its time has passed and it wasn't cancelled |
 | 2 | When may a student buy a package? | Any time; credits are added to what's left |
 | 3 | Slot rule: end inside the range, or only start inside? | The whole lesson must fit inside the range |
-| 4 | Trial flow? | 15-min chat → student registers → Iris approves → student buys 體驗課 (1 lesson, NT$ price) → books. Done. |
+| 4 | Trial flow? | Consultation/interview → student registers → Iris approves and marks 已完成諮詢／面談 in 學生 → 編輯 → student chooses 單堂課 NT$1,500 or 4 / 8 lessons → books. |
 | 5 | Can Iris move a lesson herself? | No. She proposes (or declines and proposes another time); the student confirms. Same the other way. |
 | 6 | Latest time for 改時間? | 12 h before the lesson |
 | 7 | LINE add-friend prompt at login? | Yes (`bot_prompt=aggressive`) |
 | 8 | Do credits expire? | No |
 | 9 | 團體課 with several students per slot? | **Pending** |
 | 10 | Re-apply after being declined? | **Pending** |
-| 11 | Unify labels? | Yes: 一對一 / 團體課 / 體驗課 everywhere |
+| 11 | Unify labels? | Yes: 一對一 / 團體課 / 單堂課 everywhere |
 | 12 | Automatic payment reminder? | Yes, when the last credit is booked |
 | 13 | Teacher books for a student? | Yes, screen built (學生詳細 → 預約課程) |
 
-Still open: real content (photos, bio, testimonials with consent), the real 體驗課 price, bank account, decisions 9 and 10.
+Still open: real content (photos, bio, testimonials with consent), bank account, decisions 9 and 10.
 
 ## 11. Release checklist
 
@@ -198,7 +198,7 @@ Still open: real content (photos, bio, testimonials with consent), the real 體�
 - [ ] Real content, prices and bank details (env / user-secrets)
 - [ ] Strong teacher password; HTTPS; `Cookie.SecurePolicy = Always`
 - [ ] LINE Login + Messaging channels under the same provider, and the Official Account **linked to the LOGIN channel** (needed for the add-friend prompt); Resend domain verified
-- [ ] Confirm the 體驗課 price with Iris (`Studio:Packages`)
+- [x] 單堂課 price: NT$1,500 (`Studio:Packages`)
 - [ ] Backups for PostgreSQL and the receipts folder
 - [ ] Remove demo accounts (mock build only)
 - [ ] Lawyer review of the 7 legal pages + fill every 【待填】 (`LEGAL.md` §4–5)

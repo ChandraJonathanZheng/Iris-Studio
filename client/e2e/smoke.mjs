@@ -23,9 +23,9 @@ async function newPage(viewport = { width: 390, height: 844 }) {
 }
 const me = (p) => p.evaluate(() => fetch('/api/me').then((r) => r.json()));
 const login = async (p, name, url) => { await p.goto(BASE + '/login'); await p.getByRole('button', { name }).click(); await p.waitForURL(url); };
-const axe = async (p, label) => {
+const axe = async (p, label, selector = null) => {
   await p.addScriptTag({ content: axeSource });
-  const r = await p.evaluate(() => window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa'] }));
+  const r = await p.evaluate((selector) => window.axe.run(selector ?? document, { runOnly: ['wcag2a', 'wcag2aa'] }), selector);
   const v = r.violations.filter((x) => x.impact === 'serious' || x.impact === 'critical');
   assert(v.length === 0, `${label}: ${v.map((x) => `${x.id}(${x.nodes.length})`).join(', ')}`);
 };
@@ -49,7 +49,7 @@ const axe = async (p, label) => {
     await p.getByLabel('LINE ID').fill('test_line');
     await p.getByRole('radio', { name: '週末' }).click();
     await p.getByRole('button', { name: '和 Iris 聊聊' }).click();
-    await p.getByText('收到了，謝謝你').waitFor();
+    await p.getByRole('heading', { name: /收到你的訊息了/ }).waitFor();
     const t = await p.locator('.card').innerText();
     assert(t.includes('週末') && t.includes('LINE'), 'thank-you content');
   });
@@ -112,6 +112,8 @@ const axe = async (p, label) => {
   await check('quota page: bank details, receipt type validation', async () => {
     await p.goto(BASE + '/app/quota');
     await p.getByText('匯款資料').waitFor();
+    await p.getByRole('radio', { name: /方案 · 4 堂/ }).waitFor();
+    assert(await p.getByRole('radio', { name: /單堂課/ }).count() === 0, 'single lesson must be hidden before consultation');
     await p.setInputFiles('#rc', { name: 'x.txt', mimeType: 'text/plain', buffer: Buffer.from('hi') });
     await p.getByText('請選擇 JPG、PNG 或 WEBP 圖片。').waitFor();
   });
@@ -177,6 +179,51 @@ const axe = async (p, label) => {
   await check('reduced motion: animations are off', async () => {
     await p.emulateMedia({ reducedMotion: 'reduce' }); await p.goto(BASE + '/');
     assert(await p.evaluate(() => getComputedStyle(document.querySelector('.l-sec') ?? document.body).animationName === 'none'), 'animation still on');
+  });
+  await p.context().close();
+}
+
+/* ---------- consultation-qualified single lesson ---------- */
+{
+  const p = await newPage({ width: 1280, height: 900 });
+  await check('single lesson: Iris confirms consultation; student can choose 1 or 4 lessons and submits NT$1,500', async () => {
+    await login(p, '老師：Iris', '**/teacher');
+    await p.goto(BASE + '/teacher/students/s1/edit');
+    const dialog = p.getByRole('dialog', { name: '編輯學生' });
+    const completed = dialog.getByRole('checkbox', { name: '已完成諮詢／面談' });
+    await completed.waitFor();
+    assert(!await completed.isChecked(), 'consultation must default to unconfirmed');
+    await completed.click();
+    await p.getByText('已更新諮詢／面談狀態', { exact: true }).waitFor();
+    assert((await p.evaluate(() => fetch('/api/teacher/students/s1').then((r) => r.json()))).consultationCompleted, 'teacher confirmation not persisted');
+    assert(await completed.isChecked(), 'consultation checkbox did not stay checked');
+    await axe(p, 'consultation editor', '.v-sheet');
+    await dialog.getByRole('button', { name: '關閉' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    // Stay within the SPA so the in-memory demo data survives the account switch.
+    await p.locator('.side').getByRole('link', { name: '更多' }).click();
+    const signedOut = p.waitForResponse((r) => r.url().endsWith('/api/auth/logout'));
+    await p.getByRole('button', { name: '登出', exact: true }).click();
+    await signedOut;
+    await p.getByRole('link', { name: '登入', exact: true }).first().click();
+    await p.getByRole('button', { name: '學生：王小明' }).click();
+    await p.waitForURL('**/app');
+    await p.locator('.side').getByRole('link', { name: '堂數與付款' }).click();
+    const single = p.getByRole('radio', { name: /單堂課 · 1 堂/ });
+    const four = p.getByRole('radio', { name: /方案 · 4 堂/ });
+    await single.waitFor(); await four.waitFor();
+    assert((await single.innerText()).includes('1,500'), 'single lesson price must be NT$1,500');
+    await four.click(); assert(await four.getAttribute('aria-checked') === 'true', '4 lessons cannot be selected');
+    await single.click();
+    await axe(p, 'qualified quota');
+    await p.setInputFiles('#rc', { name: 'receipt.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=', 'base64') });
+    const response = p.waitForResponse((r) => r.url().endsWith('/api/student/payments') && r.request().method() === 'POST');
+    await p.getByRole('button', { name: '上傳收據' }).click();
+    const receipt = await (await response).json();
+    assert(receipt.packageSize === 1 && receipt.amount === 1500 && receipt.trial, 'wrong package or amount');
+    await single.waitFor({ state: 'detached' });
+    await four.waitFor();
+    assert(!(await me(p)).trialAvailable, 'pending purchase must consume single lesson availability');
   });
   await p.context().close();
 }

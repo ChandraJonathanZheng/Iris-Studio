@@ -178,8 +178,8 @@ public static class EmailFormat
     public static string Slot(DateOnly d, TimeOnly t) => $"{Date(d)}{Time(t)}";
     public static string Local(DateTime local) => $"{local.Year}年{local.Month}月{local.Day}日 {local:HH:mm}";
     public static string Money(int amount) => $"NT${amount:N0}";
-    public static string Package(Payment p) => p.IsTrial ? "體驗課（1 堂）" : $"{p.PackageSize} 堂方案";
-    public static string LessonType(LessonType t) => t switch { Data.LessonType.Group => "團體課", Data.LessonType.Trial => "體驗課", _ => "一對一" };
+    public static string Package(Payment p) => p.IsTrial ? "單堂課（1 堂）" : $"{p.PackageSize} 堂方案";
+    public static string LessonType(LessonType t) => t switch { Data.LessonType.Group => "團體課", Data.LessonType.Trial => "單堂課", _ => "一對一" };
     public static string ConsultTime(string key) => key switch
     {
         "weekdayDay" => "平日白天", "weekdayEvening" => "平日晚上", "weekend" => "週末", _ => "都可以",

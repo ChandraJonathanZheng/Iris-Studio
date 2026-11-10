@@ -645,6 +645,9 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<bool>("ConsultationCompleted")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 

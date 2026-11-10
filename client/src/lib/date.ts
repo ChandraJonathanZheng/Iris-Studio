@@ -69,13 +69,13 @@ export function initialOf(name: string): string {
   return /^[A-Za-z]/.test(n) ? n[0].toUpperCase() : n.slice(-1);
 }
 
-export const LESSON_TYPE_LABEL: Record<'private' | 'group' | 'trial', string> = { private: '一對一', group: '團體課', trial: '體驗課' };
+export const LESSON_TYPE_LABEL: Record<'private' | 'group' | 'trial', string> = { private: '一對一', group: '團體課', trial: '單堂課' };
 /** 60 → 1 個小時, 120 → 2 個小時, 90 → 90 分鐘 */
 export function fmtDuration(min: number): string {
   return min % 60 === 0 ? `${min / 60} 個小時` : `${min} 分鐘`; // 60 → 1 個小時, 120 → 2 個小時, 90 → 90 分鐘 (not "1.5 個小時")
 }
 
-/** One label set for lessons AND students' class type (decided 8 Nov): 一對一 / 團體課 / 體驗課. */
+/** One label set for lessons AND students' class type (decided 8 Nov): 一對一 / 團體課 / 單堂課. */
 export const CLASS_TYPE_LABEL = LESSON_TYPE_LABEL;
 
 /** 免費諮詢: when the visitor is easiest to reach (shared by the form and Iris's 諮詢 list). */

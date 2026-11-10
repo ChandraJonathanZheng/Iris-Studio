@@ -57,8 +57,8 @@ function meDto(u: MUser): Me {
   };
 }
 const consultDto = (c: MConsult): Consult => ({ ...c, scheduledDate: c.scheduledDate ?? null, scheduledTime: c.scheduledTime ?? null, scheduleNote: c.scheduleNote ?? null });
-/** 體驗 students can buy the trial package once (a rejected receipt doesn't count) */
-const trialAvailable = (u: MUser) => (u.classType ?? 'private') === 'trial' && !db.payments.some((p) => p.studentId === u.id && p.trial && p.status !== 'Rejected');
+/** A completed consultation/interview unlocks 單堂課 once (a rejected receipt does not count). */
+const trialAvailable = (u: MUser) => u.role === 'Student' && u.status === 'Active' && !!u.consultationCompleted && !db.payments.some((p) => p.studentId === u.id && p.trial && p.status !== 'Rejected');
 function summary(u: MUser): StudentSummary {
   const up = db.lessons.filter((l) => l.studentId === u.id && l.status === 'Booked' && !slotPast(l.date, l.time)).sort(compareSlot);
   return {
@@ -424,7 +424,7 @@ export const handlers = [
       const form = await request.clone().formData();
       const size = Number(form.get('packageSize'));
       const pkg = STUDIO.packages.find((p) => p.size === size); if (!pkg) return problem(400, '請選擇方案。');
-      if (pkg.trial && !trialAvailable(r.u)) return problem(409, '體驗課只限第一次上課的學生購買一次。', 'trial_not_available');
+      if (pkg.trial && !trialAvailable(r.u)) return problem(409, '單堂課限已完成諮詢或面談的學生購買一次。', 'trial_not_available');
       const file = form.get('receipt'); if (!(file instanceof File) || file.size === 0) return problem(400, '請上傳收據圖片。');
       if (file.size > 5 * 1024 * 1024) return problem(400, '圖片不能超過 5 MB。');
       const p = { id: newId(), studentId: r.u.id, packageSize: size, amount: pkg.price, status: 'Pending' as const, uploadedAt: new Date().toISOString(), note: (form.get('note') as string) || null, rejectReason: null, receiptUrl: URL.createObjectURL(file), lqip: null, trial: !!pkg.trial };
@@ -533,7 +533,7 @@ export const handlers = [
     const u = userById(params.id as string); if (!u || u.role !== 'Student') return problem(404, '找不到學生。');
     const mine = db.lessons.filter((l) => l.studentId === u.id).sort(compareSlot);
     const d: StudentDetail = {
-      ...summary(u), email: u.email, phone: u.phone, grade: u.grade, goal: u.goal, packageSize: u.packageSize,
+      ...summary(u), consultationCompleted: u.consultationCompleted ?? false, email: u.email, phone: u.phone, grade: u.grade, goal: u.goal, packageSize: u.packageSize,
       attended: mine.filter((l) => l.status === 'Attended').length,
       upcoming: mine.filter((l) => l.status === 'Booked' && !slotPast(l.date, l.time)).map(lessonDto),
       past: mine.filter((l) => l.status === 'Attended').reverse().map(lessonDto),
@@ -590,6 +590,15 @@ export const handlers = [
     u.credits -= log.delta; log.undone = true;
     dropQueuedAlerts(`credits:${params.id}`);
     return HttpResponse.json({ credits: u.credits });
+  }),
+  http.patch('/api/teacher/students/:id/consultation', async ({ params, request }) => {
+    await delay(250);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const u = userById(params.id as string); if (!u || u.role !== 'Student') return problem(404, '找不到學生。');
+    const { consultationCompleted } = (await request.json()) as { consultationCompleted: boolean };
+    if (typeof consultationCompleted !== 'boolean') return problem(400, '資料格式不正確。', 'validation');
+    u.consultationCompleted = consultationCompleted;
+    return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/teacher/students/:id/class-type', async ({ params, request }) => {
     await delay(250);

@@ -82,24 +82,37 @@ export function ForgotPassword() {
     else void request(email.trim());
   };
   if (sentTo !== null) return (
-    <Card title="請查看你的信箱" icon="mail" sub={<>如果 <b className="account-email">{sentTo}</b> 已設定 Email 登入密碼，你將收到重設密碼的連結。</>}>
-      <div className="info stack s2">
-        <p>連結在 60 分鐘內有效，且只能使用一次。</p>
-        <p>沒收到？請確認 Email 拼字，並查看垃圾郵件匣。寄送可能需要幾分鐘。</p>
+    <main className="auth pw-done-wrap" aria-labelledby="fp-sent-title"><div className="pw-done fp-sent">
+      <p className="pw-done-brand">IRIS STUDIO</p>
+      <span className="pw-done-rule" aria-hidden="true" />
+      <span className="pw-done-mark" aria-hidden="true"><Icon name="mail" size={34} /></span>
+      <h1 className="pw-done-title" id="fp-sent-title" tabIndex={-1} ref={(el) => el?.focus()}>請查看你的信箱</h1>
+      <p className="pw-done-lead fp-lead">我們已寄出重設密碼的連結到<br /><b className="account-email">{sentTo}</b>。</p>
+      <div className="fp-note">
+        <Icon name="clock" size={26} />
+        <div><p className="fp-note-t">連結在 60 分鐘內有效，且只能使用一次。</p>
+          <p className="fp-note-s">沒收到信？請檢查垃圾郵件匣，或稍等幾分鐘再試。</p></div>
       </div>
       {error && <p className="err" role="alert">{error}</p>}
-      <button className="btn secondary block" disabled={busy || remaining > 0} onClick={() => void request(sentTo)}>
+      <button className="btn primary pw-done-cta fp-cta" disabled={busy || remaining > 0} onClick={() => void request(sentTo)}>
         {busy ? '寄送中…' : remaining > 0 ? `重新寄送（${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}）` : '重新寄送連結'}
       </button>
-      <p className="cap">2 分鐘後可重新寄送；新的連結會取代舊的連結。</p>
-      <div className="row between account-actions">
-        <button className="btn link" onClick={() => { setSentTo(null); setTried(false); setError(''); }}>修改 Email</button>
-        <Link className="btn link" to={emailLogin(sentTo)}>回到登入 →</Link>
+      <p className="fp-hint">2 分鐘後可重新寄送；新的連結會取代舊的連結。</p>
+      <div className="fp-actions">
+        <button type="button" className="fp-link" onClick={() => { setSentTo(null); setTried(false); setError(''); }}>修改 Email</button>
+        <Link className="fp-link" to={emailLogin(sentTo)}>回到登入<Icon name="arrow" size={18} /></Link>
       </div>
-    </Card>
+    </div></main>
   );
   return (
-    <Card title="忘記密碼？" icon="mail" sub="輸入註冊時使用的 Email，我們會寄送設定新密碼的連結。">
+    <main className="auth pw-done-wrap" aria-labelledby="fp-title"><div className="pw-done login-card fp-card">
+      <div className="login-head">
+        <Link to="/" className="pw-done-brand">IRIS STUDIO</Link>
+        <span className="pw-done-rule" aria-hidden="true" />
+        <span className="pw-done-mark sq" aria-hidden="true"><Icon name="mail" size={30} /></span>
+        <h1 className="pw-done-title" id="fp-title">忘記密碼？</h1>
+        <p className="pw-done-lead fp-lead">輸入註冊時使用的 Email，我們會寄送設定新密碼的連結。</p>
+      </div>
       <form className="stack" onSubmit={submit} noValidate aria-busy={busy}>
         <Field id="fp-email" label="登入 Email" error={tried && bad ? '請填寫正確的 Email。' : undefined}>
           <input id="fp-email" ref={emailInput} className="input" type="email" autoComplete="email" inputMode="email" maxLength={200} autoFocus disabled={busy}
@@ -108,13 +121,13 @@ export function ForgotPassword() {
         {error && <p className="err" role="alert">{error}</p>}
         <button className="btn primary block" disabled={busy}>{busy ? '寄送中…' : '寄送重設連結'}</button>
       </form>
-      <div className="info stack s2">
-        <b>平常用 LINE 登入？</b>
-        <p>此功能只適用 Email 與密碼帳號。使用 LINE 建立的帳號，請直接用 LINE 登入。</p>
-        <Link className="btn link" to="/login">使用 LINE 登入 →</Link>
+      <div className="fp-line">
+        <p className="fp-note-t">平常用 LINE 登入？</p>
+        <p className="fp-line-s">此功能只適用 Email 與密碼帳號。使用 LINE 建立的帳號，請直接用 LINE 登入。</p>
+        <Link className="fp-line-go" to="/login">使用 LINE 登入<Icon name="arrow" size={18} /></Link>
       </div>
-      <Link className="btn link" to={emailLogin(email.trim())}>← 回到 Email 登入</Link>
-    </Card>
+      <Link className="fp-back" to={emailLogin(email.trim())}><Icon name="arrow" size={18} />回到 Email 登入</Link>
+    </div></main>
   );
 }
 
@@ -167,18 +180,36 @@ export function ResetPassword() {
     </Card>
   );
   if (state === 'invalid') return (
-    <Card title={token ? '連結已失效' : '連結不完整'} icon="clock" sub="連結可能已過期、使用過，或已被新的申請取代。請重新申請，並使用最新一封信件中的連結。">
-      <Link className="btn primary block" to="/forgot-password">重新申請重設連結</Link>
-      <Link className="btn link" to={emailLogin()}>回到 Email 登入</Link>
-    </Card>
+    <main className="auth pw-done-wrap" aria-labelledby="pw-bad-title"><div className="pw-done">
+      <p className="pw-done-brand">IRIS STUDIO</p>
+      <span className="pw-done-rule" aria-hidden="true" />
+      <span className="pw-done-mark sq" aria-hidden="true"><Icon name="clock" size={36} /></span>
+      <h1 className="pw-done-title" id="pw-bad-title" tabIndex={-1} ref={(el) => el?.focus()}>{token ? '連結已失效' : '連結不完整'}</h1>
+      <p className="pw-done-lead">連結可能已過期、使用過，或已被新的申請取代。<br />請重新申請，並使用最新一封信件中的連結。</p>
+      <Link className="btn primary pw-done-cta" to="/forgot-password">重新申請重設連結</Link>
+      <Link className="pw-done-alt" to={emailLogin()}>回到 Email 登入</Link>
+    </div></main>
   );
   if (state === 'done') return (
-    <Card title="密碼已更新" icon="check" sub="可以使用新密碼登入了。其他裝置上的登入也已失效。">
-      <Link className="btn primary block" to="/login?method=email&reset=success">使用新密碼登入</Link>
-    </Card>
+    <main className="auth pw-done-wrap" aria-labelledby="pw-done-title"><div className="pw-done" role="status">
+      <Link to="/" className="pw-done-back"><Icon name="back" size={18} />回首頁</Link>
+      <p className="pw-done-brand">IRIS STUDIO</p>
+      <span className="pw-done-rule" aria-hidden="true" />
+      <span className="pw-done-mark" aria-hidden="true"><Icon name="check" size={40} weight="bold" /></span>
+      <h1 className="pw-done-title" id="pw-done-title" tabIndex={-1} ref={(el) => el?.focus()}>密碼已順利更新</h1>
+      <p className="pw-done-lead">你的帳號現在更安全了，<br />可以用新密碼登入，繼續你的學習旅程。</p>
+      <Link className="btn primary pw-done-cta" to="/login?method=email&reset=success">前往登入<Icon name="arrow" size={22} /></Link>
+    </div></main>
   );
   return (
-    <Card title="設定新密碼" icon="check" sub="為你的 Email 登入帳號設定新密碼。">
+    <main className="auth pw-done-wrap" aria-labelledby="rp-title"><div className="pw-done login-card fp-card">
+      <div className="login-head">
+        <Link to="/" className="pw-done-brand">IRIS STUDIO</Link>
+        <span className="pw-done-rule" aria-hidden="true" />
+        <span className="pw-done-mark" aria-hidden="true"><Icon name="lock" size={30} /></span>
+        <h1 className="pw-done-title" id="rp-title">設定新密碼</h1>
+        <p className="pw-done-lead fp-lead">為你的 Email 登入帳號設定新密碼。</p>
+      </div>
       <form className="stack" onSubmit={submit} noValidate aria-busy={state === 'busy'}>
         <Field id="rp-pw" label="新密碼" error={tried && short ? '密碼至少需要 8 個字元。' : undefined}>
           <PasswordInput id="rp-pw" value={password} onChange={setPassword} invalid={tried && short} describedBy={tried && short ? 'rp-pw-err' : 'rp-hint'} autoComplete="new-password" disabled={state === 'busy'} />
@@ -190,9 +221,9 @@ export function ResetPassword() {
         {error && <p className="err" role="alert">{error}</p>}
         <button className="btn primary block" disabled={state === 'busy'}>{state === 'busy' ? '更新中…' : '更新密碼'}</button>
       </form>
-      <p className="cap">更新後，所有裝置都需要重新登入。</p>
-      <Link className="btn link" to={emailLogin()}>← 回到登入</Link>
-    </Card>
+      <p className="fp-hint rp-hint">更新後，所有裝置都需要重新登入。</p>
+      <Link className="fp-back rp-back" to={emailLogin()}><Icon name="arrow" size={18} />回到登入</Link>
+    </div></main>
   );
 }
 

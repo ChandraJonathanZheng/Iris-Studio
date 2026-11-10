@@ -81,7 +81,7 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         if (taken == 0) throw new BizException(409, "no_credits", "堂數已用完，請先購買新方案。");
 
         var student = await db.Users.AsNoTracking().FirstAsync(u => u.Id == studentId, ct);
-        // the lesson's type follows the student's class type: a 體驗 student's lesson is a 體驗課
+        // The lesson's type follows the student's class type (一對一 / 團體課 / 單堂課).
         var lesson = new Lesson { StudentId = studentId, Date = date, Time = time, Type = student.ClassType, CreatedAtUtc = clock.UtcNow, DurationMinutes = (await availability.GetAsync(ct)).Settings.LessonMinutes };
         db.Lessons.Add(lesson);
         db.CreditLogs.Add(new CreditLog { StudentId = studentId, Delta = -1, Reason = $"booking:{lesson.Id}", CreatedAtUtc = clock.UtcNow });
@@ -386,7 +386,7 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         if (await db.Payments.AnyAsync(x => x.StudentId == p.StudentId && x.Id != p.Id && x.Status == PaymentStatus.Pending, ct))
             throw new BizException(409, "pending_exists", "已有另一張收據待確認，無法復原。");
         if (p.IsTrial && await db.Payments.AnyAsync(x => x.StudentId == p.StudentId && x.Id != p.Id && x.IsTrial && x.Status != PaymentStatus.Rejected, ct))
-            throw new BizException(409, "trial_not_available", "已有另一張體驗課收據，無法復原。");
+            throw new BizException(409, "trial_not_available", "已有另一張單堂課收據，無法復原。");
         if (p.Status == PaymentStatus.Confirmed)
         {
             if (p.Student.Credits < p.PackageSize) throw new BizException(409, "credits_used", "學生已經用了部分堂數，無法復原。");

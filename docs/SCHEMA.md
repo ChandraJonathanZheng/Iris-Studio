@@ -47,7 +47,7 @@ erDiagram
 | `Role` | Student, Teacher | one Teacher (Iris) |
 | `UserStatus` | Pending, Active | Pending = waiting for Iris |
 | `LessonStatus` | Booked, Attended, Cancelled | |
-| `LessonType` | Private, Group, Trial | 一對一 / 團體課 / 體驗課 — one label set for lessons **and** the student's class type; the class type is copied to the lesson at booking |
+| `LessonType` | Private, Group, Trial | 一對一 / 團體課 / 單堂課 — one label set for lessons **and** the student's class type; the class type is copied to the lesson at booking |
 | `ChangeStatus` | Open, Approved, Declined, Withdrawn | |
 | `ChangeBy` | Student, Teacher | who asked: Student = 學生申請 (Iris decides), Teacher = 老師提議 (the student decides) |
 | `PaymentStatus` | Pending, Confirmed, Rejected | |
@@ -72,7 +72,8 @@ erDiagram
 | VoiceType, Goal, Grade, AvatarUrl | text | ✓ | profile; Grade set by Iris |
 | Credits | int | | lesson credits not yet booked — **check `Credits >= 0`** |
 | PackageSize | int | | size of the last package (for the quota boxes) |
-| ClassType | text(16) | | Private / Group / Trial — new sign-ups = Trial |
+| ClassType | text(16) | | Private / Group / Trial — new sign-ups = Trial; labels 一對一 / 團體課 / 單堂課 |
+| ConsultationCompleted | bool | | Default false; Iris confirms completed consultation/interview; independent of class type |
 | Declined | bool | | application declined |
 | CreatedAtUtc | timestamp | | |
 | DecidedAtUtc | timestamp | ✓ | approval/decline time (undo window) |
@@ -115,8 +116,8 @@ Rule in code: a student request needs ≥ `Studio:MoveHours` (12) before the les
 |---|---|---|---|
 | Id | uuid | | PK |
 | StudentId | uuid | | FK → Users (restrict) |
-| PackageSize | int | | 1 (體驗課) / 4 / 8 |
-| IsTrial | bool | | the one-time 體驗課 package; allowed once per 體驗 student (Rejected doesn't count) |
+| PackageSize | int | | 1 (單堂課) / 4 / 8 |
+| IsTrial | bool | | the one-time 單堂課 package; NT$1,500; allowed once after Iris confirms a consultation/interview (Rejected doesn't count) |
 | Amount | int | | NT$ |
 | PreviousPackageSize | int | ✓ | last package size before confirmation, restored by undo |
 | Status | text(16) | | Pending / Confirmed / Rejected |
@@ -220,7 +221,7 @@ Ranges are plain text on purpose (simple to read in SQL, no JSON mapping); `Avai
 | Payment pending | any Payment with Status = Pending |
 | Last reminded | max(Alerts.CreatedAtUtc) where Kind = Reminder |
 | Remind channel | `line` if LineUserId, else `email` if Email, else none |
-| Trial available | ClassType = Trial and no Payment with IsTrial and Status ≠ Rejected |
+| Single lesson available (`trialAvailable`) | Active student with ConsultationCompleted and no Payment with IsTrial and Status ≠ Rejected; regular packages remain available |
 
 ## 5. Seed (first start)
 Teacher account from `Studio:TeacherEmail / TeacherPassword` · BookingSettings defaults · WeeklyAvailability Mon–Sat `09:30-12:30;14:00-20:30`, Sunday off · demo students + lessons only when demo seeding is on.

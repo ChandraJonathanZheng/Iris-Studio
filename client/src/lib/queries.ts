@@ -296,6 +296,23 @@ export function useSetClassType(studentId: string) {
   });
 }
 
+export function useSetConsultationCompleted(studentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (consultationCompleted: boolean) => api.patch(`/api/teacher/students/${studentId}/consultation`, { consultationCompleted }),
+    onMutate: async (consultationCompleted) => {
+      const snap = await snapshot(qc, qk.student(studentId));
+      qc.setQueryData<StudentDetail>(qk.student(studentId), (s) => (s ? { ...s, consultationCompleted } : s));
+      return { snap };
+    },
+    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSettled: () => Promise.all([
+      qc.invalidateQueries({ queryKey: qk.student(studentId) }),
+      qc.invalidateQueries({ queryKey: qk.me }),
+    ]),
+  });
+}
+
 export function useTeacherCancel() {
   const qc = useQueryClient();
   const inv = () => { qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: qk.overview }); qc.invalidateQueries({ queryKey: qk.students }); };

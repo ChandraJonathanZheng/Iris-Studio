@@ -44,7 +44,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | C5 | Change time | P0 | ✅ | Only ≥ 12 h before (else greyed with 上課前 12 小時內不能改 + link to cancel); new slot + reason; original stays booked; withdraw; one open request per lesson |
 | C6 | Cancel | P0 | ✅ | Sheet states refund / no refund before confirming; 30 s undo |
 | C7 | Calendar | P0 | ✅ | Month (● ○ ◆ marks, legend) + list with 過去 / 今天 / 即將 filters |
-| C8 | 堂數與付款 | P0 | ✅ | Bank details, package choice, receipt upload (image ≤ 5 MB) **any time** (blocked only while a receipt is waiting), credits added on top, no expiry; 體驗 students see only 體驗課 · 1 堂 until bought once; history with status |
+| C8 | 堂數與付款 | P0 | ✅ | Bank details, package choice, receipt upload (image ≤ 5 MB) **any time** (blocked only while a receipt is waiting), credits added on top, no expiry; Iris-confirmed consultation/interview students also see 單堂課 · 1 堂 · NT$1,500 alongside 4 / 8 lesson packages, once; history with status |
 | C9 | 通知 | P0 | ✅ | List, unread **dot** (not a count), mark all read; reminders and Iris's proposals (到首頁回覆 →) appear here too |
 | C10 | Profile | P0 | ✅ | Edit name, email, phone, LINE ID, voice type, goal; logout |
 
@@ -57,7 +57,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | D3 | Students list | P0 | ✅ | Search 54 px, filter chips (scroll), 81 px rows, deterministic avatar tones, credits number coloured, status column only for exceptions |
 | D4 | Student detail | P0 | ✅ | Profile + LINE 聯絡 / 調整堂數 / 編輯; 課程狀態 (剩餘 · 已預約 · 下一堂); upcoming with ＋ 預約課程, 提議改時間 per lesson, student requests (查看申請 →) and own proposals (◆ 等待學生回覆 · 收回); latest payment + 查看付款紀錄 →; history list |
 | D5 | 調整堂數 | P0 | ✅ | Sheet: 增加/減少, 1–4, reason required (補課 / 贈送 / 修正錯誤 / 其他 + note), preview `5 → 7`, cannot go below 0, undo, audit log |
-| D6 | 編輯 (class type) | P0 | ✅ | 一對一 / 團體課 / 體驗課 (same labels as lessons); the class type becomes the lesson type when booking |
+| D6 | 編輯 (class type) | P0 | ✅ | 一對一 / 團體課 / 單堂課 (same labels as lessons); the class type becomes the lesson type when booking; 已完成諮詢／面談 checkbox separately unlocks the one-time single lesson |
 | D7 | 通知學生繳學費 | P0 | 🟡 | Button in 課程狀態 (filled when ≤ 1 credit); sheet shows channel + recipient, editable draft (≤ 500), 24 h repeat warning; sent after 10 s with 復原; shows 上次提醒. Delivery needs LINE OA / Resend keys |
 | D8 | Requests — 改時間 | P0 | ✅ | Old (muted) → **new** time, 「reason」, ● 新時段可用 / 新時段已被預約 + explanation, 同意 disabled on conflict, 婉拒 with message or **婉拒並提議其他時間**, undo; 你的提議 list (等待學生回覆 + 收回, 學生已接受 / 學生不方便 + 再提議, 7 days) |
 | D9 | Requests — 新學生 | P0 | ✅ | Name, applied time, email or LINE, 確認 / 婉拒, undo |

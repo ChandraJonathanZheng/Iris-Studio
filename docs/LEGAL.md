@@ -46,7 +46,7 @@ Law references used (checked against published texts, Nov 2026): 個資法 §3, 
 
 ## 4. Owner (Iris) must fill in
 
-Legal name / 統一編號 / address · privacy contact email · LINE OA ID · host + data location · 體驗課 price · refund of unused credits · late / no-show rule · whether students may record lessons · media takedown time · retention periods · receipt / invoice practice · competent court.
+Legal name / 統一編號 / address · privacy contact email · LINE OA ID · host + data location · refund of unused credits · late / no-show rule · whether students may record lessons · media takedown time · retention periods · receipt / invoice practice · competent court.
 
 ## 5. Questions for the lawyer
 
