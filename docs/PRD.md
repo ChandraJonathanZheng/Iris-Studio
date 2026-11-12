@@ -10,7 +10,7 @@
 
 ---
 
-> **Note (12 Nov 2026):** 回報 / 取消費 (ST-10, T-13) and the 忘記密碼 / password rules (AUTH-1, 2, 7, 8) are built in the clickable demo (`docs/demo/iris-studio-demo.html`). Their client + server source is **not in this branch yet**; re-apply them from this spec. The demo also still shows the older trial package (體驗課 1 堂 NT$ 800 for class type 體驗); this branch's decision is **單堂課 NT$ 1,500 after 已完成諮詢／面談** (§5) — the docs follow the branch.
+> **Note (12 Nov 2026):** 回報 / 取消費 (ST-10, T-13) and the 忘記密碼 / password rules (AUTH-1, 2, 7, 8) are built in the clickable demo (`docs/demo/iris-studio-demo.html`). Their client + server source is **not in this branch yet**; re-apply them from this spec. **Trial package (decided 12 Nov 2026): the `sprint-1` code wins** — 單堂課 1 堂 NT$ 1,500, offered once after Iris marks 已完成諮詢／面談 (§5). The demo shows the same label and price; its eligibility still follows the old class-type 體驗 rule until the demo is rebuilt from `sprint-1`.
 
 ## 1. Problem
 
