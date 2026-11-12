@@ -1,6 +1,6 @@
 # Iris Studio — System Flow
 
-Version 8 Nov 2026 · matches the prototype and `server/IrisStudio.Api`.
+Version 12 Nov 2026 · matches the prototype and `server/IrisStudio.Api`, except **§4.5b 回報** (in the demo only; source to be committed).
 
 ---
 
@@ -149,6 +149,22 @@ Iris's settings page shows the exact same result as a preview (`可預約 6 堂�
 ### 4.5 Cancel (student or Iris)
 - Student: sheet tells *before* confirming whether the credit comes back (≥ 24 h). `POST …/lessons/{id}/cancel` → status Cancelled, refund if eligible → toast with 復原 (`undo-cancel`, 30 s, only if the slot is still free).
 - Iris: 行事曆 → 取消 → sheet "堂數會退回 · 10 秒後通知學生" → always refunds; student alert queued 10 s.
+
+### 4.5b 回報 a past lesson (取消費)
+```mermaid
+flowchart LR
+  A[已上課 lesson ≤ 7 days] -->|回報| B{Modal 要申請取消這堂課嗎？}
+  B -->|返回| A
+  B -->|確定| C[◆ 待審核]
+  C -->|撤回| A
+  C -->|Iris 同意| D[✕ 已取消（回報）· +1 堂 · 取消費 Unpaid]
+  C -->|Iris 婉拒 + reason| E[○ 已上課]
+  D -->|student uploads receipt| F[取消費 Billed · Amount = package + fees]
+  F -->|receipt confirmed| G[取消費 Paid]
+  F -->|receipt rejected| D
+```
+- `POST /api/student/lessons/{id}/report` (reason optional) · `DELETE …/report` (撤回) · `POST /api/teacher/reports/{id}/approve` `{ waiveFee }` · `…/decline` `{ reason }` · undo within 30 s unless the fee is already Billed.
+- Approve writes `CreditLogs` `report:{id}` (+1); undo writes `undo-report:{id}` (−1).
 
 ### 4.6 Change time (改時間)
 Rule: a student can ask only **≥ 12 h before** the lesson (`Studio:MoveHours`), otherwise 409 `too_late_to_move` and the app greys the option out with the reason. Iris can never move a lesson by herself (4.6b).
@@ -355,5 +371,6 @@ stateDiagram-v2
 | Booking used the last credit | Reminder (automatic, max 1 per 24 h, not if a receipt is pending) | 10 s |
 | Iris proposes a new time | Proposal (old → new + her message) | 10 s |
 | Iris books for the student | Added | 10 s |
+| 回報 approved / declined | Approved / Declined (with 取消費 or Iris's reason) | 10 s |
 
-Iris's side has no alert list; her **counters** (待確認收據, 改時間申請, 新學生, 諮詢) and the 申請 / 付款 badges are computed live from the data.
+Iris's side has no alert list; her **counters** (待確認收據, 學生申請 = 改時間 + 回報, 新學生, 諮詢) and the 申請 / 付款 badges are computed live from the data.

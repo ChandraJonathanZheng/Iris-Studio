@@ -1,7 +1,7 @@
 # Iris Studio — Database Schema
 
 PostgreSQL · EF Core 10 (code-first) · source of truth: `server/IrisStudio.Api/Data/Entities.cs` + `AppDbContext.cs`.
-Version 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
+Version 12 Nov 2026 v2.3 (adds `LessonReports`, `CancellationFees` — used by the demo, migration `LessonReports` still to be committed). Earlier: 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
 
 **Conventions**
 - Primary keys are `uuid` (generated in .NET) except the three availability tables (natural keys).
@@ -130,6 +130,30 @@ Rule in code: a student request needs ≥ `Studio:MoveHours` (12) before the les
 
 Indexes: (Status, UploadedAtUtc), unique StudentId where Pending, and unique (StudentId, IsTrial) where IsTrial and not Rejected. Buying is otherwise allowed any time and credits never expire.
 
+### `LessonReports` (回報)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| LessonId | uuid | | FK → Lessons (restrict); unique where Status in (Pending, Approved) — one live report per lesson |
+| StudentId | uuid | | FK → Users (restrict) |
+| Reason | text | ✓ | optional, ≤ 300 |
+| Status | text(16) | | Pending / Approved / Declined / Withdrawn |
+| DeclineReason | text | ✓ | required when Declined |
+| FeeWaived | bool | | Iris ticked 這次免收取消費 |
+| CreatedAtUtc / DecidedAtUtc | timestamp | / ✓ | allowed only ≤ `Studio:ReportDays` (7) after the lesson |
+
+### `CancellationFees` (取消費)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| ReportId | uuid | | FK → LessonReports, unique |
+| LessonId / StudentId | uuid | | FK (restrict) |
+| Amount | int | | NT$, `Studio:CancelFee` (500) at approval time |
+| Status | text(16) | | Unpaid / Billed / Paid |
+| PaymentId | uuid | ✓ | FK → Payments; set when Billed |
+
+Flow: approve → Unpaid · receipt upload → every Unpaid fee becomes Billed on it and `Payments.Amount` = package price + fees · receipt confirmed → Paid · rejected → Unpaid again. Approving sets the lesson to Cancelled and writes `CreditLogs` `report:{id}` (+1).
+
 ### `Alerts` (通知 + outbox)
 | Column | Type | Null | Notes |
 |---|---|---|---|
@@ -257,6 +281,7 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Group classes with capacity | **pending decision** — would replace `UX_Lesson_Slot_Booked` with a per-slot capacity |
 | Re-apply after decline | **pending decision** — today `Users.Declined` blocks it |
 | New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the committed Initial migration |
+| 回報 tables | `LessonReports`, `CancellationFees` — `dotnet ef migrations add LessonReports` (both providers) |
 | Phase 2 | `Homework`, `HomeworkSubmissions`, `Events`, `EventInvites` |
 
 ## 8. Added 8 Nov (later): teacher profile, consents, privacy requests

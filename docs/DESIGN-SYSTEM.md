@@ -1,6 +1,6 @@
 # Iris Studio — Design System
 
-Version 3 · 8 Nov 2026 · written from the prototype (`client/src/styles.css`, `components/`).
+Version 3.1 · 12 Nov 2026 (compact header 登入, 回報 dialog, fee line) · v3 8 Nov 2026 · written from the prototype (`client/src/styles.css`, `components/`).
 Replaces *Design Guidebook v2*. Look: **warm ivory + botanical sage, Apple (HIG) feel** — calm, handcrafted, premium; never a generic admin dashboard.
 
 > **How to use this doc.** Each value has a token name. New code uses the tokens, not raw hex. Some prototype blocks still have hex values written inline (they were tuned comment by comment); the table in §2 lists the value each one should become, so they can be folded into tokens in one clean-up pass.
@@ -175,9 +175,16 @@ Heights: buttons 44–52, inputs 46–52, chips 40–44, tabs 48. All tap target
 | Destructive text | brick text, no box (44 px target) | 取消預約, 取消 (calendar) |
 | Text link | sage-text, underline on hover | 查看完整行事曆 →, 先看收據 |
 | Icon button | 44 px circle, hairline | back, close, ••• |
+| Header utility (登入) | sage fill, white, **18 px outline person icon left**, gap 8, height 44, padding 0 18, 15 px / 600, radius 12, no shadow | landing header only; secondary to the IRIS logo. New icon+label buttons follow this icon-left pattern |
 | Disabled | transparent, `#AAB3A8` text, light border | with the reason shown next to it |
 
 Primary + destructive pairs are **asymmetric**: primary wider (flex 1.4–1.6).
+
+**Landing header**: 72–80 px tall, items vertically centred: `IRIS | 聲樂教練` left, 登入 right. Logo stays the visual anchor.
+
+**Confirm dialog (回報 pattern)**: question title (要申請取消這堂課嗎？), one effect line stating the outcome *before* the user commits (退回 1 堂 · 取消費 NT$ 500 in amber), optional reason field, buttons 返回 (secondary) + 確定 (primary, wider). Status after send: ◆ 待審核 (amber) with 撤回 text link; result ✕ 已取消（回報）(brick) or ○ 已上課.
+
+**Fee line** (堂數與付款, receipt modal): label left, NT$ right-aligned tabular numbers; total row = 方案 + 取消費, 600 weight.
 
 ### 8.2 Form controls
 - **Input**: white, `rgba(60,52,40,.16)` border, radius 12, focus = sage border + 4 px sage glow. Label above (14 / 600). Error text below, `aria-invalid` + `aria-describedby`.

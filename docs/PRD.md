@@ -5,10 +5,12 @@
 | Product | Iris Studio — public website + booking & admin app for Iris's singing studio |
 | Owner | Chandra (developer) · Iris (studio owner, primary user) |
 | Status | Clickable prototype done (React + mock API); .NET 10 backend implemented with committed migrations and PostgreSQL integration tests |
-| Version | v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
+| Version | v2.3 — 12 Nov 2026: **回報 a past lesson** + 取消費 (ST-10, ST-6, T-1, T-5, T-13, §5, §10 #14–16); compact header 登入 button. v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
 | Related docs | `FEATURES.md` · `DESIGN-SYSTEM.md` · `SCHEMA.md` · `FLOW.md` |
 
 ---
+
+> **Note (12 Nov 2026):** the 回報 / 取消費 feature below is built in the clickable demo (`docs/demo/iris-studio-demo.html`). Its client + server source is **not in this branch yet**; re-apply it from the spec here before merging.
 
 ## 1. Problem
 
@@ -88,26 +90,28 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | ST-3b | **Iris's proposal**: 可以 moves the lesson (if the slot is still free), 不方便 keeps it. Nothing moves without the student's answer. |
 | ST-4 | **取消**: refund the credit if ≥ 24 h before the lesson; the sheet says which case applies before confirming; 30 s undo. |
 | ST-5 | **行事曆**: month view with shaped marks (● upcoming ○ done ◆ changing) + list view with filters. |
-| ST-6 | **堂數與付款**: credit boxes, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. After Iris confirms a completed consultation/interview, the student also sees 單堂課 NT$1,500 alongside the regular 4 / 8 lesson packages; single lesson is available once. |
+| ST-6 | **堂數與付款**: credit boxes, **未付取消費** line (amount + which lessons) when there is one, amount to transfer = package price + unpaid fees, bank details, upload receipt (JPG/PNG/WEBP ≤ 5 MB) **any time** (one receipt waiting at a time; credits are added on top), payment history. After Iris confirms a completed consultation/interview, the student also sees 單堂課 NT$1,500 alongside the regular 4 / 8 lesson packages; single lesson is available once. |
 | ST-7 | **通知**: alerts list, unread dot (not a number). |
 | ST-8 | **我的**: profile (name, email, phone, LINE ID, voice type, goal), **同意設定** (media + marketing switches, withdraw any time, consent history), logout. |
+| ST-10 | **回報 (past lesson)**: every 已上課 lesson in 行事曆 → 列表 → 過去 has a **回報** button for 7 days after the lesson. Modal 「要申請取消這堂課嗎？」 states the result first: *若老師同意：退回 1 堂，下次繳費加收取消費 NT$ 500。* Optional reason. **返回** = close, nothing changes; **確定** = send → row shows ◆ 待審核 (撤回 while open). After Iris decides: ✕ 已取消（回報）· 取消費 NT$ 500, or stays ○ 已上課 with Iris's reason. One report per lesson. |
 | ST-9 | Home shows Iris's status card (放假中 / 暫停接新學生 / 自訂 + message, public LINE ID) when it isn't 正常上課. |
 
 ### 4.4 Teacher app (P0)
 | ID | Requirement |
 |---|---|
-| T-1 | **首頁**: Header → **今日待辦** 2×2 (改時間申請 · 待確認收據 / 新學生 · 諮詢; amber edge + ◆ when > 0, quiet at 0) → 今天的課 (下一堂 highlighted, finished muted) → 堂數用完. |
+| T-1 | **首頁**: Header → **今日待辦** 2×2 (學生申請 = 改時間 + 回報 · 待確認收據 / 新學生 · 諮詢; amber edge + ◆ when > 0, quiet at 0) → 今天的課 (下一堂 highlighted, finished muted) → 堂數用完. |
 | T-0 | **Navigation**: 5 tabs 首頁 / 行事曆 / 學生 / **收件匣** / **更多**. 收件匣 = 申請 · 付款 · 諮詢 tabs, ONE count badge (only items Iris must act on). 更多 = 教師個人資料, 可預約時段, 課程方案, 設定, 個資權利申請, 法律文件, 登出. Old routes unchanged. |
 | T-2 | **行事曆**: compact month grid + day list (改時間 → propose, 取消 opens a sheet that states the refund + notification policy). Link to 可預約時段. |
 | T-3 | **學生**: search, filter chips, compact rows; only exceptions show a status (快用完 / 用完 / 確認中). |
 | T-4 | **學生詳細**: profile + quick actions (LINE 聯絡 · 調整堂數 · 編輯) + **media-consent line** (● 同意 / ○ 未同意 / ◆ 已撤回 — 請移除), 課程狀態, **通知學生繳學費**, then ONE lessons container: 下一堂 (sage wash, one action) · 後續課程 (＋ 預約課程) · 上過的課 (3 + 查看全部), latest payment. |
-| T-5 | **申請** (in 收件匣): sub-tabs 改時間 · 新學生 · 等學生回覆 (URL `?tab=`). 改時間: old → new, reason, availability, 同意 disabled on conflict, 婉拒 or 婉拒並提議其他時間. 等學生回覆: open proposals + 收回, answers of the last 7 days. Compact cards, friendly empty states. |
+| T-5 | **申請** (in 收件匣): sub-tabs 改時間 · **回報** · 新學生 · 等學生回覆 (URL `?tab=`; 回報 → T-13). 改時間: old → new, reason, availability, 同意 disabled on conflict, 婉拒 or 婉拒並提議其他時間. 等學生回覆: open proposals + 收回, answers of the last 7 days. Compact cards, friendly empty states. |
 | T-6 | **付款**: card action 查看收據並確認 → modal; credits only after ticking 我已核對：金額… (button disabled until then, guarded against double submit + idempotency key); 退回 (reason required). |
 | T-7 | **諮詢**: website requests with contact type + preferred time; mark as contacted. |
 | T-8 | **可預約時段**: tabs 每週時段 / 特殊日期 / 預約設定 (see §5). |
 | T-9 | **通知學生繳學費**: editable message, channel shown (LINE or Email), 24 h repeat warning, sent after 10 s with 復原. |
 | T-11 | **教師個人資料**: name, contact LINE ID + "show to students" switch, avatar (≤ 2 MB), 目前狀態 + 狀態訊息 with live preview of the student card, 儲存; separate 登入方式 card (email change needs password, LINE unlink only if another login exists). |
 | T-12 | **個資權利申請**: list with due date (15 / 30 days, overdue red); 標為已處理 needs a note. |
+| T-13 | **回報 審核**: card = student, lesson, reason, effect line; **這次免收取消費** tick box; 同意 (+1 堂, fee added to the student's next receipt) / 婉拒 (reason required); undo 30 s, blocked once the fee is on a receipt. Receipt modal lists 方案 + 取消費 separately. |
 | T-10 | Every decision (approve, decline, confirm, cancel, adjust, remind) has **undo**; the student's alert is held back 10 s so a reversed decision is never seen. |
 
 ## 5. Business rules
@@ -135,6 +139,8 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | Automatic 繳費提醒 | When a booking uses the last credit; skipped if a receipt is pending or a reminder went out in the last 24 h; dropped if that lesson is cancelled with refund | `AutoRemindAsync` |
 | Credits | Book −1 · cancel in time +1 · confirmed receipt +package · manual ± with reason. Never < 0 (DB check). | `CreditLog` audit |
 | Receipts | Image only (checked by content), ≤ 5 MB, private to that student + Iris | `/api/receipts/{id}` |
+| 回報 window | Up to 7 days after an Attended lesson | `Studio:ReportDays` |
+| 取消費 | NT$ 500 per approved 回報 (Iris may waive per report); billed on the next receipt, Paid when that receipt is confirmed, Unpaid again if rejected | `Studio:CancelFee`, `CancellationFee` |
 | Time zone | All lesson times are studio time (Asia/Taipei) | `StudioClock` |
 | Date format | `MM-DD(週)` e.g. `11-05(四) 16:30`; landing events `YYYY/MM/DD（週）` | `lib/date.ts` |
 
@@ -188,6 +194,9 @@ React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sh
 | 11 | Unify labels? | Yes: 一對一 / 團體課 / 單堂課 everywhere |
 | 12 | Automatic payment reminder? | Yes, when the last credit is booked |
 | 13 | Teacher books for a student? | Yes, screen built (學生詳細 → 預約課程) |
+| 14 | 回報 time limit? | **Pending Iris** — default 7 days |
+| 15 | May Iris waive the 取消費? | **Pending Iris** — default yes, 這次免收取消費 per report |
+| 16 | Reason from the student? | **Pending Iris** — default optional |
 
 Still open: real content (photos, bio, testimonials with consent), bank account, decisions 9 and 10.
 
@@ -202,4 +211,6 @@ Still open: real content (photos, bio, testimonials with consent), bank account,
 - [ ] Backups for PostgreSQL and the receipts folder
 - [ ] Remove demo accounts (mock build only)
 - [ ] Lawyer review of the 7 legal pages + fill every 【待填】 (`LEGAL.md` §4–5)
+- [ ] Write the 取消費 NT$ 500 rule into 預約與取消政策 and 付款與退款政策 (lawyer check)
+- [ ] Commit the 回報 / 取消費 source (client + server + migration `LessonReports`)
 - [ ] Self-host the web font; choose a host with encryption at rest

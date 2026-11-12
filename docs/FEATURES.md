@@ -1,6 +1,6 @@
 # Iris Studio — Features
 
-Version 8 Nov 2026 (v2.1, Iris's decisions built in) · every feature below is in the clickable prototype unless marked.
+Version 12 Nov 2026 (v2.3: 回報 + 取消費 in the demo `docs/demo/iris-studio-demo.html`; source not yet in this branch) · every feature below is in the clickable prototype unless marked.
 Status: ✅ built (client + mock API + backend implementation; backend validated with PostgreSQL integration tests) · 🟡 built, external service still to connect · ⬜ planned.
 Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 
@@ -46,6 +46,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | C7 | Calendar | P0 | ✅ | Month (● ○ ◆ marks, legend) + list with 過去 / 今天 / 即將 filters |
 | C8 | 堂數與付款 | P0 | ✅ | Bank details, package choice, receipt upload (image ≤ 5 MB) **any time** (blocked only while a receipt is waiting), credits added on top, no expiry; Iris-confirmed consultation/interview students also see 單堂課 · 1 堂 · NT$1,500 alongside 4 / 8 lesson packages, once; history with status |
 | C9 | 通知 | P0 | ✅ | List, unread **dot** (not a count), mark all read; reminders and Iris's proposals (到首頁回覆 →) appear here too |
+| C11 | 回報 (past lesson) | P0 | 🟡 demo | 行事曆 → 列表 → 過去: **回報** on 已上課 lessons up to 7 days after; dialog 要申請取消這堂課嗎？ states +1 堂 and 取消費 NT$ 500 first, optional reason; 返回 sends nothing, 確定 → ◆ 待審核 (撤回 while open); then ✕ 已取消（回報）with the fee, or 已上課 + Iris's reason. 堂數與付款 shows 未付取消費 and the total to transfer |
 | C10 | Profile | P0 | ✅ | Edit name, email, phone, LINE ID, voice type, goal; logout |
 
 ## D. Teacher app
@@ -71,6 +72,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | D17 | Automatic reminder at 0 credits | P0 | 🟡 | Queued by the booking that uses the last credit; skipped if a receipt is pending or a reminder went out < 24 h ago; dropped if that lesson is cancelled with refund. Delivery as D7 |
 | D18 | Propose a new time | P0 | ✅ | Sheet from 學生詳細, 行事曆 or 婉拒: slot picker + message; replaces the student's open request; lesson moves only on the student's 可以 |
 | D19 | Automatic attendance | P0 | ✅ | Booked lessons become 已上課 once their end time passes (server job every minute) |
+| D21 | 回報 審核 | P0 | 🟡 demo | 收件匣 → 申請 → **回報** sub-tab (counted in the 收件匣 badge and 學生申請 tile): student, lesson, reason, effect line; 這次免收取消費 tick box; 同意 (+1 堂, fee on next receipt) / 婉拒 (reason required); undo 30 s (blocked once the fee is on a receipt); receipt modal lists 方案 + 取消費 |
 | D20 | 團體課 (several students per slot) | — | ⬜ | **Pending decision** |
 
 ## E. Cross-cutting

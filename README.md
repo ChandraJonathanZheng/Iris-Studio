@@ -110,3 +110,8 @@ node e2e/smoke.mjs                # 22 checks: idempotency, undo, rollback, back
 - [ ] HTTPS (the auth cookie is `Secure` outside Development)
 - [ ] LINE Login channel + callback URL; LINE Messaging and Gmail SMTP credentials, then `Notifications:Enabled=true` for external notifications
 - [ ] Backups for the database and `App_Data/receipts`
+
+
+## Clickable demo
+
+`docs/demo/iris-studio-demo.html` — single-file build of the prototype (mock API, demo accounts), 12 Nov 2026. Open it directly in a browser. Bank details in it are placeholders.
