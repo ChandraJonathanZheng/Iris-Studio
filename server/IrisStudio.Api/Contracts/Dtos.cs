@@ -11,12 +11,12 @@ public record MeDto(Guid Id, string Name, string Role, string Status, string? Em
     string ClassType, bool TrialAvailable, bool EmailVerified, bool EmailUpdates, bool EmailReminders);
 
 public record ChangeInfoDto(Guid Id, string ToDate, string ToTime, string Reason, string By);
-public record LessonDto(Guid Id, string Date, string Time, string Status, string Type, int Minutes, string Room, Guid StudentId, string StudentName, ChangeInfoDto? Change);
+public record LessonDto(Guid Id, string Date, string Time, string Status, string Type, int Minutes, string Room, Guid StudentId, string StudentName, ChangeInfoDto? Change, bool CancelledByReport, ReportInfoDto? Report);
 public record DayDto(string Date, string State);
 public record SlotDto(string Time, string State);
 public record AlertDto(Guid Id, string Kind, string Title, string Body, DateTime CreatedAt, bool Read);
 public record PaymentDto(Guid Id, Guid StudentId, string StudentName, int PackageSize, int Amount, string Status, DateTime UploadedAt,
-    string? Note, string? RejectReason, string ReceiptUrl, string? Lqip, bool Trial);
+    string? Note, string? RejectReason, string ReceiptUrl, string? Lqip, bool Trial, int FeeAmount, int PackageAmount);
 public record NextLessonDto(string Date, string Time);
 public record StudentSummaryDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType);
 public record StudentDetailDto(Guid Id, string Name, string Status, string ClassType, int Credits, int Booked, NextLessonDto? NextLesson, bool PaymentPending, string? LineId, string? VoiceType,
@@ -26,16 +26,16 @@ public record RemindRequest(string Message);
 public record RemindResult(Guid Id, string Channel);
 public record ChangeRequestDto(Guid Id, Guid LessonId, Guid StudentId, string StudentName, string FromDate, string FromTime, string ToDate, string ToTime, string Reason, bool SlotFree, DateTime CreatedAt);
 public record ApplicationDto(Guid Id, string Name, string? Email, DateTime CreatedAt);
-public record RequestsDto(ChangeRequestDto[] Changes, ApplicationDto[] Applications, ProposalDto[] Proposals);
+public record RequestsDto(ChangeRequestDto[] Changes, ApplicationDto[] Applications, ProposalDto[] Proposals, LessonReportDto[] Reports);
 /// <summary>A time change Iris proposed: open ones wait for the student, answered ones stay visible for 7 days.</summary>
 public record ProposalDto(Guid Id, Guid LessonId, Guid StudentId, string StudentName, string FromDate, string FromTime, string ToDate, string ToTime,
     string Message, string Status, DateTime CreatedAt, DateTime? DecidedAt);
 public record ProposeRequest(string Date, string Time, string? Message);
-public record CountsDto(int Receipts, int ReceiptsAmount, int Changes, int Applications, int Consults);
+public record CountsDto(int Receipts, int ReceiptsAmount, int Changes, int Applications, int Consults, int Reports);
 public record OverviewDto(LessonDto[] Today, CountsDto Counts, StudentSummaryDto[] OutOfQuota);
 public record ConsultDto(Guid Id, string Name, string ContactType, string Contact, string PreferredTime, string Topic, DateTime CreatedAt, bool Contacted,
     string? ScheduledDate, string? ScheduledTime, string? ScheduleNote);
-public record StudioDto(int LessonMinutes, int CancelHours, int MoveHours, PackageOption[] Packages, BankOption Bank, TeacherPublicDto Teacher);
+public record StudioDto(int LessonMinutes, int CancelHours, int MoveHours, PackageOption[] Packages, BankOption Bank, TeacherPublicDto Teacher, int ReportDays, int CancelFee);
 /// <summary>What students may see about Iris. LineId only when she chose to show it.</summary>
 public record TeacherPublicDto(string Name, string? AvatarUrl, string Status, string? StatusLabel, string? StatusMessage, string? LineId);
 public record TeacherProfileDto(string Name, string? Email, bool EmailVerified, bool LineLinked, bool HasPassword, string? LineId, bool LineIdPublic,
@@ -66,6 +66,11 @@ public record ProfileRequest(string? Name, string? Email, string? Phone, string?
 public record ConsultRequest(string Name, string ContactType, string Contact, string PreferredTime, string? Topic);
 public record MessageRequest(string? Message);
 public record ReasonRequest(string? Reason);
+public record ApproveReportRequest(bool WaiveFee);
+public record ReportInfoDto(Guid Id, string Status, string? Reason, string? DeclineReason, bool FeeWaived, int FeeAmount);
+public record LessonReportDto(Guid Id, Guid LessonId, Guid StudentId, string StudentName, string Date, string Time, int Minutes, string? Reason, string Status, DateTime CreatedAt);
+public record FeeDto(Guid Id, Guid LessonId, int Amount, string Status, Guid? PaymentId);
+
 /// <summary>Manual credit change. Reason is required by the UI (補課 / 贈送 / 修正錯誤 / 其他 + note) and kept in the audit log.</summary>
 public record DeltaRequest(int Delta, string? Reason = null);
 public record ContactedRequest(bool Contacted);
@@ -87,10 +92,11 @@ public static class Map
 
     public static LessonDto Lesson(Lesson l, string room, ChangeRequest? open) => new(
         l.Id, D(l.Date), T(l.Time), l.Status.ToString(), l.Type.Camel(), l.DurationMinutes, room, l.StudentId, l.Student?.Name ?? "",
-        open is null ? null : new ChangeInfoDto(open.Id, D(open.ToDate), T(open.ToTime), open.Reason, open.ProposedBy.Camel()));
+        open is null ? null : new ChangeInfoDto(open.Id, D(open.ToDate), T(open.ToTime), open.Reason, open.ProposedBy.Camel()), l.CancelledByReport,
+        l.Reports.Where(r => r.Status != ReportStatus.Withdrawn).Select(r => new ReportInfoDto(r.Id, r.Status.ToString(), r.Reason, r.DeclineReason, r.FeeWaived, r.Fee?.Amount ?? 0)).FirstOrDefault());
 
     public static PaymentDto Payment(Payment p) => new(p.Id, p.StudentId, p.Student?.Name ?? "", p.PackageSize, p.Amount, p.Status.ToString(),
-        DateTime.SpecifyKind(p.UploadedAtUtc, DateTimeKind.Utc), p.Note, p.RejectReason, $"/api/receipts/{p.Id}", p.Lqip, p.IsTrial);
+        DateTime.SpecifyKind(p.UploadedAtUtc, DateTimeKind.Utc), p.Note, p.RejectReason, $"/api/receipts/{p.Id}", p.Lqip, p.IsTrial, p.FeeAmount, p.Amount - p.FeeAmount);
 
     public static ConsultDto Consult(Consult c) => new(c.Id, c.Name, c.ContactType, c.Contact, c.PreferredTime, c.Topic,
         DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc), c.Contacted,

@@ -26,6 +26,17 @@ dotnet ef migrations add <Name> --project IrisStudio.Api --context SqlServerDbCo
 dotnet ef migrations add <Name> --project IrisStudio.Api --context AppDbContext --output-dir Data/Migrations -- --Database:Provider PostgreSql
 ```
 
+`LessonReportsAndPasswordHistory` adds the report and cancellation-fee tables,
+password history, `Lessons.CancelledByReport`, and the payment fee snapshot columns
+for both providers. Startup applies it automatically. If startup reports
+`PendingModelChangesWarning`, the current model and that provider's migration
+snapshot differ; add the missing migration instead of disabling the check.
+The database-free `MigrationModelTests` checks both snapshots:
+
+```powershell
+dotnet test IrisStudio.Api.Tests --filter FullyQualifiedName~MigrationModelTests
+```
+
 To apply migrations separately, configure the connection, then run `dotnet ef database update --project IrisStudio.Api --context SqlServerDbContext -- --Database:Provider SqlServer` (or `AppDbContext` for PostgreSQL, with `-- --Database:Provider PostgreSql`). Each provider maintains its own migration history; switching providers does not copy existing data.
 
 ## Configuration

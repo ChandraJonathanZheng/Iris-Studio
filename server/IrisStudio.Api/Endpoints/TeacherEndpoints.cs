@@ -23,7 +23,8 @@ public static class TeacherEndpoints
                 pending.Count, pending.Sum(),
                 await db.ChangeRequests.CountAsync(c => c.Status == ChangeStatus.Open && c.ProposedBy == ChangeBy.Student, ct),
                 await db.Users.CountAsync(u => u.Role == Role.Student && u.Status == UserStatus.Pending && !u.Declined, ct),
-                await db.Consults.CountAsync(c => !c.Contacted, ct));
+                await db.Consults.CountAsync(c => !c.Contacted, ct),
+                await db.LessonReports.CountAsync(r => r.Status == ReportStatus.Open, ct));
             var outIds = await db.Users.Where(u => u.Role == Role.Student && u.Status == UserStatus.Active && u.Credits == 0).Select(u => u.Id).ToListAsync(ct);
             return TypedResults.Ok(new OverviewDto(
                 lessons.Select(l => Map.Lesson(l, o.Value.Room, null)).ToArray(), counts,
@@ -166,8 +167,18 @@ public static class TeacherEndpoints
             var proposals = props.Select(c => new ProposalDto(c.Id, c.LessonId, c.Lesson.StudentId, c.Lesson.Student.Name,
                 Map.D(c.PrevDate ?? c.Lesson.Date), Map.T(c.PrevTime ?? c.Lesson.Time), Map.D(c.ToDate), Map.T(c.ToTime), c.Reason, c.Status.Camel(),
                 DateTime.SpecifyKind(c.CreatedAtUtc, DateTimeKind.Utc), c.DecidedAtUtc is { } x ? DateTime.SpecifyKind(x, DateTimeKind.Utc) : null)).ToArray();
-            return TypedResults.Ok(new RequestsDto(changes, apps, proposals));
+            var reports = await db.LessonReports.AsNoTracking().Include(r => r.Lesson).ThenInclude(l => l.Student)
+                .Where(r => r.Status == ReportStatus.Open).OrderBy(r => r.CreatedAtUtc)
+                .Select(r => new LessonReportDto(r.Id, r.LessonId, r.StudentId, r.Lesson.Student.Name, Map.D(r.Lesson.Date), Map.T(r.Lesson.Time), r.Lesson.DurationMinutes, r.Reason, r.Status.ToString(), r.CreatedAtUtc)).ToArrayAsync(ct);
+            return TypedResults.Ok(new RequestsDto(changes, apps, proposals, reports));
         });
+
+        t.MapPost("/reports/{id:guid}/approve", async (Guid id, ApproveReportRequest r, HttpContext http, BookingService b, CancellationToken ct) =>
+        { await b.DecideReportAsync(id, true, r.WaiveFee, null, http.User.UserId(), ct); return Results.NoContent(); }).AddEndpointFilter<IdempotencyFilter>();
+        t.MapPost("/reports/{id:guid}/decline", async (Guid id, MessageRequest r, HttpContext http, BookingService b, CancellationToken ct) =>
+        { await b.DecideReportAsync(id, false, false, r.Message, http.User.UserId(), ct); return Results.NoContent(); });
+        t.MapPost("/reports/{id:guid}/undo", async (Guid id, HttpContext http, BookingService b, CancellationToken ct) =>
+        { await b.UndoReportAsync(id, http.User.UserId(), ct); return Results.NoContent(); });
 
         // 老師提議改時間: Iris suggests a new slot, the lesson only moves when the student accepts.
         t.MapPost("/lessons/{id:guid}/proposals", async (Guid id, ProposeRequest r, BookingService b, CancellationToken ct) =>

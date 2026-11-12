@@ -19,7 +19,7 @@ public static class PublicAuthEndpoints
         {
             var t = await db.Users.AsNoTracking().FirstAsync(u => u.Role == Role.Teacher, ct);
             var teacher = new TeacherPublicDto(t.Name, t.AvatarUrl, t.TeacherStatus.Camel(), t.StatusLabel, t.StatusMessage, t.LineIdPublic ? t.LineId : null);
-            return TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.Packages, o.Value.Bank, teacher));
+            return TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.Packages, o.Value.Bank, teacher, o.Value.ReportDays, o.Value.CancelFee));
         });
         // avatars are public on purpose (students and the website show them); file names are random
         pub.MapGet("/avatars/{name}", (string name, IOptions<StudioOptions> o, IWebHostEnvironment env, HttpContext http) =>
@@ -146,13 +146,16 @@ public static class PublicAuthEndpoints
                 : Problems.Of(400, "invalid_token", "重設連結已失效或已使用過，請重新申請。");
         }).RequireRateLimiting("password-reset");
 
-        auth.MapPost("/auth/reset-password", async (ResetPasswordRequest r, HttpContext http, AppDbContext db, AccountTokens tokens, JwtSession sessions, PasswordHasher<User> hasher, CancellationToken ct) =>
+        auth.MapPost("/auth/reset-password", async (ResetPasswordRequest r, HttpContext http, AppDbContext db, AccountTokens tokens, JwtSession sessions, PasswordHasher<User> hasher, StudioClock clock, CancellationToken ct) =>
         {
             http.Response.Headers.CacheControl = "no-store";
-            if ((r.Password ?? "").Length is < 8 or > 128) return Problems.Of(400, "validation", "密碼請使用 8–128 個字元。");
+            if (PasswordService.RuleProblem(r.Password) is { } rule) return Problems.Of(400, "validation", rule);
             await using var tx = await StudioTransaction.BeginAsync(db, ct);
             if (await tokens.ConsumeAsync(r.Token, AuthTokenPurpose.ResetPassword, ct) is not { } u)
                 return Problems.Of(400, "invalid_token", "重設連結已失效或已使用過，請重新申請。");
+            if (await PasswordService.WasUsedAsync(db, u, r.Password!, hasher, ct))
+                return Problems.Of(400, "password_reused", "不能和最近 3 次的密碼相同。");
+            db.PasswordHistories.Add(new PasswordHistory { UserId = u.Id, PasswordHash = u.PasswordHash!, CreatedAtUtc = clock.UtcNow });
             u.PasswordHash = hasher.HashPassword(u, r.Password!);
             u.SessionVersion++;    // every existing session (other devices, a stolen cookie) stops working
             u.EmailVerified = true; // the link reached this inbox
@@ -185,7 +188,7 @@ public static class PublicAuthEndpoints
             var name = (r.Name ?? "").Trim();
             var email = (r.Email ?? "").Trim().ToLowerInvariant();
             if (name.Length is 0 or > 80 || !Input.IsEmail(email)) return Problems.Of(400, "validation", "請填寫姓名和正確的 Email。");
-            if ((r.Password ?? "").Length is < 8 or > 128) return Problems.Of(400, "validation", "密碼至少 8 個字元。");
+            if (PasswordService.RuleProblem(r.Password) is { } rule) return Problems.Of(400, "validation", rule);
             if (await db.Users.AnyAsync(u => u.Email == email, ct)) return Problems.Of(409, "email_taken", "這個 Email 已經註冊過了，請直接登入。");
             var u = new User { Name = name, Email = email, Phone = string.IsNullOrWhiteSpace(r.Phone) ? null : r.Phone.Trim() };
             u.PasswordHash = hasher.HashPassword(u, r.Password!);

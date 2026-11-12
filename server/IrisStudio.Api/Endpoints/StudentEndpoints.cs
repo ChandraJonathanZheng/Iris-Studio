@@ -66,6 +66,23 @@ public static class StudentEndpoints
             return TypedResults.Ok(lessons.Select(l => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id))).ToArray());
         });
 
+        s.MapPost("/lessons/{id:guid}/reports", async (Guid id, ReasonRequest r, HttpContext http, BookingService booking, CancellationToken ct) =>
+        {
+            var report = await booking.ReportAsync(http.User.UserId(), id, r.Reason, ct);
+            return Results.Created($"/api/student/reports/{report.Id}", new { report.Id });
+        }).AddEndpointFilter<IdempotencyFilter>();
+        s.MapPost("/reports/{id:guid}/withdraw", async (Guid id, HttpContext http, BookingService booking, CancellationToken ct) =>
+        {
+            await booking.WithdrawReportAsync(http.User.UserId(), id, ct);
+            return Results.NoContent();
+        });
+        s.MapGet("/fees", async (HttpContext http, AppDbContext db, CancellationToken ct) =>
+        {
+            var studentId = http.User.UserId();
+            return Results.Ok(await db.CancellationFees.AsNoTracking().Where(f => f.StudentId == studentId && f.Status != FeeStatus.Paid)
+                .Select(f => new FeeDto(f.Id, f.LessonId, f.Amount, f.Status.ToString(), f.PaymentId)).ToArrayAsync(ct));
+        });
+
         s.MapPost("/lessons", async (BookRequest r, HttpContext http, BookingService booking, AppDbContext db, IOptions<StudioOptions> o, CancellationToken ct) =>
         {
             if (!Map.TryParseSlot(r.Date, r.Time, out var d, out var t)) return Problems.Of(400, "validation", "日期或時間格式不正確。");
@@ -175,6 +192,11 @@ public static class StudentEndpoints
 
             var note = form["note"].ToString().Trim();
             var p = new Payment { UploadedAtUtc = clock.UtcNow, StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, IsTrial = pkg.Trial, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
+            var fees = await db.CancellationFees.Where(f => f.StudentId == me && f.Status == FeeStatus.Unpaid).ToListAsync(ct);
+            p.FeeAmount = fees.Sum(f => f.Amount);
+            p.FeeIds = string.Join(',', fees.Select(f => f.Id));
+            p.Amount += p.FeeAmount;
+            foreach (var fee in fees) { fee.PaymentId = p.Id; fee.Status = FeeStatus.Billed; }
             db.Payments.Add(p);
             Dictionary<string, string> Receipt() => new()
             {

@@ -8,7 +8,7 @@ public enum LessonType { Private, Group, Trial }
 public enum ChangeStatus { Open, Approved, Declined, Withdrawn }
 public enum PaymentStatus { Pending, Confirmed, Rejected }
 /// <summary>Stored as text (see AppDbContext.ConfigureConventions). Reminder = Iris's manual 通知學生繳學費.</summary>
-public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal }
+public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal, Report }
 /// <summary>Who asked for the time change: the student (Iris approves) or Iris (the student accepts).</summary>
 public enum ChangeBy { Student, Teacher }
 
@@ -124,6 +124,8 @@ public class Lesson
     public DateTime? CancelledAtUtc { get; set; }
     public bool Refunded { get; set; }
     public bool CancelledByTeacher { get; set; }
+    public bool CancelledByReport { get; set; }
+    public List<LessonReport> Reports { get; set; } = [];
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -153,6 +155,8 @@ public class Payment
     public User Student { get; set; } = null!;
     public int PackageSize { get; set; }
     public int Amount { get; set; }
+    public int FeeAmount { get; set; }
+    public string FeeIds { get; set; } = "";
     public int? PreviousPackageSize { get; set; }
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
     public required string ReceiptPath { get; set; }

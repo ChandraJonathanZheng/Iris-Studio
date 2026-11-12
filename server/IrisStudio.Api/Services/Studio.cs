@@ -8,6 +8,9 @@ public class StudioOptions
     public int CancelHours { get; set; } = 24;
     /// <summary>改時間 is only possible this many hours (or more) before the lesson starts.</summary>
     public int MoveHours { get; set; } = 12;
+    public int ReportDays { get; set; } = 7;
+    public int CancelFee { get; set; } = 500;
+    public int ResetLinkMinutes { get; set; } = 30;
     public int UndoSeconds { get; set; } = 30;
     public int AlertDelaySeconds { get; set; } = 10;
     public PackageOption[] Packages { get; set; } = [];

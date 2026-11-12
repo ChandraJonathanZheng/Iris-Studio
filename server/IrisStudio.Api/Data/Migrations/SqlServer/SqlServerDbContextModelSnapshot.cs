@@ -139,6 +139,52 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                     b.ToTable("BookingSettings");
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.CancellationFee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ReportId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LessonId");
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("ReportId")
+                        .IsUnique();
+
+                    b.HasIndex("StudentId", "Status");
+
+                    b.ToTable("CancellationFees", t =>
+                        {
+                            t.HasCheckConstraint("CK_Fee_Amount", "[Amount] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.ChangeRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -529,6 +575,9 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                     b.Property<DateTime?>("CancelledAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("CancelledByReport")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("CancelledByTeacher")
                         .HasColumnType("bit");
 
@@ -572,6 +621,75 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                     b.ToTable("Lessons");
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.LessonReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DecidedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeclineReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<bool>("FeeWaived")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("LessonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LessonId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_LessonReport_Lesson")
+                        .HasFilter("[Status] <> 'Withdrawn'");
+
+                    b.HasIndex("StudentId", "Status");
+
+                    b.ToTable("LessonReports");
+                });
+
+            modelBuilder.Entity("IrisStudio.Api.Data.PasswordHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAtUtc");
+
+                    b.ToTable("PasswordHistories");
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -587,6 +705,13 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
 
                     b.Property<DateTime?>("DecidedAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("FeeAmount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FeeIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsTrial")
                         .HasColumnType("bit");
@@ -837,6 +962,32 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.CancellationFee", b =>
+                {
+                    b.HasOne("IrisStudio.Api.Data.Lesson", null)
+                        .WithMany()
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("IrisStudio.Api.Data.Payment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("IrisStudio.Api.Data.LessonReport", null)
+                        .WithOne("Fee")
+                        .HasForeignKey("IrisStudio.Api.Data.CancellationFee", "ReportId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("IrisStudio.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.ChangeRequest", b =>
                 {
                     b.HasOne("IrisStudio.Api.Data.Lesson", "Lesson")
@@ -899,6 +1050,32 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                     b.Navigation("Student");
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.LessonReport", b =>
+                {
+                    b.HasOne("IrisStudio.Api.Data.Lesson", "Lesson")
+                        .WithMany("Reports")
+                        .HasForeignKey("LessonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("IrisStudio.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lesson");
+                });
+
+            modelBuilder.Entity("IrisStudio.Api.Data.PasswordHistory", b =>
+                {
+                    b.HasOne("IrisStudio.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.Payment", b =>
                 {
                     b.HasOne("IrisStudio.Api.Data.User", "Student")
@@ -908,6 +1085,16 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                         .IsRequired();
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("IrisStudio.Api.Data.Lesson", b =>
+                {
+                    b.Navigation("Reports");
+                });
+
+            modelBuilder.Entity("IrisStudio.Api.Data.LessonReport", b =>
+                {
+                    b.Navigation("Fee");
                 });
 #pragma warning restore 612, 618
         }

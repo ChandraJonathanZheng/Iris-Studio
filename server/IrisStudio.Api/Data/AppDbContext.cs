@@ -8,6 +8,9 @@ public class AppDbContext : DbContext
     protected AppDbContext(DbContextOptions options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<LessonReport> LessonReports => Set<LessonReport>();
+    public DbSet<CancellationFee> CancellationFees => Set<CancellationFee>();
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<ChangeRequest> ChangeRequests => Set<ChangeRequest>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -27,6 +30,8 @@ public class AppDbContext : DbContext
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
         // Enums stored as readable text ("Booked"), not numbers: safer when values are added later.
+        b.Properties<ReportStatus>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<FeeStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<Role>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<UserStatus>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<LessonStatus>().HaveConversion<string>().HaveMaxLength(16);
@@ -48,6 +53,32 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder m)
     {
         var sqlServer = Database.IsSqlServer();
+        m.Entity<LessonReport>(e =>
+        {
+            e.Property(x => x.Reason).HasMaxLength(300);
+            e.Property(x => x.DeclineReason).HasMaxLength(300);
+            e.HasIndex(x => x.LessonId).IsUnique().HasDatabaseName("UX_LessonReport_Lesson")
+                .HasFilter(sqlServer ? "[Status] <> 'Withdrawn'" : "\"Status\" <> 'Withdrawn'");
+            e.HasIndex(x => new { x.StudentId, x.Status });
+            e.HasOne(x => x.Lesson).WithMany(l => l.Reports).HasForeignKey(x => x.LessonId).OnDelete(DeleteBehavior.Restrict);
+            e.Navigation(x => x.Fee).AutoInclude();
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Restrict);
+        });
+        m.Entity<CancellationFee>(e =>
+        {
+            e.HasIndex(x => x.ReportId).IsUnique();
+            e.HasIndex(x => new { x.StudentId, x.Status });
+            e.HasOne<LessonReport>().WithOne(r => r.Fee).HasForeignKey<CancellationFee>(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Lesson>().WithMany().HasForeignKey(x => x.LessonId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Payment>().WithMany().HasForeignKey(x => x.PaymentId).OnDelete(DeleteBehavior.Restrict);
+            e.ToTable(t => t.HasCheckConstraint("CK_Fee_Amount", sqlServer ? "[Amount] >= 0" : "\"Amount\" >= 0"));
+        });
+        m.Entity<PasswordHistory>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         m.Entity<InstagramReel>(e =>
         {
             e.Property(x => x.Url).HasMaxLength(200);
@@ -94,6 +125,7 @@ public class AppDbContext : DbContext
 
         m.Entity<Lesson>(e =>
         {
+            e.Navigation(x => x.Reports).AutoInclude();
             // The real guard against double booking: only one BOOKED lesson per slot.
             e.HasIndex(x => new { x.Date, x.Time }).IsUnique().HasFilter(sqlServer ? "[Status] = 'Booked'" : "\"Status\" = 'Booked'").HasDatabaseName("UX_Lesson_Slot_Booked");
             e.HasIndex(x => new { x.StudentId, x.Date });

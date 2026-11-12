@@ -186,10 +186,10 @@ public sealed class UnsubscribeLinks(IDataProtectionProvider protection, IOption
 /// Email verification and password reset links. The raw token lives only in the email; the database keeps its SHA-256.
 /// A new link cancels older ones of the same kind, a link works once, and requests are throttled per account.
 /// </summary>
-public sealed class AccountTokens(AppDbContext db, StudioClock clock, AlertService alerts)
+public sealed class AccountTokens(AppDbContext db, StudioClock clock, AlertService alerts, Microsoft.Extensions.Options.IOptions<StudioOptions> options)
 {
     public static readonly TimeSpan VerifyLifetime = TimeSpan.FromHours(48);
-    public static readonly TimeSpan ResetLifetime = TimeSpan.FromMinutes(60);
+    public static readonly TimeSpan ResetLifetime = TimeSpan.FromMinutes(30);
     public static readonly TimeSpan Cooldown = TimeSpan.FromMinutes(2);
 
     /// <summary>Queues a verification email (caller saves). False when there is nothing to verify or one was just sent.</summary>
@@ -208,10 +208,10 @@ public sealed class AccountTokens(AppDbContext db, StudioClock clock, AlertServi
     {
         if (u.Declined || string.IsNullOrWhiteSpace(u.Email) || string.IsNullOrWhiteSpace(u.PasswordHash)
             || await RecentAsync(u.Id, AuthTokenPurpose.ResetPassword, ct)) return false;
-        var (token, raw) = await IssueAsync(u, AuthTokenPurpose.ResetPassword, ResetLifetime, ct);
+        var (token, raw) = await IssueAsync(u, AuthTokenPurpose.ResetPassword, TimeSpan.FromMinutes(options.Value.ResetLinkMinutes), ct);
         await alerts.EmailAsync(u, "password-reset", new()
         {
-            ["expiresIn"] = "60 分鐘", ["resetUrl"] = $"/reset-password?token={raw}", [EmailGuard.TokenId] = token.Id.ToString(),
+            ["expiresIn"] = $"{options.Value.ResetLinkMinutes} 分鐘", ["resetUrl"] = $"/reset-password?token={raw}", [EmailGuard.TokenId] = token.Id.ToString(),
         }, $"reset:{token.Id}", delay: false, ct: ct);
         return true;
     }
@@ -250,7 +250,7 @@ public sealed class AccountTokens(AppDbContext db, StudioClock clock, AlertServi
 
     private Task<bool> RecentAsync(Guid userId, AuthTokenPurpose purpose, CancellationToken ct)
     {
-        var since = clock.UtcNow - Cooldown;
+        var since = clock.UtcNow - (purpose == AuthTokenPurpose.ResetPassword ? TimeSpan.FromMinutes(1) : Cooldown);
         return db.AuthTokens.AnyAsync(t => t.UserId == userId && t.Purpose == purpose && t.CreatedAtUtc > since, ct);
     }
 

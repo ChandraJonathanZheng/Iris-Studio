@@ -1,12 +1,14 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../lib/api';
 import { qk } from '../lib/queries';
 import { Field, PasswordInput } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
 
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+import { PasswordRules } from '../components/PasswordRules';
+import { passwordProblem } from '../lib/password';
+import { useEmailError, emailProblem } from '../lib/useEmailError';
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : '發生錯誤，請稍後再試。');
 const emailLogin = (email = '') => `/login?method=email${email ? `&email=${encodeURIComponent(email)}` : ''}`;
 
@@ -65,14 +67,15 @@ export function ForgotPassword() {
   const [cooldownUntil, setCooldownUntil] = useState(0);
   const remaining = useCooldown(cooldownUntil);
   const [error, setError] = useState('');
-  const bad = !EMAIL_RE.test(email.trim());
+  const bad = !!emailProblem(email);
+  const emailError = useEmailError(email, tried);
   const request = async (address: string) => {
     if (busy) return;
     setBusy(true); setError('');
     try {
       await api.post('/api/auth/forgot-password', { email: address });
       setSentTo(address);
-      setCooldownUntil(Date.now() + 120_000);
+      setCooldownUntil(Date.now() + 60_000);
     } catch (err) { setError(errText(err)); }
     finally { setBusy(false); }
   };
@@ -87,17 +90,17 @@ export function ForgotPassword() {
       <span className="pw-done-rule" aria-hidden="true" />
       <span className="pw-done-mark" aria-hidden="true"><Icon name="mail" size={34} /></span>
       <h1 className="pw-done-title" id="fp-sent-title" tabIndex={-1} ref={(el) => el?.focus()}>請查看你的信箱</h1>
-      <p className="pw-done-lead fp-lead">我們已寄出重設密碼的連結到<br /><b className="account-email">{sentTo}</b>。</p>
+      <p className="pw-done-lead fp-lead">如果這個 Email 有註冊密碼帳號，我們會寄送重設連結到<br /><b className="account-email">{sentTo}</b>。</p>
       <div className="fp-note">
         <Icon name="clock" size={26} />
-        <div><p className="fp-note-t">連結在 60 分鐘內有效，且只能使用一次。</p>
+        <div><p className="fp-note-t">連結在 30 分鐘內有效，且只能使用一次。</p>
           <p className="fp-note-s">沒收到信？請檢查垃圾郵件匣，或稍等幾分鐘再試。</p></div>
       </div>
       {error && <p className="err" role="alert">{error}</p>}
       <button className="btn primary pw-done-cta fp-cta" disabled={busy || remaining > 0} onClick={() => void request(sentTo)}>
         {busy ? '寄送中…' : remaining > 0 ? `重新寄送（${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}）` : '重新寄送連結'}
       </button>
-      <p className="fp-hint">2 分鐘後可重新寄送；新的連結會取代舊的連結。</p>
+      <p className="fp-hint">1 分鐘後可重新寄送；新的連結會取代舊的連結。</p>
       <div className="fp-actions">
         <button type="button" className="fp-link" onClick={() => { setSentTo(null); setTried(false); setError(''); }}>修改 Email</button>
         <Link className="fp-link" to={emailLogin(sentTo)}>回到登入<Icon name="arrow" size={18} /></Link>
@@ -114,12 +117,12 @@ export function ForgotPassword() {
         <p className="pw-done-lead fp-lead">輸入註冊時使用的 Email，我們會寄送設定新密碼的連結。</p>
       </div>
       <form className="stack" onSubmit={submit} noValidate aria-busy={busy}>
-        <Field id="fp-email" label="登入 Email" error={tried && bad ? '請填寫正確的 Email。' : undefined}>
-          <input id="fp-email" ref={emailInput} className="input" type="email" autoComplete="email" inputMode="email" maxLength={200} autoFocus disabled={busy}
+        <Field id="fp-email" label="Email" required error={emailError}>
+          <input id="fp-email" required placeholder="you@example.com" ref={emailInput} className="input" type="email" autoComplete="email" inputMode="email" maxLength={200} autoFocus disabled={busy}
             value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={(tried && bad) || undefined} aria-describedby={tried && bad ? 'fp-email-err' : undefined} />
         </Field>
         {error && <p className="err" role="alert">{error}</p>}
-        <button className="btn primary block" disabled={busy}>{busy ? '寄送中…' : '寄送重設連結'}</button>
+        <button className="btn primary block" disabled={busy}>{busy ? '處理中…' : '寄送重設連結'}</button>
       </form>
       <div className="fp-line">
         <p className="fp-note-t">平常用 LINE 登入？</p>
@@ -140,7 +143,8 @@ export function ResetPassword() {
   const [checkAttempt, setCheckAttempt] = useState(0);
   const [tried, setTried] = useState(false);
   const [error, setError] = useState('');
-  const short = password.length < 8; const mismatch = again !== password;
+  const short = !!passwordProblem(password); const mismatch = !again || again !== password;
+  const nav = useNavigate();
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
@@ -165,7 +169,7 @@ export function ResetPassword() {
       qc.clear();
       qc.setQueryData(qk.me, null);
       setPassword(''); setAgain('');
-      setState('done');
+      nav('/login?method=email&reset=success', { replace: true });
     } catch (err) {
       setError(errText(err));
       setState(err instanceof ApiError && err.code === 'invalid_token' ? 'invalid' : 'ready');
@@ -211,15 +215,15 @@ export function ResetPassword() {
         <p className="pw-done-lead fp-lead">為你的 Email 登入帳號設定新密碼。</p>
       </div>
       <form className="stack" onSubmit={submit} noValidate aria-busy={state === 'busy'}>
-        <Field id="rp-pw" label="新密碼" error={tried && short ? '密碼至少需要 8 個字元。' : undefined}>
-          <PasswordInput id="rp-pw" value={password} onChange={setPassword} invalid={tried && short} describedBy={tried && short ? 'rp-pw-err' : 'rp-hint'} autoComplete="new-password" disabled={state === 'busy'} />
-          <p id="rp-hint" className={password.length >= 8 ? 'hint ok' : 'hint'}>{password.length >= 8 ? '✓ ' : ''}8–128 個字元，建議使用容易記住的長密碼。</p>
+        <Field id="rp-pw" label="新密碼" required error={tried ? passwordProblem(password) : undefined}>
+          <PasswordInput required placeholder="例如：IrisVoice2026" id="rp-pw" value={password} onChange={setPassword} invalid={tried && short} describedBy={tried && short ? 'rp-pw-err' : 'rp-hint'} autoComplete="new-password" disabled={state === 'busy'} />
+          <div id="rp-hint"><PasswordRules value={password} history /></div>
         </Field>
-        <Field id="rp-again" label="確認新密碼" error={(tried || !!again) && mismatch ? '兩次輸入的密碼不一樣。' : undefined}>
-          <PasswordInput id="rp-again" value={again} onChange={setAgain} invalid={(tried || !!again) && mismatch} describedBy={(tried || !!again) && mismatch ? 'rp-again-err' : undefined} autoComplete="new-password" disabled={state === 'busy'} />
+        <Field id="rp-again" label="確認新密碼" required error={(tried || !!again) && mismatch ? (!again ? '確認新密碼不能空白。' : '兩次輸入的密碼不一樣。') : undefined}>
+          <PasswordInput required placeholder="再次輸入新密碼" id="rp-again" value={again} onChange={setAgain} invalid={(tried || !!again) && mismatch} describedBy={(tried || !!again) && mismatch ? 'rp-again-err' : undefined} autoComplete="new-password" disabled={state === 'busy'} />
         </Field>
         {error && <p className="err" role="alert">{error}</p>}
-        <button className="btn primary block" disabled={state === 'busy'}>{state === 'busy' ? '更新中…' : '更新密碼'}</button>
+        <button className="btn primary auth-confirm" disabled={state === 'busy'}>{state === 'busy' ? '處理中…' : '確認'}</button>
       </form>
       <p className="fp-hint rp-hint">更新後，所有裝置都需要重新登入。</p>
       <Link className="fp-back rp-back" to={emailLogin()}><Icon name="arrow" size={18} />回到登入</Link>

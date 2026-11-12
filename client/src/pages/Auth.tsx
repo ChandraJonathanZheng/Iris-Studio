@@ -5,14 +5,17 @@ import { api, ApiError } from '../lib/api';
 import { qk, useLogout, useMe } from '../lib/queries';
 import type { ConsentInput, Me } from '../lib/types';
 import { Icon } from '../components/Icon';
-import { Field, PasswordInput, Segmented } from '../components/ui';
+import { Field, PasswordInput } from '../components/ui';
 
+import { PasswordRules } from '../components/PasswordRules';
+import { passwordProblem } from '../lib/password';
+import { emailProblem, useEmailError } from '../lib/useEmailError';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
 const PENDING_CONSENT = 'iris-pending-consent';
 
 const DEMO = import.meta.env.MODE === 'mock' || import.meta.env.MODE === 'proto';
 const homeFor = (m: Me) => (m.status === 'Pending' ? '/pending' : m.role === 'Teacher' ? '/teacher' : '/app');
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 
 /** One place that turns an API answer into a signed-in session and a destination. */
 function useEnter() {
@@ -70,10 +73,14 @@ export function Login() {
   const enter = useEnter();
   const [email, setEmail] = useState(() => (search.get('email') ?? '').slice(0, 200)); const [password, setPassword] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'line' | 'email'>(() => search.get('method') === 'email' ? 'email' : 'line');
+  const [tried, setTried] = useState(false);
+  const emailError = useEmailError(email, tried);
 
   const submit = async (e?: FormEvent, creds = { email, password }) => {
-    e?.preventDefault(); setBusy(true); setError('');
+    e?.preventDefault();
+    if (e) { setTried(true); if (emailProblem(email) || !password) { document.getElementById(emailProblem(email) ? 'email' : 'password')?.focus(); return; } }
+    if (busy) return;
+    setBusy(true); setError('');
     try { await api.post('/api/auth/login', creds); await enter(); }
     catch (err) { setError(err instanceof ApiError ? err.message : '登入失敗，請再試一次。'); setBusy(false); }
   };
@@ -90,25 +97,20 @@ export function Login() {
       </div>
       {lineError && <p className="err" role="alert">{lineError}</p>}
       {search.get('reset') === 'success' && <p className="info" role="status">密碼已更新，請使用新密碼登入。</p>}
-      <LineButton label="使用 LINE 登入" />
-      {mode === 'line'
-        ? <button className="btn secondary block" onClick={() => setMode('email')}>使用 Email 登入</button>
-        : (
-          <form className="stack" onSubmit={submit} noValidate>
-            <Field id="email" label="Email" error={error ? ' ' : undefined}>
-              <input id="email" className="input" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!error || undefined} aria-describedby={error ? 'login-err' : undefined} />
-            </Field>
-            <Field id="password" label="密碼" action={<Link className="btn link" to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}>忘記密碼？</Link>}>
-              <PasswordInput id="password" value={password} onChange={setPassword} invalid={!!error} describedBy={error ? 'login-err' : undefined} />
-            </Field>
-            {error && <p id="login-err" className="err" role="alert">{error}</p>}
-            <button className="btn primary block" disabled={busy || !email || !password}>登入</button>
-          </form>
-        )}
-      <div className="fp-actions login-actions">
-        <button type="button" className="fp-link" onClick={() => { setMode('email'); setEmail('iris@studio.local'); setPassword(''); }}>老師登入<Icon name="arrow" size={18} /></button>
-        <Link className="fp-link" to="/register">建立帳號<Icon name="arrow" size={18} /></Link>
-      </div>
+      <form className="stack" onSubmit={submit} noValidate aria-busy={busy}>
+        <Field id="email" label="Email" required error={emailError}>
+          <input id="email" className="input" type="email" required placeholder="you@example.com" maxLength={200} autoComplete="email" inputMode="email" disabled={busy} value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!emailError || undefined} aria-describedby={emailError ? 'email-err' : undefined} />
+        </Field>
+        <Field id="password" label="密碼" required error={tried && !password ? '密碼不能空白。' : undefined}>
+          <PasswordInput id="password" value={password} onChange={setPassword} required disabled={busy} invalid={tried && !password} describedBy={tried && !password ? 'password-err' : undefined} />
+        </Field>
+        <Link className="auth-forgot" to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}>忘記密碼？</Link>
+        {error && <p id="login-err" className="err" role="alert">{error}</p>}
+        <button className="btn primary block" disabled={busy}>{busy ? '處理中…' : '登入'}</button>
+      </form>
+      <div className="auth-divider">其他</div>
+      <div className="auth-alternatives"><LineButton label="LINE 登入" /><button type="button" className="btn secondary" onClick={() => document.getElementById('email')?.focus()}><span aria-hidden>師</span>老師登入</button></div>
+      <Link className="fp-link" to="/register">建立帳號<Icon name="arrow" size={18} /></Link>
       {DEMO && (
         <div className="info stack s2" aria-label="示範帳號">
           <b>示範帳號</b>
@@ -138,9 +140,9 @@ export function Register() {
   const enter = useEnter();
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [tried, setTried] = useState(false); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'line' | 'email'>('line');
+  const [again, setAgain] = useState('');
+  const emailError = useEmailError(email, tried);
   // consents: terms required; media + marketing optional and UNchecked; a minor needs a guardian
-  const [cTried, setCTried] = useState(false); // LINE button checks only the consent block, not the email fields
   const [c, setC] = useState({ terms: false, media: false, marketing: false, minor: false, gName: '', gRel: '', gContact: '', gAgree: false });
 
   const consentErr = !c.terms ? '請閱讀並勾選同意服務條款與隱私權政策。'
@@ -148,25 +150,36 @@ export function Register() {
   const consents = (): ConsentInput => ({ version: CONSENT_VERSION, terms: c.terms, media: c.media, marketing: c.marketing, minor: c.minor,
     guardian: c.minor ? { name: c.gName.trim(), relation: c.gRel.trim(), contact: c.gContact.trim(), agreed: c.gAgree } : null });
 
-  const errs = { name: name.trim() ? '' : '請填寫姓名。', email: EMAIL_RE.test(email.trim()) ? '' : '請填寫正確的 Email。', password: password.length >= 8 ? '' : '' };
-
+  const errs = { email: emailProblem(email), name: name.trim() ? '' : '姓名不能空白。', password: passwordProblem(password), again: !again ? '確認密碼不能空白。' : again !== password ? '兩次輸入的密碼不一樣。' : '' };
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setTried(true); setError('');
-    if (errs.name || errs.email || password.length < 8 || consentErr) return;
+    const first = (['email', 'name', 'password', 'again'] as const).find((key) => errs[key]);
+    if (first || consentErr) { document.getElementById(first ? ({ email: 'reg-email', name: 'name', password: 'reg-pw', again: 'reg-again' })[first] : !c.terms ? 'terms' : !c.gName.trim() ? 'g-name' : !c.gRel ? 'g-rel' : 'g-contact')?.focus(); return; }
+    if (busy) return;
     setBusy(true);
     try { await api.post('/api/auth/register', { name: name.trim(), email: email.trim(), phone: null, password, consents: consents() }); await enter(); }
     catch (err) { setError(err instanceof ApiError ? err.message : '註冊失敗，請再試一次。'); setBusy(false); }
   };
   if (redirect) return redirect;
-
-  return (
-    <div className="auth"><div className="card">
-      <Journey step={0} />
-      <div className="stack s2"><h1 className="h1" style={{ fontSize: 28, lineHeight: '36px' }}>建立帳號</h1><p className="sub">送出後由 Iris 確認，通過就能開始預約。</p></div>
-        {/* consents first: they apply to both ways of signing up */}
-        <fieldset className="au-consent" aria-describedby="consent-err">
+  return <main className="auth"><div className="card register-card">
+    <Journey step={0} /><h1 className="h1">建立帳號</h1><p className="sub">送出後由 Iris 確認，通過就能開始預約。</p>
+    <form className="stack" onSubmit={submit} noValidate aria-busy={busy}>
+      <Field id="reg-email" label="Email" required error={emailError}>
+        <input id="reg-email" className="input" type="email" required placeholder="you@example.com" maxLength={200} autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={!!emailError || undefined} aria-describedby={emailError ? 'reg-email-err' : undefined} disabled={busy} />
+      </Field>
+      <Field id="name" label="姓名" required error={tried ? errs.name : ''}>
+        <input id="name" className="input" required placeholder="例如：王小明" maxLength={80} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={tried && !!errs.name || undefined} aria-describedby={tried && errs.name ? 'name-err' : undefined} disabled={busy} />
+      </Field>
+      <Field id="reg-pw" label="密碼" required error={tried ? errs.password : ''}>
+        <PasswordInput id="reg-pw" value={password} onChange={setPassword} required autoComplete="new-password" placeholder="例如：IrisVoice2026" disabled={busy} invalid={tried && !!errs.password} describedBy={tried && errs.password ? 'reg-pw-err' : undefined} />
+      </Field>
+      <PasswordRules value={password} />
+      <Field id="reg-again" label="確認密碼" required error={tried || again ? errs.again : ''}>
+        <PasswordInput id="reg-again" value={again} onChange={setAgain} required autoComplete="new-password" placeholder="再次輸入密碼" disabled={busy} invalid={(tried || !!again) && !!errs.again} describedBy={(tried || again) && errs.again ? 'reg-again-err' : undefined} />
+      </Field>
+        <fieldset className="au-consent" aria-describedby={tried && consentErr ? "consent-err" : undefined}>
           <legend>開始之前</legend>
-          <label className="au-ck req"><input type="checkbox" checked={c.terms} onChange={(e) => setC({ ...c, terms: e.target.checked })} aria-invalid={(tried || cTried) && !c.terms} />
+          <label className="au-ck req"><input id="terms" type="checkbox" checked={c.terms} onChange={(e) => setC({ ...c, terms: e.target.checked })} aria-invalid={tried && !c.terms} />
             <span>我已閱讀並同意<Link to="/legal/terms" target="_blank">《服務條款》</Link>，並已閱讀<Link to="/legal/privacy" target="_blank">《隱私權政策》</Link>中的個人資料告知事項。<em>（必填）</em></span></label>
           <p className="au-c-group">以下為選擇性同意，不勾選也能正常上課</p>
           <label className="au-ck"><input type="checkbox" checked={c.media} onChange={(e) => setC({ ...c, media: e.target.checked })} />
@@ -178,35 +191,21 @@ export function Register() {
           {c.minor && (
             <div className="au-guardian">
               <p className="au-c-group">法定代理人（父母或監護人）</p>
-              <div className="field"><label htmlFor="g-name">法定代理人姓名</label><input id="g-name" className="input" autoComplete="off" value={c.gName} onChange={(e) => setC({ ...c, gName: e.target.value })} /></div>
+              <div className="field"><label htmlFor="g-name">法定代理人姓名<span className="required"> *</span></label><input id="g-name" className="input" required placeholder="例如：王美玲" autoComplete="off" value={c.gName} onChange={(e) => setC({ ...c, gName: e.target.value })} /></div>
               <div className="field"><label htmlFor="g-rel">關係</label>
-                <select id="g-rel" className="input" value={c.gRel} onChange={(e) => setC({ ...c, gRel: e.target.value })}><option value="">請選擇</option><option>父親</option><option>母親</option><option>監護人</option></select></div>
-              <div className="field"><label htmlFor="g-contact">法定代理人聯絡方式（電話或 Email）</label><input id="g-contact" className="input" autoComplete="off" value={c.gContact} onChange={(e) => setC({ ...c, gContact: e.target.value })} /></div>
+                <select id="g-rel" className="input" required value={c.gRel} onChange={(e) => setC({ ...c, gRel: e.target.value })}><option value="">請選擇</option><option>父親</option><option>母親</option><option>監護人</option></select></div>
+              <div className="field"><label htmlFor="g-contact">法定代理人聯絡方式（電話或 Email）</label><input id="g-contact" className="input" required placeholder="例如：0912-345-678" autoComplete="off" value={c.gContact} onChange={(e) => setC({ ...c, gContact: e.target.value })} /></div>
               <label className="au-ck req"><input type="checkbox" checked={c.gAgree} onChange={(e) => setC({ ...c, gAgree: e.target.checked })} />
                 <span>{CONSENT_TEXT.guardian}<em>（請由法定代理人勾選）</em></span></label>
             </div>
           )}
-          {(tried || cTried) && consentErr && <p className="field-error" id="consent-err">{consentErr}</p>}
+          {tried && consentErr && <p className="field-error" id="consent-err">{consentErr}</p>}
         </fieldset>
-      <Segmented label="註冊方式" value={mode} onChange={setMode} options={[{ value: 'line', label: 'LINE' }, { value: 'email', label: 'Email' }]} />
-      {mode === 'line' ? <LineButton label="使用 LINE 註冊" register consents={consents()} beforeStart={() => { setCTried(true); return !consentErr; }} /> : (
-        <form className="stack" onSubmit={submit} noValidate>
-          <Field id="name" label="姓名" error={tried ? errs.name : ''}>
-            <input id="name" className="input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={(tried && !!errs.name) || undefined} aria-describedby={tried && errs.name ? 'name-err' : undefined} />
-          </Field>
-          <Field id="reg-email" label="Email" error={tried ? errs.email : ''}>
-            <input id="reg-email" className="input" type="email" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={(tried && !!errs.email) || undefined} aria-describedby={tried && errs.email ? 'reg-email-err' : undefined} />
-          </Field>
-          <Field id="reg-pw" label="密碼" hint={<span className={password.length >= 8 ? 'hint ok' : 'hint'}>{password.length >= 8 ? '✓ ' : ''}至少 8 個字元</span>}>
-            <PasswordInput id="reg-pw" value={password} onChange={setPassword} invalid={tried && password.length < 8} />
-          </Field>
-          {error && <p className="err" role="alert">{error}</p>}
-          <button className="btn primary block" disabled={busy}>送出申請</button>
-        </form>
-      )}
-      <p className="cap">已經有帳號？<Link to="/login">登入</Link></p>
-    </div></div>
-  );
+      {error && <p className="err" role="alert">{error}</p>}
+      <button className="btn primary block" disabled={busy}>{busy ? '處理中…' : '建立帳號'}</button>
+    </form>
+    <p className="cap">已經有帳號？<Link to="/login">登入</Link></p>
+  </div></main>;
 }
 
 /** Pending applicants see only this. It polls /api/me every 10 s and enters the app once Iris approves (AUTH-3). */

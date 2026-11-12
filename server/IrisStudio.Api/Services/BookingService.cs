@@ -16,7 +16,7 @@ public class BizException(int status, string code, string message) : Exception(m
 /// ALL lesson and quota rules live here, so student booking, teacher actions, approvals and undo
 /// share the same checks (closed days, valid slots, not in the past, slot free, credits ≥ 0).
 /// </summary>
-public class BookingService(AppDbContext db, StudioClock clock, AlertService alerts, AvailabilityService availability, IOptions<StudioOptions> options)
+public partial class BookingService(AppDbContext db, StudioClock clock, AlertService alerts, AvailabilityService availability, IOptions<StudioOptions> options)
 {
     private readonly StudioOptions _o = options.Value;
 
@@ -158,6 +158,7 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
     {
         var l = await db.Lessons.Include(x => x.Student).FirstOrDefaultAsync(x => x.Id == lessonId && (studentId == null || x.StudentId == studentId), ct)
             ?? throw new BizException(404, "not_found", "找不到這堂課。");
+        if (l.CancelledByReport) throw new BizException(409, "report_cancelled", "請從回報審核復原這堂課。");
         if (l.Status != LessonStatus.Cancelled || l.CancelledAtUtc is null || clock.UtcNow - l.CancelledAtUtc > _o.UndoWindow)
             throw new BizException(409, "undo_expired", "已超過可以復原的時間。");
         if (l.CancelledByTeacher != (studentId is null)) throw new BizException(403, "forbidden", "只能復原自己的取消。");
@@ -372,6 +373,11 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
                 [EmailGuard.PaymentId] = p.Id.ToString(), [EmailGuard.PaymentStatus] = nameof(PaymentStatus.Rejected),
             }, $"pay-rejected:{p.Id}", $"pay:{p.Id}", ct: ct);
         }
+        foreach (var fee in await db.CancellationFees.Where(f => f.PaymentId == p.Id).ToListAsync(ct))
+        {
+            fee.Status = confirm ? FeeStatus.Paid : FeeStatus.Unpaid;
+            if (!confirm) fee.PaymentId = null;
+        }
         p.DecidedAtUtc = clock.UtcNow;
         await db.SaveChangesAsync(ct);
         return true;
@@ -395,6 +401,16 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
                 .OrderByDescending(x => x.DecidedAtUtc).Select(x => (int?)x.PackageSize).FirstOrDefaultAsync(ct) ?? p.PreviousPackageSize ?? 0;
             db.CreditLogs.Add(new CreditLog { StudentId = p.StudentId, Delta = -p.PackageSize, Reason = $"undo-payment:{p.Id}", ByUserId = byUserId, CreatedAtUtc = clock.UtcNow });
         }
+        // A rejected receipt can only return to Pending if its original fees can be reattached unchanged.
+        var linkedFees = await db.CancellationFees.Where(f => f.PaymentId == p.Id).ToListAsync(ct);
+        if (p.Status == PaymentStatus.Rejected && p.FeeAmount > 0)
+        {
+            var originalFeeIds = p.FeeIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToArray();
+            // Reattach only this receipt's original fees.
+            linkedFees = await db.CancellationFees.Where(f => f.StudentId == p.StudentId && f.Status == FeeStatus.Unpaid && originalFeeIds.Contains(f.Id)).ToListAsync(ct);
+            if (linkedFees.Sum(f => f.Amount) != p.FeeAmount) throw new BizException(409, "fee_changed", "取消費已有其他變動，請重新上傳收據。");
+        }
+        foreach (var fee in linkedFees) { fee.PaymentId = p.Id; fee.Status = FeeStatus.Billed; }
         p.Status = PaymentStatus.Pending;
         p.RejectReason = null;
         p.DecidedAtUtc = null;

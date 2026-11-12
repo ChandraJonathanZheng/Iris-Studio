@@ -109,25 +109,25 @@ export function Tabs<T extends string>({ value, options, onChange }: { value: T;
   );
 }
 
-export function Field({ label, error, hint, action, id, children }: { label: string; error?: string; hint?: ReactNode; action?: ReactNode; id: string; children: ReactNode }) {
+export function Field({ label, error, hint, action, id, children, required }: { required?: boolean; label: string; error?: string; hint?: ReactNode; action?: ReactNode; id: string; children: ReactNode }) {
   return (
     <div className="field">
-      {action ? <div className="field-label-row"><label htmlFor={id}>{label}</label>{action}</div> : <label htmlFor={id}>{label}</label>}
+      {action ? <div className="field-label-row"><label htmlFor={id}>{label}{required && <span className="required" aria-hidden> *</span>}</label>{action}</div> : <label htmlFor={id}>{label}{required && <span className="required" aria-hidden> *</span>}</label>}
       {children}
       {error ? <span className="err" id={`${id}-err`}>{error}</span> : hint ? <span className="hint">{hint}</span> : null}
     </div>
   );
 }
 
-export function PasswordInput({ id, value, onChange, invalid, describedBy, autoComplete = 'current-password', disabled }: {
+export function PasswordInput({ id, value, onChange, invalid, describedBy, autoComplete = 'current-password', disabled, placeholder = '請輸入密碼', required }: {
   id: string; value: string; onChange: (v: string) => void; invalid?: boolean; describedBy?: string;
-  autoComplete?: 'current-password' | 'new-password'; disabled?: boolean;
+  autoComplete?: 'current-password' | 'new-password'; disabled?: boolean; placeholder?: string; required?: boolean;
 }) {
   const [show, setShow] = useState(false);
   return (
     <div className="pw">
       <input id={id} className="input" type={show ? 'text' : 'password'} value={value} onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete} maxLength={128} disabled={disabled} aria-invalid={invalid || undefined} aria-describedby={describedBy} />
+        autoComplete={autoComplete} placeholder={placeholder} required={required} maxLength={128} disabled={disabled} aria-invalid={invalid || undefined} aria-describedby={describedBy} />
       <button type="button" className="iconbtn" aria-label={show ? '隱藏密碼' : '顯示密碼'} aria-controls={id} aria-pressed={show} disabled={disabled} onClick={() => setShow(!show)}><Icon name={show ? 'eyeOff' : 'eye'} /></button>
     </div>
   );
