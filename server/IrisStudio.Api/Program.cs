@@ -192,6 +192,21 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
                      | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost,
 });
 
+// Hosted behind Netlify: the browser talks to https://<site>.netlify.app and Netlify forwards /api/* here.
+// The app itself sees its own host (e.g. *.onrender.com), so the same-origin check would reject every write and
+// LINE's redirect_uri would point at the wrong domain. Server:PublicOrigin tells the app which address users see.
+var publicOrigin = cfg["Server:PublicOrigin"];
+if (!string.IsNullOrWhiteSpace(publicOrigin))
+{
+    var site = new Uri(publicOrigin.TrimEnd('/'));
+    app.Use((ctx, next) =>
+    {
+        ctx.Request.Scheme = site.Scheme;
+        ctx.Request.Host = new HostString(site.Authority);
+        return next(ctx);
+    });
+}
+
 app.UseProblemHandler();
 app.UseSameOriginWrites();
 app.UseStatusCodePages(async ctx =>

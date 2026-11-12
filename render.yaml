@@ -1,0 +1,37 @@
+# Render Blueprint for the .NET API (Dashboard → New → Blueprint → pick this repo).
+# The React client is NOT here — Netlify serves it and forwards /api/* to this service (see netlify.toml).
+# Values marked `sync: false` are secrets: Render asks you for them once, they never live in git.
+services:
+  - type: web
+    name: iris-studio-api
+    runtime: docker
+    rootDir: server
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    branch: sprint-1
+    region: singapore          # closest Render region to Taiwan
+    plan: free
+    healthCheckPath: /api/public/studio
+    envVars:
+      - key: Database__Provider
+        value: PostgreSql
+      - key: ConnectionStrings__Db
+        sync: false            # Supabase → Connect → Session pooler, in Npgsql "Host=…;Port=5432;…" form
+      - key: Server__PublicOrigin
+        value: https://iris-studio-sit.netlify.app
+      - key: Notifications__BaseUrl
+        value: https://iris-studio-sit.netlify.app
+      - key: Jwt__SigningKey
+        generateValue: true    # Render creates a random secret
+      - key: Studio__TeacherEmail
+        sync: false
+      - key: Studio__TeacherPassword
+        sync: false            # at least 12 characters
+      - key: Line__ChannelId
+        sync: false
+      - key: Line__ChannelSecret
+        sync: false
+      - key: Line__MessagingAccessToken
+        sync: false
+      - key: Notifications__Smtp__Password
+        sync: false            # Gmail app password

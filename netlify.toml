@@ -1,0 +1,21 @@
+# Netlify serves the React client. The .NET API runs elsewhere (see render.yaml / server/Dockerfile).
+#
+# Set API_ORIGIN in Netlify → Project configuration → Environment variables, e.g.
+#   API_ORIGIN = https://iris-studio-api.onrender.com
+# The build writes a proxy rule so the browser only ever talks to the Netlify domain:
+#   https://iris-studio-sit.netlify.app/api/*  →  $API_ORIGIN/api/*
+# Same origin for the browser = the HttpOnly login cookie just works, and no CORS setup is needed.
+
+[build]
+  base    = "client"
+  command = "npm run build:netlify"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Vite puts a content hash in every asset file name, so these can be cached forever.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
