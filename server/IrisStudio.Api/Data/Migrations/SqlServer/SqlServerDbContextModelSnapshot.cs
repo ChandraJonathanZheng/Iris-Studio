@@ -467,6 +467,59 @@ namespace IrisStudio.Api.Data.Migrations.SqlServer
                     b.ToTable("IdempotencyRecords");
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.InstagramReel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Lqip")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Shortcode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ThumbnailFile")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("ThumbnailType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Shortcode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reel_Shortcode_Active")
+                        .HasFilter("[DeletedAtUtc] IS NULL");
+
+                    b.HasIndex("DeletedAtUtc", "SortOrder");
+
+                    b.ToTable("InstagramReels");
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.Lesson", b =>
                 {
                     b.Property<Guid>("Id")

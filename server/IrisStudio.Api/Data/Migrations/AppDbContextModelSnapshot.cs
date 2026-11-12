@@ -467,6 +467,59 @@ namespace IrisStudio.Api.Data.Migrations
                     b.ToTable("IdempotencyRecords");
                 });
 
+            modelBuilder.Entity("IrisStudio.Api.Data.InstagramReel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Lqip")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Shortcode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ThumbnailFile")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("ThumbnailType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Shortcode")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Reel_Shortcode_Active")
+                        .HasFilter("\"DeletedAtUtc\" IS NULL");
+
+                    b.HasIndex("DeletedAtUtc", "SortOrder");
+
+                    b.ToTable("InstagramReels");
+                });
+
             modelBuilder.Entity("IrisStudio.Api.Data.Lesson", b =>
                 {
                     b.Property<Guid>("Id")
