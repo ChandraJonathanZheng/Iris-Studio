@@ -45,7 +45,7 @@ export interface MReport { id: string; lessonId: string; studentId: string; reas
 /** 取消費 from an approved 回報: Unpaid → Billed (on the next receipt) → Paid. */
 export interface MFee { id: string; reportId: string; lessonId: string; studentId: string; amount: number; status: 'Unpaid' | 'Billed' | 'Paid'; paymentId: string | null; createdAt: string }
 export interface MAlert extends AlertItem { userId: string; sendAfter: number; source?: string }
-export interface MPayment extends Omit<Payment, 'studentName' | 'fees'> { decidedAt?: number; feeIds?: string[] }
+export interface MPayment extends Omit<Payment, 'studentName' | 'feeAmount' | 'packageAmount'> { decidedAt?: number; feeIds?: string[] }
 export interface MConsent { id: string; userId: string; kind: 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian'; granted: boolean; version: string; scope: string; source: 'register' | 'profile' | 'request'; at: string; guardian?: { name: string; relation: string; contact: string } }
 /** 精彩片段. deletedAt = soft delete (row stays so 復原 works), like InstagramReel on the server. */
 export interface MReel { id: string; url: string; shortcode: string; thumbnailUrl: string; lqip: string | null; sortOrder: number; updatedAt: string; createdAt: number; deletedAt?: number }
@@ -138,12 +138,11 @@ export const idem = new Map<string, { userId: string; hash: string; status: numb
 
 export const userById = (uid: string) => db.users.find((u) => u.id === uid);
 
-/** Until when this lesson can still be reported (ISO), or null. Same rule as the server: Attended, ≤ reportDays after it ended, no live report. */
-export function reportUntil(l: MLesson): string | null {
-  if (l.status !== 'Attended') return null;
-  if (db.reports.some((r) => r.lessonId === l.id && r.status !== 'Withdrawn')) return null;
-  const until = lessonStart(l) + (l.minutes ?? 60) * 60_000 + STUDIO.reportDays * 864e5;
-  return until > Date.now() ? new Date(until).toISOString() : null;
+/** Can this lesson still be reported? Same rule as the server: Attended, ≤ reportDays after it ended, no live report. */
+export function reportOpen(l: MLesson): boolean {
+  if (l.status !== 'Attended') return false;
+  if (db.reports.some((r) => r.lessonId === l.id && r.status !== 'Withdrawn')) return false;
+  return lessonStart(l) + (l.minutes ?? 60) * 60_000 + STUDIO.reportDays * 864e5 > Date.now();
 }
 
 export function lessonDto(l: MLesson): Lesson {
@@ -151,8 +150,8 @@ export function lessonDto(l: MLesson): Lesson {
   const rp = db.reports.filter((r) => r.lessonId === l.id && r.status !== 'Withdrawn').at(-1);
   const fee = rp && db.fees.find((f) => f.reportId === rp.id);
   return {
-    report: rp ? { id: rp.id, status: rp.status.toLowerCase() as 'open' | 'approved' | 'declined', reason: rp.reason, message: rp.message, fee: fee?.amount ?? null } : null,
-    reportUntil: reportUntil(l),
+    cancelledByReport: !!l.byReport,
+    report: rp ? { id: rp.id, status: rp.status, reason: rp.reason, declineReason: rp.message, feeWaived: rp.waived, feeAmount: fee?.amount ?? 0 } : null,
     id: l.id, date: l.date, time: l.time, status: l.status, type: l.type ?? 'private', minutes: l.minutes ?? 60, room: 'A 教室', studentId: l.studentId,
     studentName: userById(l.studentId)?.name ?? '', change: ch ? { id: ch.id, toDate: ch.toDate, toTime: ch.toTime, reason: ch.reason, by: ch.by ?? 'student' } : null,
   };

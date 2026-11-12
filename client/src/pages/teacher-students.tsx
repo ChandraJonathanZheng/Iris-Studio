@@ -185,7 +185,7 @@ function LessonsBlock({ s }: { s: StudentDetail }) {
             {past.map((l) => (
               <li key={l.id}>
                 <span>{fmtSlot(l.date, l.time)}</span>
-                <span>{l.report?.status === 'approved' ? '已取消（回報）' : l.status === 'Attended' ? '已上課' : LESSON_TYPE_LABEL[l.type]}</span>
+                <span>{l.cancelledByReport ? '已取消（回報）' : l.status === 'Attended' ? '已上課' : LESSON_TYPE_LABEL[l.type]}</span>
               </li>
             ))}
           </ul>

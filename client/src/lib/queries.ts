@@ -208,7 +208,7 @@ export function useLessonReport() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['lessons'] });
   const report = useMutation({
     mutationFn: (v: { lessonId: string; reason: string; key: string }) =>
-      api.post<Lesson>(`/api/student/lessons/${v.lessonId}/reports`, { reason: v.reason.trim() || null }, { idempotencyKey: v.key }),
+      api.post<{ id: string }>(`/api/student/lessons/${v.lessonId}/reports`, { reason: v.reason.trim() || null }, { idempotencyKey: v.key }),
     onSettled: refresh,
   });
   const withdraw = useMutation({ mutationFn: (id: string) => api.post(`/api/student/reports/${id}/withdraw`), onSettled: refresh });

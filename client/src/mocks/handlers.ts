@@ -7,7 +7,7 @@ import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
 import type { Availability, Consult, Me, Overview, StudentDetail, StudentSummary } from '../lib/types';
 import {
   ALERT_DELAY_MS, STUDIO, UNDO_MS, addAlert, availability, db, dropQueuedAlerts, settleAttendance, idem, isTaken, lessonDto, lessonStart,
-  newId, reportUntil, slotPast, userById, validSlot, type MUser,
+  newId, reportOpen, slotPast, userById, validSlot, type MUser,
 } from './db';
 
 const creditAdjustments = new Map<string, { studentId: string; delta: number; createdAt: number; undone: boolean }>();
@@ -125,14 +125,12 @@ const teacherProfileDto = (u: MUser) => ({
   status: u.teacherStatus ?? 'normal', statusLabel: u.statusLabel ?? null, statusMessage: u.statusMessage ?? null,
 });
 const lessonOf = (lessonId: string) => db.lessons.find((l) => l.id === lessonId)!;
-const payDto = ({ feeIds, decidedAt: _decided, ...p }: (typeof db.payments)[number]) => ({
-  ...p, studentName: userById(p.studentId)?.name ?? '',
-  fees: db.fees.filter((f) => f.paymentId === p.id && (feeIds ?? []).includes(f.id))
-    .map((f) => ({ id: f.id, amount: f.amount, date: lessonOf(f.lessonId).date, time: lessonOf(f.lessonId).time })),
-});
-const feeDto = (f: (typeof db.fees)[number]) => ({
-  id: f.id, lessonId: f.lessonId, date: lessonOf(f.lessonId).date, time: lessonOf(f.lessonId).time, amount: f.amount, status: f.status.toLowerCase(), paymentId: f.paymentId,
-});
+/** PaymentDto: amount = package + 取消費 billed on this receipt. */
+const payDto = ({ feeIds, decidedAt: _decided, ...p }: (typeof db.payments)[number]) => {
+  const feeAmount = db.fees.filter((f) => (feeIds ?? []).includes(f.id)).reduce((s, f) => s + f.amount, 0);
+  return { ...p, studentName: userById(p.studentId)?.name ?? '', feeAmount, packageAmount: p.amount - feeAmount };
+};
+const feeDto = (f: (typeof db.fees)[number]) => ({ id: f.id, lessonId: f.lessonId, amount: f.amount, status: f.status, paymentId: f.paymentId });
 
 export const handlers = [
   // Test hook: sessionStorage['iris-mock-fail'] = 'regex' makes matching requests fail with 500 (simulates a server error).
@@ -773,11 +771,11 @@ export const handlers = [
       const l = db.lessons.find((x) => x.id === params.id && x.studentId === r.u.id); if (!l) return problem(404, '找不到這堂課。');
       if (l.status !== 'Attended') return problem(409, '只能回報已上過的課。', 'not_attended');
       if (db.reports.some((x) => x.lessonId === l.id && x.status !== 'Withdrawn')) return problem(409, '這堂課已經回報過了。', 'already_reported');
-      if (!reportUntil(l)) return problem(409, `只能回報 ${STUDIO.reportDays} 天內上過的課。`, 'report_window_closed');
+      if (!reportOpen(l)) return problem(409, `只能回報 ${STUDIO.reportDays} 天內上過的課。`, 'report_window_closed');
       const { reason } = (await request.clone().json().catch(() => ({}))) as { reason?: string | null };
       if ((reason ?? '').length > 300) return problem(400, '原因最多 300 個字。', 'validation');
       db.reports.push({ id: newId(), lessonId: l.id, studentId: r.u.id, reason: reason?.trim() || null, status: 'Open', message: null, waived: false, createdAt: new Date().toISOString() });
-      return HttpResponse.json(lessonDto(l), { status: 201 });
+      return HttpResponse.json({ id: db.reports.at(-1)!.id }, { status: 201 });
     });
   }),
   http.post('/api/student/reports/:id/withdraw', async ({ params }) => {

@@ -7,6 +7,7 @@ import {
 } from '../lib/date';
 import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
 import { monthRange } from '../lib/prefetch';
+import { canReport, reportFee } from '../lib/report';
 import {
   useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useDays, useLessonReport, useLessons, useLogout, useMarkAllRead,
   useMyConsents, useMyFees, useMyPayments, useSaveConsents, useStudio, useUpdateProfile, useUploadReceipt, useWithdrawMove,
@@ -36,8 +37,8 @@ function useMyLessons() {
 }
 
 function LessonTag({ l }: { l: Lesson }) {
-  if (l.report?.status === 'approved') return <Tag tone="bad">已取消（回報）</Tag>;
-  if (l.report?.status === 'open') return <Tag tone="warn">待審核</Tag>;
+  if (l.report?.status === 'Approved') return <Tag tone="bad">已取消（回報）</Tag>;
+  if (l.report?.status === 'Open') return <Tag tone="warn">待審核</Tag>;
   if (l.status === 'Attended') return <Tag tone="grey">已上課</Tag>;
   if (l.status === 'Cancelled') return <Tag tone="bad">已取消</Tag>;
   if (l.change) return <Tag tone="warn">{l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</Tag>;
@@ -446,20 +447,21 @@ export function Move() {
 /* ---------- 行事曆 (+ 回報) ---------- */
 
 /** Cancelled lessons disappear from the calendar, except ones cancelled by an approved 回報 (they explain the +1 堂). */
-const shownOnCalendar = (l: Lesson) => l.status !== 'Cancelled' || l.report?.status === 'approved';
+const shownOnCalendar = (l: Lesson) => l.status !== 'Cancelled' || l.cancelledByReport;
 
 function reportLine(l: Lesson): string | null {
   const r = l.report;
   if (!r) return null;
-  if (r.status === 'open') return '已回報，等老師確認';
-  if (r.status === 'approved') return r.fee ? `已退回 1 堂 · 取消費 ${fmtMoney(r.fee)} 加在下次繳費` : '已退回 1 堂 · 這次不收取消費';
-  return `老師無法取消：${r.message ?? ''}`;
+  if (r.status === 'Open') return '已回報，等老師確認';
+  if (r.status === 'Approved') return reportFee(l) ? `已退回 1 堂 · 取消費 ${fmtMoney(reportFee(l))} 加在下次繳費` : '已退回 1 堂 · 這次不收取消費';
+  return `老師無法取消：${r.declineReason ?? ''}`;
 }
 
 type ListFilter = 'past' | 'today' | 'up';
 
 export function StudentCalendar() {
   const lessons = useMyLessons();
+  const reportDays = useStudio().data?.reportDays ?? 7;
   const withdrawMove = useWithdrawMove();
   const { withdraw } = useLessonReport();
   const [reporting, setReporting] = useState<Lesson | null>(null);
@@ -492,8 +494,8 @@ export function StudentCalendar() {
         <button className="btn sm secondary" disabled={withdrawMove.isPending}
           onClick={() => withdrawMove.mutate(l.change!.id, { onSuccess: () => toast({ text: '已撤回改時間申請' }) })}>撤回</button>
       )}
-      {l.reportUntil && <button className="btn sm secondary" aria-label={`回報 ${fmtSlot(l.date, l.time)} 的課`} onClick={() => setReporting(l)}>回報</button>}
-      {l.report?.status === 'open' && (
+      {canReport(l, reportDays) && <button className="btn sm secondary" aria-label={`回報 ${fmtSlot(l.date, l.time)} 的課`} onClick={() => setReporting(l)}>回報</button>}
+      {l.report?.status === 'Open' && (
         <button className="btn sm secondary" disabled={withdraw.isPending} onClick={() => withdraw.mutate(l.report!.id, {
           onSuccess: () => toast({ text: '已撤回回報' }),
           onError: (e) => toast({ text: e.message, kind: 'error' }),
@@ -610,7 +612,8 @@ export function QuotaPage() {
   const me = useCurrentUser();
   const studio = useStudio();
   const payments = useMyPayments();
-  const unpaid = (useMyFees().data ?? []).filter((f) => f.status === 'unpaid');
+  const unpaid = (useMyFees().data ?? []).filter((f) => f.status === 'Unpaid');
+  const lessonById = new Map((useMyLessons().data ?? []).map((l) => [l.id, l]));
   const feeTotal = unpaid.reduce((s, f) => s + f.amount, 0);
   const upload = useUploadReceipt();
   const toast = useToast();
@@ -649,7 +652,7 @@ export function QuotaPage() {
                   <div className="li" key={p.id}>
                     <div className="grow stack g1">
                       <p className="t">{p.trial ? '單堂課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)}</p>
-                      {!!p.fees?.length && <p className="caption">含取消費 {fmtMoney(p.fees.reduce((s, f) => s + f.amount, 0))}</p>}
+                      {p.feeAmount > 0 && <p className="caption">含取消費 {fmtMoney(p.feeAmount)}</p>}
                       <p className="caption">{fmtRelative(p.uploadedAt)} 上傳{p.rejectReason ? ` · 退回原因：${p.rejectReason}` : ''}</p>
                     </div>
                     <Tag tone={p.status === 'Confirmed' ? 'ok' : p.status === 'Rejected' ? 'bad' : 'warn'}>{{ Confirmed: '已確認', Rejected: '已退回', Pending: '確認中' }[p.status]}</Tag>
@@ -675,7 +678,7 @@ export function QuotaPage() {
           {feeTotal > 0 && (
             <div className="fee-due" role="note">
               <p className="t">◆ 未付取消費 {fmtMoney(feeTotal)}</p>
-              <ul>{unpaid.map((f) => <li key={f.id}>{fmtSlot(f.date, f.time)} 的課（回報取消）· {fmtMoney(f.amount)}</li>)}</ul>
+              <ul>{unpaid.map((f) => { const l = lessonById.get(f.lessonId); return <li key={f.id}>{l ? `${fmtSlot(l.date, l.time)} 的課` : '一堂課'}（回報取消）· {fmtMoney(f.amount)}</li>; })}</ul>
               <p className="caption">這次請一起匯款：{fmtMoney(price)} + {fmtMoney(feeTotal)} = <b>{fmtMoney(price + feeTotal)}</b></p>
             </div>
           )}

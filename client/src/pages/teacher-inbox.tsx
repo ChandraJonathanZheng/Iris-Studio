@@ -377,8 +377,6 @@ function ReceiptModal({ p, onClose, onConfirm, busy }: { p: Payment; onClose: ()
     return () => { document.documentElement.classList.remove('modal-open'); window.scrollTo(0, y); };
   }, []);
   const close = () => ref.current?.close();
-  const fees = p.fees ?? [];
-  const feeTotal = fees.reduce((s, f) => s + f.amount, 0);
   return (
     <dialog ref={ref} className="rcpt" aria-labelledby={`rcpt-t-${p.id}`} onClose={onClose} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="rcpt-box">
@@ -386,9 +384,7 @@ function ReceiptModal({ p, onClose, onConfirm, busy }: { p: Payment; onClose: ()
           <div>
             <h2 id={`rcpt-t-${p.id}`}>{p.studentName} 的收據</h2>
             <p>{p.packageSize} 堂 · {fmtMoney(p.amount)} · {fmtRelative(p.uploadedAt)} 上傳</p>
-            {fees.length > 0 && (
-              <p className="rcpt-fees">= 方案 {fmtMoney(p.amount - feeTotal)} + 取消費 {fees.map((f) => `${fmtMoney(f.amount)}（${fmtSlot(f.date, f.time)}）`).join('、')}</p>
-            )}
+            {p.feeAmount > 0 && <p className="rcpt-fees">= 方案 {fmtMoney(p.packageAmount)} + 取消費 {fmtMoney(p.feeAmount)}</p>}
           </div>
           <button className="rcpt-x" aria-label="關閉" onClick={close}><Icon name="x" size={20} /></button>
         </header>

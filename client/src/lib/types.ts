@@ -66,22 +66,25 @@ export interface Lesson {
   studentId: string;
   studentName: string;
   change: ChangeInfo | null;
-  /** the student's 回報 for this past lesson (latest one that wasn't withdrawn) */
+  /** cancelled afterwards by an approved 回報 */
+  cancelledByReport: boolean;
+  /** the student's 回報 for this past lesson (the live one — withdrawn reports are left out) */
   report: LessonReportInfo | null;
-  /** until when 回報 is still possible (ISO); null = not reportable (not attended, window over, or already reported) */
-  reportUntil: string | null;
 }
 
 /** 回報 = the student asks Iris to cancel a lesson that was counted as attended. */
-export type ReportStatus = 'open' | 'approved' | 'declined' | 'withdrawn';
+export type ReportStatus = 'Open' | 'Approved' | 'Declined' | 'Withdrawn';
+/** ReportInfoDto */
 export interface LessonReportInfo {
   id: string;
   status: ReportStatus;
   reason: string | null;
   /** Iris's reason when she declined */
-  message: string | null;
-  /** 取消費 charged for an approved report; null = none (open, declined, or waived) */
-  fee: number | null;
+  declineReason: string | null;
+  /** Iris ticked 這次免收取消費 */
+  feeWaived: boolean;
+  /** 取消費 charged for an approved report (0 when none) */
+  feeAmount: number;
 }
 /** An open 回報 waiting in Iris's 申請 → 回報 tab. */
 export interface LessonReport {
@@ -89,8 +92,9 @@ export interface LessonReport {
   date: string; time: string; minutes: number; reason: string | null; createdAt: string;
 }
 /** 取消費: unpaid → billed (added to the next receipt) → paid (receipt confirmed). */
-export type FeeStatus = 'unpaid' | 'billed' | 'paid';
-export interface CancellationFee { id: string; lessonId: string; date: string; time: string; amount: number; status: FeeStatus; paymentId: string | null }
+export type FeeStatus = 'Unpaid' | 'Billed' | 'Paid';
+/** FeeDto */
+export interface CancellationFee { id: string; lessonId: string; amount: number; status: FeeStatus; paymentId: string | null }
 
 /** later = beyond 可提前預約 (not open for booking yet) */
 export type DayState = 'open' | 'closed' | 'full' | 'past' | 'later';
@@ -124,8 +128,9 @@ export interface Payment {
   lqip: string | null;
   /** bought the one-time 單堂課 package */
   trial?: boolean;
-  /** 取消費 billed on this receipt (amount above already includes them) */
-  fees?: { id: string; amount: number; date: string; time: string }[];
+  /** 取消費 billed on this receipt — `amount` already includes it (= packageAmount + feeAmount) */
+  feeAmount: number;
+  packageAmount: number;
 }
 
 /** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 單堂課 */
