@@ -116,3 +116,5 @@ node e2e/smoke.mjs                # 22 checks: idempotency, undo, rollback, back
 ## Clickable demo
 
 `docs/demo/iris-studio-demo.html` — single-file build of the prototype (mock API, demo accounts), 12 Nov 2026. Open it directly in a browser. Bank details in it are placeholders.
+
+`docs/demo/iris-studio-demo-reels.html` — single-file build of **`sprint-1` as it is now** (12 Nov 2026), including 更多 → 網站精彩片段 (Instagram Reels: add / edit / soft delete + 復原 / reorder, max 8). It does **not** contain 回報 / 取消費 or 忘記密碼, because their source isn't in this branch yet — use the older demo above for those. Rebuild with `npm run build:proto` → `client/dist-proto/index.html`.
