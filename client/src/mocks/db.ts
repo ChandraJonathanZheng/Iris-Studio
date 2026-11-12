@@ -16,6 +16,8 @@ export const availability: Availability = {
 export const STUDIO: Omit<StudioInfo, 'lessonMinutes' | 'teacher'> = {
   cancelHours: 24,
   moveHours: 12,
+  reportDays: 7,
+  cancelFee: 500,
   packages: [{ size: 1, price: 1500, trial: true }, { size: 4, price: 3200 }, { size: 8, price: 6200 }],
   // Real bank details come from a local, git-ignored env file (.env.proto.local), never from the public repo.
   bank: {
@@ -37,9 +39,13 @@ export interface MUser {
   teacherStatus?: 'normal' | 'vacation' | 'noNewStudents' | 'custom'; statusLabel?: string | null; statusMessage?: string | null;
 }
 export interface MChange { id: string; lessonId: string; toDate: string; toTime: string; reason: string; status: 'Open' | 'Approved' | 'Declined' | 'Withdrawn'; decidedAt?: number; prev?: { date: string; time: string }; by?: 'student' | 'teacher'; createdAt?: number }
-export interface MLesson { id: string; studentId: string; date: string; time: string; status: 'Booked' | 'Attended' | 'Cancelled'; type?: 'private' | 'group' | 'trial'; minutes?: number; cancelledAt?: number; refunded?: boolean; byTeacher?: boolean }
+export interface MLesson { id: string; studentId: string; date: string; time: string; status: 'Booked' | 'Attended' | 'Cancelled'; type?: 'private' | 'group' | 'trial'; minutes?: number; cancelledAt?: number; refunded?: boolean; byTeacher?: boolean; byReport?: boolean }
+/** 回報: the student asks Iris to cancel a lesson that was counted as attended. */
+export interface MReport { id: string; lessonId: string; studentId: string; reason: string | null; status: 'Open' | 'Approved' | 'Declined' | 'Withdrawn'; message: string | null; waived: boolean; createdAt: string; decidedAt?: number }
+/** 取消費 from an approved 回報: Unpaid → Billed (on the next receipt) → Paid. */
+export interface MFee { id: string; reportId: string; lessonId: string; studentId: string; amount: number; status: 'Unpaid' | 'Billed' | 'Paid'; paymentId: string | null; createdAt: string }
 export interface MAlert extends AlertItem { userId: string; sendAfter: number; source?: string }
-export interface MPayment extends Omit<Payment, 'studentName'> { decidedAt?: number }
+export interface MPayment extends Omit<Payment, 'studentName' | 'fees'> { decidedAt?: number; feeIds?: string[] }
 export interface MConsent { id: string; userId: string; kind: 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian'; granted: boolean; version: string; scope: string; source: 'register' | 'profile' | 'request'; at: string; guardian?: { name: string; relation: string; contact: string } }
 /** 精彩片段. deletedAt = soft delete (row stays so 復原 works), like InstagramReel on the server. */
 export interface MReel { id: string; url: string; shortcode: string; thumbnailUrl: string; lqip: string | null; sortOrder: number; updatedAt: string; createdAt: number; deletedAt?: number }
@@ -69,6 +75,7 @@ function seed() {
   const t2 = nextOpen(2), t7 = nextOpen(7), t3 = nextOpen(3), t5 = nextOpen(5);
   const lessons: MLesson[] = [
     { id: 'l1', studentId: 's1', date: iso(-2), time: '14:00', status: 'Attended' },
+    { id: 'l20', studentId: 's2', date: iso(-1), time: '16:00', status: 'Attended' }, // 林佳穎 reported this one (demo 回報)
     { id: 'l2', studentId: 's1', date: t2, time: '17:00', status: 'Booked' },
     { id: 'l3', studentId: 's1', date: t7, time: '11:00', status: 'Booked' },
     { id: 'l4', studentId: 's2', date: today, time: '09:30', status: weekday(today) === 0 ? 'Booked' : 'Attended' },
@@ -117,7 +124,12 @@ function seed() {
     id: `reel-${i + 1}`, shortcode: code, url: `https://www.instagram.com/reel/${code}/`, thumbnailUrl: cover(i + 1, ['#DDE4DC', '#E5DFD2', '#D9E1DE'][i]),
     lqip: null, sortOrder: i + 1, updatedAt: ago(10 - i), createdAt: Date.now() - (10 - i) * 864e5,
   }));
-  return { users, lessons, changes, alerts, payments, consults, consents, privacyRequests, reels };
+  // demo 回報: 林佳穎 reported yesterday's lesson, so Iris has one to review; 王小明 can still report l1 (2 days ago)
+  const reports: MReport[] = [];
+  const yesterday = lessons.find((l) => l.studentId === 's2' && l.status === 'Attended' && l.date < today);
+  if (yesterday) reports.push({ id: 'r1', lessonId: yesterday.id, studentId: 's2', reason: '那天發燒，沒有去上課。', status: 'Open', message: null, waived: false, createdAt: new Date(Date.now() - 3 * 3600_000).toISOString() });
+  const fees: MFee[] = [];
+  return { users, lessons, changes, alerts, payments, consults, consents, privacyRequests, reels, reports, fees };
 }
 
 export const db = seed();
@@ -126,9 +138,21 @@ export const idem = new Map<string, { userId: string; hash: string; status: numb
 
 export const userById = (uid: string) => db.users.find((u) => u.id === uid);
 
+/** Until when this lesson can still be reported (ISO), or null. Same rule as the server: Attended, ≤ reportDays after it ended, no live report. */
+export function reportUntil(l: MLesson): string | null {
+  if (l.status !== 'Attended') return null;
+  if (db.reports.some((r) => r.lessonId === l.id && r.status !== 'Withdrawn')) return null;
+  const until = lessonStart(l) + (l.minutes ?? 60) * 60_000 + STUDIO.reportDays * 864e5;
+  return until > Date.now() ? new Date(until).toISOString() : null;
+}
+
 export function lessonDto(l: MLesson): Lesson {
   const ch = db.changes.find((c) => c.lessonId === l.id && c.status === 'Open');
+  const rp = db.reports.filter((r) => r.lessonId === l.id && r.status !== 'Withdrawn').at(-1);
+  const fee = rp && db.fees.find((f) => f.reportId === rp.id);
   return {
+    report: rp ? { id: rp.id, status: rp.status.toLowerCase() as 'open' | 'approved' | 'declined', reason: rp.reason, message: rp.message, fee: fee?.amount ?? null } : null,
+    reportUntil: reportUntil(l),
     id: l.id, date: l.date, time: l.time, status: l.status, type: l.type ?? 'private', minutes: l.minutes ?? 60, room: 'A 教室', studentId: l.studentId,
     studentName: userById(l.studentId)?.name ?? '', change: ch ? { id: ch.id, toDate: ch.toDate, toTime: ch.toTime, reason: ch.reason, by: ch.by ?? 'student' } : null,
   };

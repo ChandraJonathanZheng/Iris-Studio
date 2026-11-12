@@ -1,222 +1,313 @@
-import { useState } from 'react';
-import { Link, Outlet, useNavigate, useParams } from 'react-router';
-import { ApiError } from '../lib/api';
-import { rangeProblems, slotTimesFor, startsInRange, TIME_OPTIONS, toMin, WEEKDAY_LABEL, WEEK_ORDER, weekdayOf } from '../lib/availability';
+import { useMemo, useState } from 'react';
+import { Link, Outlet, useParams, useSearchParams } from 'react-router';
+import { rangeProblems, startsInRange, TIME_OPTIONS, toMin, WEEK_ORDER, WEEKDAY_LABEL, weekdayOf } from '../lib/availability';
 import { fmtDate, studioToday } from '../lib/date';
-import { monthRange } from '../lib/prefetch';
 import { useAvailability, useDeleteOverride, useLessons, useSaveBookingSettings, useSaveOverride, useSaveWeekly } from '../lib/queries';
 import type { Availability, BookingSettings, DateOverride, TimeRange, WeeklyDay } from '../lib/types';
 import { Icon } from '../components/Icon';
 import { RouteSheet, useSheetClose } from '../components/Sheet';
 import { useToast } from '../components/Toast';
-import { Empty, ErrorCard, PageHead, PageSkeleton, Switch, Tabs } from '../components/ui';
+import { ErrorCard, PageHead, PageSkeleton } from '../components/ui';
 
-const PARENT = '/teacher/availability';
-const errText = (e: unknown) => (e instanceof ApiError ? e.message : '儲存失敗，請再試一次。');
-const rangeText = (r: TimeRange) => `${r.start}–${r.end}`;
+type Tab = 'weekly' | 'dates' | 'settings';
+const TABS: { id: Tab; label: string }[] = [{ id: 'weekly', label: '每週時段' }, { id: 'dates', label: '特殊日期' }, { id: 'settings', label: '預約設定' }];
+const LENGTHS = [30, 45, 60, 90, 120];
+const GAPS = [0, 10, 15, 30, 60];
+const ADVANCE = [7, 14, 30, 60, 90];
+const rangeText = (r: TimeRange) => `${r.start} – ${r.end}`;
 const sortRanges = (rs: TimeRange[]) => [...rs].sort((a, b) => toMin(a.start) - toMin(b.start));
+const useFail = () => { const toast = useToast(); return (e: Error) => toast({ text: e.message, kind: 'error' }); };
 
-function Preview({ ranges, s }: { ranges: TimeRange[]; s: BookingSettings }) {
-  const times = [...new Set(ranges.flatMap((r) => startsInRange(r, s.lessonMinutes, s.gapMinutes)))].sort();
-  const problems = rangeProblems(ranges, s.lessonMinutes);
+export function AvailabilityPage() {
+  const av = useAvailability();
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = TABS.some((t) => t.id === params.get('tab')) ? (params.get('tab') as Tab) : 'weekly';
+  const go = (t: Tab) => setParams(t === 'weekly' ? {} : { tab: t }, { replace: true });
   return (
     <>
-      {ranges.length > 0 && <p className="cap">{times.length ? `可預約 ${times.length} 堂：${times.join('、')}` : '這些時段排不進任何一堂課。'}</p>}
-      {problems.map((p) => <p key={p} className="err">◆ {p}</p>)}
+      <PageHead title="可預約時段" over="學生會依這些時間預約" back />
+      <div className="av-tabs" role="tablist" aria-label="可預約時段">
+        {TABS.map((t) => (
+          // only the selected tab's panel exists, so only it points at one
+          <button key={t.id} role="tab" id={`av-tab-${t.id}`} aria-selected={tab === t.id} aria-controls={tab === t.id ? `av-panel-${t.id}` : undefined} onClick={() => go(t.id)}>{t.label}</button>
+        ))}
+      </div>
+      <div className="av" role="tabpanel" id={`av-panel-${tab}`} aria-labelledby={`av-tab-${tab}`}>
+        {av.isPending ? <PageSkeleton blocks={[420]} /> : av.isError ? <ErrorCard error={av.error} retry={av.refetch} /> : (
+          <>
+            {tab === 'weekly' && <Weekly av={av.data} onGo={go} />}
+            {tab === 'dates' && <Dates av={av.data} />}
+            {tab === 'settings' && <Settings s={av.data.settings} />}
+          </>
+        )}
+      </div>
+      <Outlet />
     </>
   );
 }
 
-/* ---------------------------------------------------------------- 每週時段 */
-function WeeklyTab({ av }: { av: Availability }) {
+function Weekly({ av, onGo }: { av: Availability; onGo: (t: Tab) => void }) {
   const save = useSaveWeekly();
   const toast = useToast();
-  const apply = (next: WeeklyDay[], text: string) => {
-    const prev = av.weekly;
-    save.mutate(next, { onSuccess: () => toast({ text, undo: () => save.mutateAsync(prev).then(() => undefined) }), onError: (e) => toast({ text: errText(e), kind: 'error' }) });
+  const fail = useFail();
+  const { lessonMinutes, gapMinutes, advanceDays } = av.settings;
+  const update = (weekday: number, change: (d: WeeklyDay) => WeeklyDay, text: string) => {
+    const before = av.weekly;
+    save.mutate(av.weekly.map((d) => (d.weekday === weekday ? change(d) : d)), {
+      onSuccess: () => toast({ text, undo: () => save.mutateAsync(before).then(() => {}) }),
+      onError: fail,
+    });
+  };
+  const today = studioToday();
+  const upcomingOverrides = av.overrides.filter((o) => o.date >= today).length;
+  const example = startsInRange({ start: '10:00', end: '13:00' }, lessonMinutes, gapMinutes);
+  return (
+    <>
+      <section className="av-card" aria-labelledby="av-weekly-h">
+        <h2 className="av-h" id="av-weekly-h">每週可預約時間</h2>
+        <p className="av-sub">設定每週固定的上課時段，學生會依此預約。</p>
+        <ul className="av-days">
+          {WEEK_ORDER.map((wd) => {
+            const day = av.weekly.find((d) => d.weekday === wd)!;
+            const slots = day.ranges.flatMap((r) => startsInRange(r, lessonMinutes, gapMinutes));
+            const problems = day.enabled ? rangeProblems(day.ranges, lessonMinutes) : [];
+            const name = WEEKDAY_LABEL[wd];
+            return (
+              <li key={wd} className={`av-day${day.enabled ? '' : ' off'}`}>
+                <div className="av-day-head">
+                  <span className="av-day-name" id={`av-d-${wd}`}>{name}</span>
+                  <button className="switch" role="switch" aria-checked={day.enabled} aria-labelledby={`av-d-${wd}`}
+                    onClick={() => update(wd, (d) => ({ ...d, enabled: !d.enabled, ranges: !d.enabled && d.ranges.length === 0 ? [{ start: '10:00', end: '18:00' }] : d.ranges }),
+                      `${name}${day.enabled ? '不開放預約' : '開放預約'}`)} />
+                </div>
+                {day.enabled ? (
+                  <div className="av-day-body">
+                    <div className="av-ranges">
+                      {day.ranges.map((r, i) => (
+                        <span className="av-range" key={`${r.start}-${r.end}`}>
+                          <Link to={`range/${wd}/${i}`} className="av-range-edit" aria-label={`編輯${name} ${rangeText(r)}`}>{rangeText(r)}</Link>
+                          <button className="av-range-del" aria-label={`刪除${name} ${rangeText(r)}`}
+                            onClick={() => update(wd, (d) => ({ ...d, ranges: d.ranges.filter((_, j) => j !== i), enabled: d.ranges.length > 1 }), `已刪除 ${name} ${rangeText(r)}`)}>
+                            <Icon name="trash" size={16} />
+                          </button>
+                        </span>
+                      ))}
+                      <Link to={`range/${wd}/new`} className="av-add"><Icon name="plus" size={16} />新增時段</Link>
+                    </div>
+                    {problems.length > 0 ? <p className="av-warn">{problems[0]}</p>
+                      : <p className="av-preview">{slots.length ? `可預約 ${slots.length} 堂：${slots.join('、')}` : '這天排不出任何時段。'}</p>}
+                  </div>
+                ) : <p className="av-off">不開放預約</p>}
+              </li>
+            );
+          })}
+        </ul>
+        <p className="av-info">
+          <Icon name="info" size={16} />
+          <span>系統依「每堂課時長」與「課程間隔」自動產生時段，已被預約的時間不會出現。例如 10:00 – 13:00（每堂 {lessonMinutes} 分鐘、間隔 {gapMinutes} 分鐘）→ {example.join('、') || '排不進課'}。</span>
+        </p>
+      </section>
+      <button className="av-link-card" onClick={() => onGo('settings')}>
+        <Icon name="gear" size={22} />
+        <span><b>預約設定</b><small>每堂課 {lessonMinutes} 分鐘 · 間隔 {gapMinutes} 分鐘 · 可約 {advanceDays} 天內</small></span>
+        <Icon name="chev" size={18} />
+      </button>
+      <button className="av-link-card" onClick={() => onGo('dates')}>
+        <Icon name="calendar" size={22} />
+        <span><b>特殊日期</b><small>{upcomingOverrides ? `已設定 ${upcomingOverrides} 天` : '設定例外的日期（休息或調整時段）'}</small></span>
+        <Icon name="chev" size={18} />
+      </button>
+    </>
+  );
+}
+
+function TimePair({ start, end, setStart, setEnd, idPrefix }: { start: string; end: string; setStart: (v: string) => void; setEnd: (v: string) => void; idPrefix: string }) {
+  return (
+    <div className="av-pair">
+      <div className="field">
+        <label htmlFor={`${idPrefix}-s`}>開始</label>
+        <select id={`${idPrefix}-s`} className="input" value={start} onChange={(e) => setStart(e.target.value)}>{TIME_OPTIONS.map((t) => <option key={t}>{t}</option>)}</select>
+      </div>
+      <span className="av-dash" aria-hidden="true">–</span>
+      <div className="field">
+        <label htmlFor={`${idPrefix}-e`}>結束</label>
+        <select id={`${idPrefix}-e`} className="input" value={end} onChange={(e) => setEnd(e.target.value)}>{TIME_OPTIONS.map((t) => <option key={t}>{t}</option>)}</select>
+      </div>
+    </div>
+  );
+}
+
+/** /teacher/availability/range/:weekday/:idx — add (idx = new) or edit one weekly range. */
+export function RangeSheet() {
+  const { weekday, idx } = useParams();
+  const av = useAvailability();
+  const save = useSaveWeekly();
+  const toast = useToast();
+  const fail = useFail();
+  const close = useSheetClose("/teacher/availability");
+  const wd = Number(weekday);
+  const day = av.data?.weekly.find((d) => d.weekday === wd);
+  const index = idx !== 'new' ? Number(idx) : null;
+  const existing = index !== null ? day?.ranges[index] : undefined;
+  const [start, setStart] = useState(existing?.start ?? '10:00');
+  const [end, setEnd] = useState(existing?.end ?? '12:00');
+  if (!av.data || !day || (index !== null && !existing)) return null;
+  const { lessonMinutes, gapMinutes } = av.data.settings;
+  const ranges = sortRanges([...day.ranges.filter((_, i) => i !== index), { start, end }]);
+  const problems = rangeProblems(ranges, lessonMinutes);
+  const slots = startsInRange({ start, end }, lessonMinutes, gapMinutes);
+  const name = WEEKDAY_LABEL[wd];
+  const submit = () => {
+    const before = av.data!.weekly;
+    save.mutateAsync(before.map((d) => (d.weekday === wd ? { ...d, enabled: true, ranges } : d)))
+      .then(() => toast({ text: `${name} ${start} – ${end} 已${index === null ? '新增' : '更新'}`, undo: () => save.mutateAsync(before).then(() => {}) }))
+      .catch(fail);
+    close();
   };
   return (
-    <div className="stack">
-      {WEEK_ORDER.map((wd) => {
-        const day = av.weekly.find((w) => w.weekday === wd) ?? { weekday: wd, enabled: false, ranges: [] };
-        const ranges = sortRanges(day.ranges);
-        return (
-          <section key={wd} className="card" aria-label={WEEKDAY_LABEL[wd]}>
-            <div className="row between"><h2 className="sec">{WEEKDAY_LABEL[wd]}</h2>
-              <div className="row"><span className="sub">{day.enabled ? '開放' : '休息'}</span>
-                <Switch checked={day.enabled} label={`${WEEKDAY_LABEL[wd]}開放預約`} onChange={(v) => apply(av.weekly.map((w) => (w.weekday === wd ? { ...w, enabled: v } : w)), `${WEEKDAY_LABEL[wd]}${v ? '已開放' : '改為休息'}`)} /></div></div>
-            {day.enabled && (
-              <>
-                <div className="chips" style={{ flexWrap: 'wrap' }}>
-                  {ranges.map((r, i) => (
-                    <span key={rangeText(r)} className="chip choice row" style={{ gap: 4, padding: '0 4px 0 4px' }}>
-                      <Link to={`range/${wd}/${i}`} style={{ color: 'inherit', padding: '0 10px', minHeight: 44, display: 'inline-flex', alignItems: 'center' }} aria-label={`編輯 ${rangeText(r)}`}>{rangeText(r)}</Link>
-                      <button className="iconbtn" style={{ width: 36, height: 36, boxShadow: 'none', background: 'none' }} aria-label={`刪除 ${rangeText(r)}`}
-                        onClick={() => apply(av.weekly.map((w) => (w.weekday === wd ? { ...w, ranges: ranges.filter((_, k) => k !== i) } : w)), `已刪除 ${rangeText(r)}`)}><Icon name="trash" size={16} /></button>
-                    </span>
-                  ))}
-                  <Link className="chip filter row" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--sage-text)' }} to={`range/${wd}/new`}><Icon name="plus" size={16} />新增時段</Link>
-                </div>
-                <Preview ranges={ranges} s={av.settings} />
-              </>
-            )}
-          </section>
-        );
-      })}
-    </div>
+    <RouteSheet title={`${index === null ? '新增時段' : '編輯時段'} · ${name}`} parent="/teacher/availability">
+      <TimePair start={start} end={end} setStart={setStart} setEnd={setEnd} idPrefix="rs" />
+      {problems.length > 0 ? <p className="av-warn" role="alert">{problems[0]}</p>
+        : <p className="av-preview" aria-live="polite">這段可以排 {slots.length} 堂：{slots.join('、')}</p>}
+      <button className="btn primary block" disabled={problems.length > 0} onClick={submit}>{index === null ? '新增' : '儲存'}</button>
+      <button className="btn secondary block" onClick={() => close()}>取消</button>
+    </RouteSheet>
   );
 }
 
-/* ---------------------------------------------------------------- 特殊日期 */
-function OverridesTab({ av }: { av: Availability }) {
-  const nav = useNavigate();
-  const [date, setDate] = useState('');
-  const today = studioToday();
-  return (
-    <div className="stack">
-      <section className="card">
-        <h2 className="sec">新增特殊日期</h2>
-        <p className="sub">這天會取代每週時段：可以整天休息，或只開放特定時間。</p>
-        <div className="row"><input aria-label="日期" className="input" type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} />
-          <button className="btn primary" disabled={!date || date < today} onClick={() => nav(`date/${date}`)}>設定</button></div>
-      </section>
-      {av.overrides.length === 0 ? <Empty text="目前沒有特殊日期。" /> : (
-        <div className="list">{av.overrides.map((o) => (
-          <Link key={o.date} className="li" to={`date/${o.date}`}>
-            <div className="grow"><div className="name" style={{ fontSize: 16 }}>{fmtDate(o.date)}{o.note ? ` · ${o.note}` : ''}</div>
-              <div className="cap">{o.closed ? '全天休息' : o.ranges.map(rangeText).join('、') || '沒有開放時段'}</div></div><Icon name="chev" size={18} />
-          </Link>
-        ))}</div>
-      )}
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- 預約設定 */
-function SettingsTab({ av }: { av: Availability }) {
-  const save = useSaveBookingSettings();
+function Dates({ av }: { av: Availability }) {
+  const remove = useDeleteOverride();
+  const restore = useSaveOverride();
   const toast = useToast();
-  const s = av.settings;
-  const change = (patch: Partial<BookingSettings>) => save.mutate({ ...s, ...patch }, {
-    onSuccess: () => toast({ text: '已更新，學生看到的時段會立刻跟著變', undo: () => save.mutateAsync(s).then(() => undefined) }),
-    onError: (e) => toast({ text: errText(e), kind: 'error' }),
+  const fail = useFail();
+  const today = studioToday();
+  const upcoming = av.overrides.filter((o) => o.date >= today);
+  const del = (o: DateOverride) => remove.mutate(o.date, {
+    onSuccess: () => toast({ text: `已刪除 ${fmtDate(o.date)} 的特殊設定`, undo: () => restore.mutateAsync(o).then(() => {}) }),
+    onError: fail,
   });
-  const sel = (id: string, label: string, value: number, opts: number[], key: keyof BookingSettings, unit: string) => (
-    <div className="field"><label htmlFor={id}>{label}</label>
-      <select id={id} className="select" value={value} onChange={(e) => change({ [key]: Number(e.target.value) })}>{opts.map((o) => <option key={o} value={o}>{o} {unit}</option>)}</select></div>
-  );
   return (
-    <section className="card">
-      {sel('s-len', '每堂課時長', s.lessonMinutes, [30, 45, 60, 90, 120], 'lessonMinutes', '分鐘')}
-      {sel('s-gap', '課程間隔', s.gapMinutes, [0, 10, 15, 30, 60], 'gapMinutes', '分鐘')}
-      {sel('s-adv', '可提前預約', s.advanceDays, [7, 14, 30, 60, 90], 'advanceDays', '天')}
+    <section className="av-card" aria-labelledby="av-dates-h">
+      <h2 className="av-h" id="av-dates-h">特殊日期</h2>
+      <p className="av-sub">某一天休息或想改時間，就在這裡設定。這天會取代每週時段。</p>
+      <Link to="date/new" className="btn primary av-add-date"><Icon name="plus" size={18} />新增特殊日期</Link>
+      {upcoming.length === 0 ? <p className="av-empty">還沒有特殊日期。</p> : (
+        <ul className="av-overrides">
+          {upcoming.map((o) => (
+            <li key={o.date}>
+              <Link to={`date/${o.date}`} className="av-ov-main" aria-label={`編輯 ${fmtDate(o.date)}`}>
+                <span className="av-ov-date">{fmtDate(o.date)}</span>
+                <span className={`av-ov-tag ${o.closed ? 'closed' : 'custom'}`}>{o.closed ? '全天休息' : '自訂時段'}</span>
+                <span className="av-ov-detail">{o.closed ? o.note || '這天不開放預約' : `${o.ranges.map(rangeText).join('、')}${o.note ? ` · ${o.note}` : ''}`}</span>
+              </Link>
+              <button className="icon-btn flat hit" aria-label={`刪除 ${fmtDate(o.date)} 的特殊設定`} onClick={() => del(o)}><Icon name="trash" size={18} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
-export function AvailabilityPage() {
-  const av = useAvailability();
-  const [tab, setTab] = useState<'weekly' | 'dates' | 'settings'>('weekly');
-  return (
-    <div className="page">
-      <PageHead title="可預約時段" over="學生看到的時段" />
-      <Tabs value={tab} onChange={setTab} options={[{ value: 'weekly', label: '每週時段' }, { value: 'dates', label: '特殊日期' }, { value: 'settings', label: '預約設定' }]} />
-      {av.isPending ? <PageSkeleton blocks={[160, 160]} /> : av.isError ? <ErrorCard error={av.error} retry={() => av.refetch()} /> : (
-        tab === 'weekly' ? <WeeklyTab av={av.data} /> : tab === 'dates' ? <OverridesTab av={av.data} /> : <SettingsTab av={av.data} />
-      )}
-      <Outlet />
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- sheets */
-function RangeFields({ value, onChange }: { value: TimeRange; onChange: (r: TimeRange) => void }) {
-  return (
-    <div className="grid2">
-      <div className="field"><label htmlFor="r-s">開始</label><select id="r-s" className="select" value={value.start} onChange={(e) => onChange({ ...value, start: e.target.value })}>{TIME_OPTIONS.map((t) => <option key={t}>{t}</option>)}</select></div>
-      <div className="field"><label htmlFor="r-e">結束</label><select id="r-e" className="select" value={value.end} onChange={(e) => onChange({ ...value, end: e.target.value })}>{TIME_OPTIONS.map((t) => <option key={t}>{t}</option>)}</select></div>
-    </div>
-  );
-}
-
-export function RangeSheet() {
-  const { weekday: wdParam, idx = 'new' } = useParams();
-  const wd = Number(wdParam);
-  const av = useAvailability();
-  const save = useSaveWeekly();
-  const toast = useToast();
-  const close = useSheetClose(PARENT);
-  const day = av.data?.weekly.find((w) => w.weekday === wd);
-  const sorted = sortRanges(day?.ranges ?? []);
-  const i = idx === 'new' ? -1 : Number(idx);
-  const [r, setR] = useState<TimeRange | null>(null);
-  const cur = r ?? (i >= 0 ? sorted[i] : undefined) ?? { start: '09:00', end: '12:00' };
-
-  if (!av.data || !day) return <RouteSheet title="時段" parent={PARENT}><p className="sub">載入中…</p></RouteSheet>;
-  const next = sortRanges(i >= 0 ? sorted.map((x, k) => (k === i ? cur : x)) : [...sorted, cur]);
-  const problems = rangeProblems(next, av.data.settings.lessonMinutes);
-  const commit = (ranges: TimeRange[], text: string) => {
-    const prev = av.data!.weekly;
-    save.mutate(av.data!.weekly.map((w) => (w.weekday === wd ? { ...w, ranges } : w)), {
-      onSuccess: () => { close(); toast({ text, undo: () => save.mutateAsync(prev).then(() => undefined) }); },
-      onError: (e) => toast({ text: errText(e), kind: 'error' }),
-    });
-  };
-
-  return (
-    <RouteSheet title={`${WEEKDAY_LABEL[wd]} · ${i >= 0 ? '編輯時段' : '新增時段'}`} parent={PARENT}>
-      <RangeFields value={cur} onChange={setR} />
-      <Preview ranges={next} s={av.data.settings} />
-      <button className="btn primary block" disabled={problems.length > 0 || save.isPending} onClick={() => commit(next, '已儲存時段')}>儲存</button>
-      {i >= 0 && <button className="btn dtext" onClick={() => commit(sorted.filter((_, k) => k !== i), '已刪除時段')}>刪除這個時段</button>}
-    </RouteSheet>
-  );
-}
-
+/** /teacher/availability/date/:date — closed all day, or its own hours. Lessons already booked are NOT cancelled. */
 export function OverrideSheet() {
-  const { date = '' } = useParams();
+  const { date: param } = useParams();
   const av = useAvailability();
   const save = useSaveOverride();
-  const del = useDeleteOverride();
   const toast = useToast();
-  const close = useSheetClose(PARENT);
-  const [from, to] = monthRange();
-  const lessons = useLessons('teacher', from, to);
-  const existing = av.data?.overrides.find((o) => o.date === date);
-  const [draft, setDraft] = useState<DateOverride | null>(null);
-  const o = draft ?? existing ?? { date, closed: true, ranges: [], note: '' };
-  const booked = (lessons.data ?? []).filter((l) => l.date === date && l.status === 'Booked');
-
-  if (!av.data) return <RouteSheet title="特殊日期" parent={PARENT}><p className="sub">載入中…</p></RouteSheet>;
-  const usual = av.data.weekly.find((w) => w.weekday === weekdayOf(date));
-  const problems = o.closed ? [] : rangeProblems(o.ranges, av.data.settings.lessonMinutes);
-  const set = (p: Partial<DateOverride>) => setDraft({ ...o, ...p });
-  const undoTo = (prev: DateOverride | undefined) => () => (prev ? save.mutateAsync(prev) : del.mutateAsync(date)).then(() => undefined);
-
+  const fail = useFail();
+  const close = useSheetClose("/teacher/availability?tab=dates");
+  const today = studioToday();
+  const existing = param !== 'new' ? av.data?.overrides.find((o) => o.date === param) : undefined;
+  const [date, setDate] = useState(existing?.date ?? '');
+  const [closed, setClosed] = useState(existing?.closed ?? true);
+  const [ranges, setRanges] = useState<TimeRange[]>(existing?.ranges.length ? existing.ranges : [{ start: '14:00', end: '18:00' }]);
+  const [note, setNote] = useState(existing?.note ?? '');
+  const lessons = useLessons('teacher', date || today, date || today);
+  const booked = useMemo(() => (date ? (lessons.data ?? []).filter((l) => l.date === date && l.status === 'Booked') : []), [lessons.data, date]);
+  if (!av.data || (param !== 'new' && !existing)) return null;
+  const { lessonMinutes, gapMinutes } = av.data.settings;
+  const usual = date ? av.data.weekly.find((d) => d.weekday === weekdayOf(date)) : undefined;
+  const problems = closed ? [] : ranges.length === 0 ? ['請至少加一個時段，或改成全天休息。'] : rangeProblems(ranges, lessonMinutes);
+  const replaces = param === 'new' && !!date && av.data.overrides.some((o) => o.date === date);
+  const ok = !!date && date >= today && problems.length === 0;
+  const setRange = (i: number, r: TimeRange) => setRanges(ranges.map((x, j) => (j === i ? r : x)));
+  const submit = () => {
+    save.mutateAsync({ date, closed, ranges: closed ? [] : sortRanges(ranges), note: note.trim() })
+      .then(() => toast({ text: `${fmtDate(date)} 已設定為${closed ? '全天休息' : '自訂時段'}` }))
+      .catch(fail);
+    close();
+  };
   return (
-    <RouteSheet title={`特殊日期 ${fmtDate(date)}`} parent={PARENT}>
-      <p className="cap">平常這天：{usual?.enabled && usual.ranges.length ? usual.ranges.map(rangeText).join('、') : '休息'}</p>
-      {booked.length > 0 && (
-        <div className="info" style={{ background: 'var(--warn-tint)' }}>◆ 這天已有 {booked.length} 堂課（{booked.map((l) => `${l.time} ${l.studentName}`).join('、')}）。不會自動取消，請到<Link to="/teacher/calendar"> 行事曆 </Link>處理。</div>
-      )}
-      <div className="row between"><span className="label">全天休息</span><Switch checked={o.closed} label="全天休息" onChange={(v) => set({ closed: v, ranges: v ? [] : o.ranges.length ? o.ranges : [{ start: '14:00', end: '18:00' }] })} /></div>
-      {!o.closed && (
-        <div className="stack">
-          {o.ranges.map((r, k) => (
-            <div key={k} className="stack s2">
-              <RangeFields value={r} onChange={(nr) => set({ ranges: o.ranges.map((x, j) => (j === k ? nr : x)) })} />
-              <button className="btn dtext" style={{ alignSelf: 'flex-start' }} onClick={() => set({ ranges: o.ranges.filter((_, j) => j !== k) })}>移除這段</button>
-            </div>
-          ))}
-          <button className="btn secondary sm" style={{ alignSelf: 'flex-start' }} onClick={() => set({ ranges: [...o.ranges, { start: '09:00', end: '12:00' }] })}><Icon name="plus" size={18} />新增時段</button>
-          <Preview ranges={o.ranges} s={av.data.settings} />
-          {slotTimesFor({ ...av.data, overrides: [{ ...o, closed: false }] }, date).length === 0 && o.ranges.length === 0 && <p className="err">請至少新增一段時間，或選擇全天休息。</p>}
+    <RouteSheet title={existing ? `編輯 ${fmtDate(existing.date)}` : '新增特殊日期'} parent="/teacher/availability?tab=dates">
+      {!existing && (
+        <div className="field">
+          <label htmlFor="ov-date">日期</label>
+          <input id="ov-date" className="input" type="date" min={today} value={date} onChange={(e) => setDate(e.target.value)} />
+          {date && usual && <p className="av-hint">平常{WEEKDAY_LABEL[usual.weekday]}：{usual.enabled ? usual.ranges.map(rangeText).join('、') : '不開放預約'}</p>}
+          {replaces && <p className="av-hint">這天已經有特殊設定，儲存後會取代。</p>}
         </div>
       )}
-      <div className="field"><label htmlFor="on">備註（選填）</label><input id="on" className="input" maxLength={60} value={o.note} onChange={(e) => set({ note: e.target.value })} placeholder="例如：參加音樂會" /></div>
-      <button className="btn primary block" disabled={problems.length > 0 || (!o.closed && o.ranges.length === 0) || save.isPending}
-        onClick={() => save.mutate(o, { onSuccess: () => { close(); toast({ text: `${fmtDate(date)} 已設定`, undo: undoTo(existing) }); }, onError: (e) => toast({ text: errText(e), kind: 'error' }) })}>儲存</button>
-      {existing && <button className="btn dtext" onClick={() => del.mutate(date, { onSuccess: () => { close(); toast({ text: '已移除特殊日期', undo: undoTo(existing) }); } })}>移除這個特殊日期</button>}
+      <fieldset className="av-fs">
+        <legend>這天要</legend>
+        <div className="cs-seg" role="radiogroup" aria-label="這天要">
+          <button type="button" role="radio" aria-checked={closed} onClick={() => setClosed(true)}>全天休息</button>
+          <button type="button" role="radio" aria-checked={!closed} onClick={() => setClosed(false)}>自訂時段</button>
+        </div>
+      </fieldset>
+      {!closed && (
+        <div className="av-ov-ranges">
+          {ranges.map((r, i) => (
+            <div className="av-ov-range" key={i}>
+              <TimePair start={r.start} end={r.end} setStart={(v) => setRange(i, { ...r, start: v })} setEnd={(v) => setRange(i, { ...r, end: v })} idPrefix={`ov${i}`} />
+              {ranges.length > 1 && <button type="button" className="icon-btn flat hit" aria-label={`刪除 ${rangeText(r)}`} onClick={() => setRanges(ranges.filter((_, j) => j !== i))}><Icon name="trash" size={18} /></button>}
+            </div>
+          ))}
+          <button type="button" className="av-add" onClick={() => setRanges([...ranges, { start: '19:00', end: '21:00' }])}><Icon name="plus" size={16} />新增時段</button>
+          {problems.length > 0 ? <p className="av-warn" role="alert">{problems[0]}</p>
+            : <p className="av-preview">這天可預約：{ranges.flatMap((r) => startsInRange(r, lessonMinutes, gapMinutes)).sort().join('、') || '沒有時段'}</p>}
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor="ov-note">備註（選填）</label>
+        <input id="ov-note" className="input" maxLength={60} value={note} onChange={(e) => setNote(e.target.value)} placeholder="例如：參加音樂會" />
+      </div>
+      {booked.length > 0 && (
+        <p className="av-booked" role="note">
+          這天已有 {booked.length} 堂課（{booked.map((l) => `${l.time} ${l.studentName}`).join('、')}）。特殊日期只影響之後的預約，<b>不會自動取消這些課</b>，需要的話請到行事曆處理。
+        </p>
+      )}
+      <button className="btn primary block" disabled={!ok} onClick={submit}>儲存</button>
+      <button className="btn secondary block" onClick={() => close()}>取消</button>
     </RouteSheet>
+  );
+}
+
+function Settings({ s }: { s: BookingSettings }) {
+  const save = useSaveBookingSettings();
+  const toast = useToast();
+  const fail = useFail();
+  const change = (patch: Partial<BookingSettings>, text: string) => {
+    const before = s;
+    save.mutate({ ...s, ...patch }, { onSuccess: () => toast({ text, undo: () => save.mutateAsync(before).then(() => {}) }), onError: fail });
+  };
+  const row = (id: string, label: string, hint: string, value: number, options: number[], fmt: (n: number) => string, key: keyof BookingSettings) => (
+    <div className="av-set">
+      <div><label htmlFor={id}>{label}</label><p className="av-hint">{hint}</p></div>
+      <select id={id} className="input" value={value} onChange={(e) => change({ [key]: Number(e.target.value) }, `${label}改為 ${fmt(Number(e.target.value))}`)}>
+        {options.map((o) => <option key={o} value={o}>{fmt(o)}</option>)}
+      </select>
+    </div>
+  );
+  return (
+    <section className="av-card" aria-labelledby="av-set-h">
+      <h2 className="av-h" id="av-set-h">預約設定</h2>
+      <p className="av-sub">改了之後，學生看到的時段會馬上更新。已經預約的課不受影響。</p>
+      <div className="av-sets">
+        {row('set-len', '每堂課時長', '新預約的課有多長', s.lessonMinutes, LENGTHS, (n) => `${n} 分鐘`, 'lessonMinutes')}
+        {row('set-gap', '課程間隔', '兩堂課之間休息多久', s.gapMinutes, GAPS, (n) => (n === 0 ? '不休息' : `${n} 分鐘`), 'gapMinutes')}
+        {row('set-adv', '可提前預約', '學生最遠可以預約到幾天後', s.advanceDays, ADVANCE, (n) => `${n} 天內`, 'advanceDays')}
+      </div>
+    </section>
   );
 }

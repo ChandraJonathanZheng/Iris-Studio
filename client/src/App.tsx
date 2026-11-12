@@ -1,6 +1,6 @@
 import type { RouteObject } from 'react-router';
 import { Shell } from './components/Shell';
-import { Login, Pending, Register } from './pages/Auth';
+import { ForgotPassword, Login, Pending, Register, ResetPassword } from './pages/Auth';
 import { ConsultPage, Landing } from './pages/Landing';
 
 // Dashboards are split into their own chunks (loaded on demand, and prefetched on hover/touch — see lib/prefetch).
@@ -20,9 +20,9 @@ export const routes: RouteObject[] = [
   { path: '/login', Component: Login },
   { path: '/register', Component: Register },
   { path: '/pending', Component: Pending },
+  { path: '/forgot-password', Component: ForgotPassword },
+  { path: '/reset-password', Component: ResetPassword },
   // links from emails (their own small chunk)
-  { path: '/forgot-password', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).ForgotPassword }) },
-  { path: '/reset-password', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).ResetPassword }) },
   { path: '/verify-email', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).VerifyEmail }) },
   { path: '/unsubscribe', lazy: async () => ({ Component: (await import('./pages/AccountLinks')).Unsubscribe }) },
   // legal & privacy documents (+ cookie settings, 個資權利申請) — public, their own chunk
@@ -47,7 +47,7 @@ export const routes: RouteObject[] = [
       { path: 'calendar', lazy: lazy(teacher, 'TeacherCalendar'), children: [{ path: 'lessons/:id/cancel', lazy: lazy(teacher, 'TeacherCancelSheet') }] },
       { path: 'students', lazy: lazy(teacher, 'Students') },
       { path: 'students/:id', lazy: lazy(teacher, 'StudentDetailPage'), children: [{ path: 'remind', lazy: lazy(teacher, 'RemindSheet') }, { path: 'adjust', lazy: lazy(teacher, 'AdjustCreditsSheet') }, { path: 'edit', lazy: lazy(teacher, 'EditStudentSheet') }, { path: 'payments', lazy: lazy(teacher, 'PaymentHistorySheet') }, { path: 'book', lazy: lazy(teacher, 'TeacherBookSheet') }, { path: 'propose/:lessonId', lazy: lazy(teacher, 'ProposeSheet') }] },
-      { path: 'requests', lazy: lazy(teacher, 'RequestsPage'), children: [{ path: ':id/decline', lazy: lazy(teacher, 'DeclineSheet') }] },
+      { path: 'requests', lazy: lazy(teacher, 'RequestsPage'), children: [{ path: ':id/decline', lazy: lazy(teacher, 'DeclineSheet') }, { path: 'reports/:id/decline', lazy: lazy(teacher, 'ReportDeclineSheet') }] },
       { path: 'payments', lazy: lazy(teacher, 'PaymentsPage'), children: [{ path: ':id/reject', lazy: lazy(teacher, 'RejectSheet') }] },
       { path: 'consults', lazy: lazy(teacher, 'ConsultsPage') },
       { path: 'inbox', lazy: lazy(teacher, 'InboxIndex') },

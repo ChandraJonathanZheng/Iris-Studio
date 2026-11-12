@@ -82,3 +82,17 @@ export const CLASS_TYPE_LABEL = LESSON_TYPE_LABEL;
 export const CONSULT_TIME_LABEL: Record<'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any', string> = {
   weekdayDay: '平日白天', weekdayEvening: '平日晚上', weekend: '週末', any: '都可以',
 };
+
+/** "2026.11.12 (四)" — the date line under the student greeting. */
+export function fmtDayLine(iso: string): string { return `${iso.slice(0, 10).replace(/-/g, '.')} (${wd(iso)})`; }
+const EN_WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/** "Thursday, 16:30" — the big time on the 下一堂課 card. */
+export function fmtWeekdayTime(iso: string, time: string): string { return `${EN_WD[weekday(iso)]}, ${time}`; }
+/** "11-05 (四) 16:30" — list rows (spaced variant of fmtSlot). */
+export function fmtSlotSpaced(iso: string, time: string): string { return `${iso.slice(5, 10)} (${wd(iso)}) ${time}`; }
+/** "16:30" + 60 min → "17:30" */
+export function endTime(time: string, minutes = 60): string {
+  const [h, m] = time.split(':').map(Number);
+  const t = h * 60 + m + minutes;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
