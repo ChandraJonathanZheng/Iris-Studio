@@ -1,6 +1,6 @@
 # Iris Studio — Design System
 
-Version 3.1 · 12 Nov 2026 (compact header 登入, 回報 dialog, fee line) · v3 8 Nov 2026 · written from the prototype (`client/src/styles.css`, `components/`).
+Version 3.1 · 12 Nov 2026 (compact header 登入, 回報 dialog, fee line, auth forms) · v3 8 Nov 2026 · written from the prototype (`client/src/styles.css`, `components/`).
 Replaces *Design Guidebook v2*. Look: **warm ivory + botanical sage, Apple (HIG) feel** — calm, handcrafted, premium; never a generic admin dashboard.
 
 > **How to use this doc.** Each value has a token name. New code uses the tokens, not raw hex. Some prototype blocks still have hex values written inline (they were tuned comment by comment); the table in §2 lists the value each one should become, so they can be folded into tokens in one clean-up pass.
@@ -185,6 +185,8 @@ Primary + destructive pairs are **asymmetric**: primary wider (flex 1.4–1.6).
 **Confirm dialog (回報 pattern)**: question title (要申請取消這堂課嗎？), one effect line stating the outcome *before* the user commits (退回 1 堂 · 取消費 NT$ 500 in amber), optional reason field, buttons 返回 (secondary) + 確定 (primary, wider). Status after send: ◆ 待審核 (amber) with 撤回 text link; result ✕ 已取消（回報）(brick) or ○ 已上課.
 
 **Fee line** (堂數與付款, receipt modal): label left, NT$ right-aligned tabular numbers; total row = 方案 + 取消費, 600 weight.
+
+**Auth forms (登入 / 建立帳號 / 忘記密碼 / 設定新密碼)**: required fields marked with a red `*` after the label; example placeholders in every box; error text directly under its box (「〈欄位〉不能空白。」), first invalid field focused; Email checked 0.6 s after typing stops. Password checklist under the field, each line ○ → ✓ green as it passes (至少 8 個字元 · 大寫字母 · 小寫字母 · 數字; reset adds 不能和最近 3 次的密碼相同). Submit buttons glow on hover; while sending they read **處理中…**, turn grey and are disabled.
 
 ### 8.2 Form controls
 - **Input**: white, `rgba(60,52,40,.16)` border, radius 12, focus = sage border + 4 px sage glow. Label above (14 / 600). Error text below, `aria-invalid` + `aria-describedby`.

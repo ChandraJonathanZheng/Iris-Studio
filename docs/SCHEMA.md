@@ -1,7 +1,7 @@
 # Iris Studio — Database Schema
 
 PostgreSQL · EF Core 10 (code-first) · source of truth: `server/IrisStudio.Api/Data/Entities.cs` + `AppDbContext.cs`.
-Version 12 Nov 2026 v2.3 (adds `LessonReports`, `CancellationFees` — used by the demo, migration `LessonReports` still to be committed). Earlier: 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
+Version 12 Nov 2026 v2.4 (adds `LessonReports`, `CancellationFees`, `PasswordResetTokens`, `PasswordHistories`, `Lessons.CancelledByReport`, AlertKind `Report` — used by the demo, migrations still to be committed). Earlier: 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
 
 **Conventions**
 - Primary keys are `uuid` (generated in .NET) except the three availability tables (natural keys).
@@ -51,7 +51,7 @@ erDiagram
 | `ChangeStatus` | Open, Approved, Declined, Withdrawn | |
 | `ChangeBy` | Student, Teacher | who asked: Student = 學生申請 (Iris decides), Teacher = 老師提議 (the student decides) |
 | `PaymentStatus` | Pending, Confirmed, Rejected | |
-| `AlertKind` | Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal | Reminder = 通知學生繳學費 (manual or automatic) · Proposal = 老師想調整上課時間 |
+| `AlertKind` | Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal, Report | Reminder = 通知學生繳學費 (manual or automatic) · Proposal = 老師想調整上課時間 |
 
 ---
 
@@ -91,6 +91,7 @@ erDiagram
 | CancelledAtUtc | timestamp | ✓ | |
 | Refunded | bool | | credit returned on cancel |
 | CancelledByTeacher | bool | | |
+| CancelledByReport | bool | | cancelled afterwards by an approved 回報 |
 | CreatedAtUtc | timestamp | | |
 
 Indexes: **`UX_Lesson_Slot_Booked` unique (Date, Time) where Status = 'Booked'** (same-start double booking) · (StudentId, Date).
@@ -134,10 +135,10 @@ Indexes: (Status, UploadedAtUtc), unique StudentId where Pending, and unique (St
 | Column | Type | Null | Notes |
 |---|---|---|---|
 | Id | uuid | | PK |
-| LessonId | uuid | | FK → Lessons (restrict); unique where Status in (Pending, Approved) — one live report per lesson |
+| LessonId | uuid | | FK → Lessons (restrict); `UX_LessonReport_Lesson` unique where Status ≠ Withdrawn — one report per lesson (declined is final) |
 | StudentId | uuid | | FK → Users (restrict) |
 | Reason | text | ✓ | optional, ≤ 300 |
-| Status | text(16) | | Pending / Approved / Declined / Withdrawn |
+| Status | text(16) | | Open / Approved / Declined / Withdrawn |
 | DeclineReason | text | ✓ | required when Declined |
 | FeeWaived | bool | | Iris ticked 這次免收取消費 |
 | CreatedAtUtc / DecidedAtUtc | timestamp | / ✓ | allowed only ≤ `Studio:ReportDays` (7) after the lesson |
@@ -153,6 +154,24 @@ Indexes: (Status, UploadedAtUtc), unique StudentId where Pending, and unique (St
 | PaymentId | uuid | ✓ | FK → Payments; set when Billed |
 
 Flow: approve → Unpaid · receipt upload → every Unpaid fee becomes Billed on it and `Payments.Amount` = package price + fees · receipt confirmed → Paid · rejected → Unpaid again. Approving sets the lesson to Cancelled and writes `CreditLogs` `report:{id}` (+1).
+
+### `PasswordResetTokens` (忘記密碼)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| UserId | uuid | | FK → Users (cascade) |
+| TokenHash | char(64) | | SHA-256 of the 256-bit token, **unique**; the raw token is only in the email |
+| ExpiresAtUtc | timestamp | | created + `Studio:ResetLinkMinutes` (30) |
+| UsedAtUtc / RevokedAtUtc | timestamp | ✓ | single use; a newer request revokes older ones |
+| CreatedAtUtc | timestamp | | 1 / min / account |
+
+### `PasswordHistories`
+| Column | Type | Notes |
+|---|---|---|
+| Id | uuid | PK |
+| UserId | uuid | FK → Users (cascade); index (UserId, CreatedAtUtc) |
+| PasswordHash | text | PBKDF2; the new password may not match the **last 3** |
+| CreatedAtUtc | timestamp | |
 
 ### `Alerts` (通知 + outbox)
 | Column | Type | Null | Notes |
@@ -281,7 +300,8 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Group classes with capacity | **pending decision** — would replace `UX_Lesson_Slot_Booked` with a per-slot capacity |
 | Re-apply after decline | **pending decision** — today `Users.Declined` blocks it |
 | New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the committed Initial migration |
-| 回報 tables | `LessonReports`, `CancellationFees` — `dotnet ef migrations add LessonReports` (both providers) |
+| 回報 tables | `LessonReports`, `CancellationFees`, `Lessons.CancelledByReport` — `dotnet ef migrations add LessonReports` (both providers) |
+| Password reset | `PasswordResetTokens`, `PasswordHistories` — `dotnet ef migrations add PasswordReset` (both providers) |
 | Phase 2 | `Homework`, `HomeworkSubmissions`, `Events`, `EventInvites` |
 
 ## 8. Added 8 Nov (later): teacher profile, consents, privacy requests

@@ -1,6 +1,6 @@
 # Iris Studio — Features
 
-Version 12 Nov 2026 (v2.3: 回報 + 取消費 in the demo `docs/demo/iris-studio-demo.html`; source not yet in this branch) · every feature below is in the clickable prototype unless marked.
+Version 12 Nov 2026 (v2.4: 回報 + 取消費, 忘記密碼 + password rules — in the demo `docs/demo/iris-studio-demo.html`; source not yet in this branch) · every feature below is in the clickable prototype unless marked.
 Status: ✅ built (client + mock API + backend implementation; backend validated with PostgreSQL integration tests) · 🟡 built, external service still to connect · ⬜ planned.
 Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 
@@ -24,13 +24,13 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 
 | # | Feature | Pri | Status | Acceptance criteria |
 |---|---|---|---|---|
-| B1 | Login | P0 | ✅ | LINE (sage button + small LINE mark), Email, 老師登入 →, 建立帳號 →; same error for wrong email / password |
+| B1 | Login | P0 | ✅ | Email + 密碼 form first (live email check, errors under each box), 忘記密碼？ under the password, then 其他 → LINE 登入 · 師 老師登入, 建立帳號 →; same error for wrong email / password |
 | B2 | Demo accounts | — | ✅ | 示範帳號 box only in mock / demo builds |
-| B3 | Register | P0 | ✅ | Journey 建立帳號 → Iris 確認 → 開始預約; LINE or 姓名 / Email / 密碼 (show/hide, live ≥ 8 hint) |
+| B3 | Register | P0 | 🟡 demo | Journey 建立帳號 → Iris 確認 → 開始預約; Email only: Email → 姓名 → 密碼 → 確認密碼, all required (red \*), placeholders; live checklist ≥ 8 · 大寫 · 小寫 · 數字; 「〈欄位〉不能空白。」 per field |
 | B4 | Pending screen | P0 | ✅ | 申請已送出 / 等待 Iris 確認 + review icon; auto-enters when approved; 不是 X？切換帳號 |
 | B5 | LINE Login | P0 | 🟡 | OIDC flow coded with `bot_prompt=aggressive` (add-friend prompt on the login screen); needs LINE channel id/secret + OA linked |
 | B7 | Re-apply after decline | — | ⬜ | **Pending decision** |
-| B6 | Forgot / change password | P1 | 🟡 | Email/password recovery complete: single-use 60-minute link, resend cooldown, expired-link UI, and old-session revocation; LINE-only accounts excluded |
+| B6 | 忘記密碼 / 設定新密碼 | P0 | 🟡 demo | `/forgot-password`: same answer whether or not the email exists; 256-bit single-use link, **30 min**, SHA-256 stored, newest only, 1 / min / account; `/reset-password`: link checked first (連結已失效 + 重新申請), 新密碼 + 確認新密碼, same checklist + not one of the **last 3** passwords, 確認 → 處理中… (disabled); other sessions signed out; LINE-only accounts excluded. Delivery needs Resend |
 
 ## C. Student app
 

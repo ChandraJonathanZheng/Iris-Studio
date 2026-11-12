@@ -5,12 +5,12 @@
 | Product | Iris Studio — public website + booking & admin app for Iris's singing studio |
 | Owner | Chandra (developer) · Iris (studio owner, primary user) |
 | Status | Clickable prototype done (React + mock API); .NET 10 backend implemented with committed migrations and PostgreSQL integration tests |
-| Version | v2.3 — 12 Nov 2026: **回報 a past lesson** + 取消費 (ST-10, ST-6, T-1, T-5, T-13, §5, §10 #14–16); compact header 登入 button. v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
+| Version | v2.4 — 12 Nov 2026: **忘記密碼** (AUTH-7, AUTH-8), sign-up = Email only with required fields + password rule (AUTH-1, AUTH-2). v2.3: **回報 a past lesson** + 取消費 (ST-10, ST-6, T-1, T-5, T-6, T-13, §5, §10 #14–17); compact header 登入 button. v2.2 — 8 Nov 2026 evening: teacher workspace (今日待辦, 收件匣, 更多, 教師個人資料), student detail, legal & privacy (draft). v2.1: Iris's 13 answers (§10). |
 | Related docs | `FEATURES.md` · `DESIGN-SYSTEM.md` · `SCHEMA.md` · `FLOW.md` |
 
 ---
 
-> **Note (12 Nov 2026):** the 回報 / 取消費 feature below is built in the clickable demo (`docs/demo/iris-studio-demo.html`). Its client + server source is **not in this branch yet**; re-apply it from the spec here before merging.
+> **Note (12 Nov 2026):** 回報 / 取消費 (ST-10, T-13) and the 忘記密碼 / password rules (AUTH-1, 2, 7, 8) are built in the clickable demo (`docs/demo/iris-studio-demo.html`). Their client + server source is **not in this branch yet**; re-apply them from this spec. The demo also still shows the older trial package (體驗課 1 堂 NT$ 800 for class type 體驗); this branch's decision is **單堂課 NT$ 1,500 after 已完成諮詢／面談** (§5) — the docs follow the branch.
 
 ## 1. Problem
 
@@ -74,11 +74,13 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 ### 4.2 Accounts (P0)
 | ID | Requirement |
 |---|---|
-| AUTH-1 | Login screen: 使用 LINE 登入 (primary), 使用 Email 登入, 老師登入 →, 建立帳號 →. Demo accounts only in demo builds. |
-| AUTH-2 | Register: 3-step indicator 建立帳號 → Iris 確認 → 開始預約. LINE register, or name + email + password (≥ 8, show/hide). |
+| AUTH-1 | Login screen: Email + 密碼 form (Email checked 0.6 s after typing stops, errors under each box), **忘記密碼？** right under the password box, 登入 (glow on hover), divider 其他 → **LINE 登入** · **師 老師登入**, 建立帳號 →. Demo accounts only in demo builds. |
+| AUTH-2 | Register (**Email only**): 3-step indicator 建立帳號 → Iris 確認 → 開始預約. Fields in this order, **all required (red \*)**, each with an example placeholder: Email (checked after typing) → 姓名 → 密碼 (eye) → 確認密碼 (eye, must match). Password rule shown as a live checklist: **≥ 8 characters, ≥ 1 upper-case, ≥ 1 lower-case, ≥ 1 number** (also enforced by the server). Then 開始之前 consents (no box, blends into the page; a minor's guardian fields are required too), then 建立帳號 (glow on hover). Submitting with empty fields shows 「〈欄位〉不能空白。」 under each one and focuses the first. |
 | AUTH-6 | Consents at sign-up (both ways): terms + privacy notice **required**; photo/video/voice promotion and marketing **optional, unchecked**; 我未滿 18 歲 → guardian name, relation, contact + guardian's checkbox. Stored as an append-only consent log with version + time. |
 | AUTH-3 | New accounts are **Pending** and see only the 等待 Iris 確認 screen (polls every 10 s, enters the app automatically once approved). |
 | AUTH-4 | Session = HttpOnly, SameSite cookie, 30 days sliding. Wrong email or password give the same message. Login rate-limited 10 / min / IP. |
+| AUTH-7 | **忘記密碼** (`/forgot-password`): Email only (required, checked after typing) → 寄送重設連結. The answer is **always the same** (「如果這個 Email 有註冊…」), so the page can't reveal who has an account. The email holds a link `/reset-password?token=…`: random 256-bit token, **valid 30 min, single use**, stored only as a SHA-256 hash; asking again cancels older links; max 1 email / minute / account + IP rate limit. LINE-only accounts (no password) get no email. |
+| AUTH-8 | **設定新密碼** (`/reset-password`): the link is checked first (expired/used → 「連結已失效」 + 重新申請). Only 新密碼 \* and 確認新密碼 \* (eye buttons, placeholders, errors under each box), the same live password checklist + 「不能和最近 3 次的密碼相同」. 確認 button bottom-right with hover + press effect; on click it shows **處理中…**, turns grey and is disabled. The new password must differ from the **last 3 passwords** (`PasswordHistories`). Success → /login with 「密碼已更新，請用新密碼登入。」 After a reset, the account's other sessions are signed out. |
 | AUTH-5 | LINE Login (OIDC) issues the same cookie; the LINE `sub` is stored as `LineUserId` (also used for LINE push). |
 
 ### 4.3 Student app (P0)
@@ -105,13 +107,13 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | T-3 | **學生**: search, filter chips, compact rows; only exceptions show a status (快用完 / 用完 / 確認中). |
 | T-4 | **學生詳細**: profile + quick actions (LINE 聯絡 · 調整堂數 · 編輯) + **media-consent line** (● 同意 / ○ 未同意 / ◆ 已撤回 — 請移除), 課程狀態, **通知學生繳學費**, then ONE lessons container: 下一堂 (sage wash, one action) · 後續課程 (＋ 預約課程) · 上過的課 (3 + 查看全部), latest payment. |
 | T-5 | **申請** (in 收件匣): sub-tabs 改時間 · **回報** · 新學生 · 等學生回覆 (URL `?tab=`; 回報 → T-13). 改時間: old → new, reason, availability, 同意 disabled on conflict, 婉拒 or 婉拒並提議其他時間. 等學生回覆: open proposals + 收回, answers of the last 7 days. Compact cards, friendly empty states. |
-| T-6 | **付款**: card action 查看收據並確認 → modal; credits only after ticking 我已核對：金額… (button disabled until then, guarded against double submit + idempotency key); 退回 (reason required). |
+| T-6 | **付款**: card action 查看收據並確認 → modal (expected amount = package price **+ the 取消費 billed on this receipt**, listed line by line); credits only after ticking 我已核對：金額… (button disabled until then, guarded against double submit + idempotency key); 退回 (reason required). |
 | T-7 | **諮詢**: website requests with contact type + preferred time; mark as contacted. |
 | T-8 | **可預約時段**: tabs 每週時段 / 特殊日期 / 預約設定 (see §5). |
 | T-9 | **通知學生繳學費**: editable message, channel shown (LINE or Email), 24 h repeat warning, sent after 10 s with 復原. |
 | T-11 | **教師個人資料**: name, contact LINE ID + "show to students" switch, avatar (≤ 2 MB), 目前狀態 + 狀態訊息 with live preview of the student card, 儲存; separate 登入方式 card (email change needs password, LINE unlink only if another login exists). |
 | T-12 | **個資權利申請**: list with due date (15 / 30 days, overdue red); 標為已處理 needs a note. |
-| T-13 | **回報 審核**: card = student, lesson, reason, effect line; **這次免收取消費** tick box; 同意 (+1 堂, fee added to the student's next receipt) / 婉拒 (reason required); undo 30 s, blocked once the fee is on a receipt. Receipt modal lists 方案 + 取消費 separately. |
+| T-13 | **回報 審核** (申請 → 回報, status 待審核): card = student, lesson date/time, when it was reported, reason, effect line; lesson becomes 已取消（回報） on 同意; **這次免收取消費** tick box; 同意 (+1 堂, fee added to the student's next receipt) / 婉拒 (reason required); undo 30 s, blocked once the fee is on a receipt. Receipt modal lists 方案 + 取消費 separately. |
 | T-10 | Every decision (approve, decline, confirm, cancel, adjust, remind) has **undo**; the student's alert is held back 10 s so a reversed decision is never seen. |
 
 ## 5. Business rules
@@ -139,9 +141,12 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | Automatic 繳費提醒 | When a booking uses the last credit; skipped if a receipt is pending or a reminder went out in the last 24 h; dropped if that lesson is cancelled with refund | `AutoRemindAsync` |
 | Credits | Book −1 · cancel in time +1 · confirmed receipt +package · manual ± with reason. Never < 0 (DB check). | `CreditLog` audit |
 | Receipts | Image only (checked by content), ≤ 5 MB, private to that student + Iris | `/api/receipts/{id}` |
-| 回報 window | Up to 7 days after an Attended lesson | `Studio:ReportDays` |
-| 取消費 | NT$ 500 per approved 回報 (Iris may waive per report); billed on the next receipt, Paid when that receipt is confirmed, Unpaid again if rejected | `Studio:CancelFee`, `CancellationFee` |
+| 回報 window | Only for **Attended** lessons, until **7 days** after the lesson ended (待 Iris 確認). One report per lesson; Open → 撤回 allowed | `Studio:ReportDays` |
+| 回報 approved | Lesson → Cancelled (`CancelledByReport`) · credits **+1** (CreditLog `report:{id}`) · one `CancellationFee` NT$ 500 (unless 這次免收取消費) | `Studio:CancelFee` |
+| 取消費 → next payment | Unpaid fees are **attached to the next receipt the student uploads** (amount due = package + fees). Confirmed → fees Paid. Rejected → fees back to Unpaid for the next upload. A receipt already waiting when the fee is created is not changed | `CancellationFee.PaymentId` |
 | Time zone | All lesson times are studio time (Asia/Taipei) | `StudioClock` |
+| Password | ≥ 8 chars, ≥ 1 upper, ≥ 1 lower, ≥ 1 digit; not one of the last 3 | `PasswordService.RuleProblem` · `lib/password.ts` |
+| Reset link | 30 min, once, newest only, 1 / min / account | `Studio:ResetLinkMinutes`, `PasswordResetTokens` |
 | Date format | `MM-DD(週)` e.g. `11-05(四) 16:30`; landing events `YYYY/MM/DD（週）` | `lib/date.ts` |
 
 ## 6. Notifications
@@ -194,11 +199,12 @@ React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sh
 | 11 | Unify labels? | Yes: 一對一 / 團體課 / 單堂課 everywhere |
 | 12 | Automatic payment reminder? | Yes, when the last credit is booked |
 | 13 | Teacher books for a student? | Yes, screen built (學生詳細 → 預約課程) |
-| 14 | 回報 time limit? | **Pending Iris** — default 7 days |
-| 15 | May Iris waive the 取消費? | **Pending Iris** — default yes, 這次免收取消費 per report |
-| 16 | Reason from the student? | **Pending Iris** — default optional |
+| 14 | Can a student cancel a lesson that has already passed? | Yes, via **回報** → Iris reviews. If she agrees: +1 堂 back and 取消費 NT$ 500 on the next payment (12 Nov 2026) |
+| 15 | How long after the lesson can a student 回報? | **Pending** — built with 7 days (`Studio:ReportDays`), confirm with Iris |
+| 16 | Can Iris waive the 取消費 for one report (illness, emergency)? | **Pending** — built as a 這次免收取消費 tick box (off by default), confirm with Iris |
+| 17 | Does the student give a reason when reporting? | **Pending** — built as optional 原因（選填）, confirm with Iris |
 
-Still open: real content (photos, bio, testimonials with consent), bank account, decisions 9 and 10.
+Still open: real content (photos, bio, testimonials with consent), bank account, decisions 9, 10 and 15–17.
 
 ## 11. Release checklist
 
@@ -212,5 +218,6 @@ Still open: real content (photos, bio, testimonials with consent), bank account,
 - [ ] Remove demo accounts (mock build only)
 - [ ] Lawyer review of the 7 legal pages + fill every 【待填】 (`LEGAL.md` §4–5)
 - [ ] Write the 取消費 NT$ 500 rule into 預約與取消政策 and 付款與退款政策 (lawyer check)
-- [ ] Commit the 回報 / 取消費 source (client + server + migration `LessonReports`)
+- [ ] Commit the 回報 / 取消費 and 忘記密碼 source (client + server + migrations `LessonReports`, `PasswordReset`)
+- [ ] Email provider for 忘記密碼 (Resend: verified domain); set `Studio:PublicUrl` to the real https address (reset links are built from it, never from the request Host header)
 - [ ] Self-host the web font; choose a host with encryption at rest
