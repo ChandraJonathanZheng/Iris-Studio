@@ -1,12 +1,13 @@
 import type { MConsent, MConsult, MPrivacyRequest, MReel } from './db';
 import { reelShortcode, reelUrl, thumbError, MAX_REELS } from '../lib/reels';
+import { passwordOk } from '../lib/password';
 import { delay, http, HttpResponse } from 'msw';
 import { addDays, compareSlot, fmtSlot, studioToday } from '../lib/date';
 import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
 import type { Availability, Consult, Me, Overview, StudentDetail, StudentSummary } from '../lib/types';
 import {
   ALERT_DELAY_MS, STUDIO, UNDO_MS, addAlert, availability, db, dropQueuedAlerts, settleAttendance, idem, isTaken, lessonDto, lessonStart,
-  newId, slotPast, userById, validSlot, type MUser,
+  newId, reportUntil, slotPast, userById, validSlot, type MUser,
 } from './db';
 
 const creditAdjustments = new Map<string, { studentId: string; delta: number; createdAt: number; undone: boolean }>();
@@ -19,6 +20,8 @@ const store = {
 };
 const sessionUser = (): MUser | undefined => { try { return userById(store.getItem(SESSION) ?? ''); } catch { return undefined; } };
 const problem = (status: number, detail: string, code = 'error') => HttpResponse.json({ title: detail, detail, code }, { status });
+/** 忘記密碼 links handed out by the mock: token → user, 30 minutes, single use, newest only. */
+const resetTokens = new Map<string, { userId: string; expiresAt: number }>();
 const lag = () => delay(250 + Math.random() * 250);
 
 function requireUser(role?: 'Student' | 'Teacher') {
@@ -52,6 +55,7 @@ function meDto(u: MUser): Me {
     voiceType: u.voiceType, goal: u.goal, grade: u.grade, avatarUrl: u.avatarUrl ?? null, credits: u.credits,
     booked: mine.filter((l) => l.status === 'Booked').length, attended: mine.filter((l) => l.status === 'Attended').length,
     packageSize: u.packageSize,
+    reported: db.reports.filter((x) => x.studentId === u.id && x.status === 'Approved').length,
     unreadAlerts: db.alerts.filter((a) => a.userId === u.id && !a.read && a.sendAfter <= Date.now()).length,
     classType: u.classType ?? 'private', trialAvailable: trialAvailable(u),
     emailVerified: u.emailVerified ?? false, emailUpdates: u.emailUpdates ?? true, emailReminders: u.emailReminders ?? true,
@@ -120,7 +124,15 @@ const teacherProfileDto = (u: MUser) => ({
   lineId: u.lineId, lineIdPublic: !!u.lineIdPublic, avatarUrl: u.avatarUrl ?? null,
   status: u.teacherStatus ?? 'normal', statusLabel: u.statusLabel ?? null, statusMessage: u.statusMessage ?? null,
 });
-const payDto = (p: (typeof db.payments)[number]) => ({ ...p, studentName: userById(p.studentId)?.name ?? '' });
+const lessonOf = (lessonId: string) => db.lessons.find((l) => l.id === lessonId)!;
+const payDto = ({ feeIds, decidedAt: _decided, ...p }: (typeof db.payments)[number]) => ({
+  ...p, studentName: userById(p.studentId)?.name ?? '',
+  fees: db.fees.filter((f) => f.paymentId === p.id && (feeIds ?? []).includes(f.id))
+    .map((f) => ({ id: f.id, amount: f.amount, date: lessonOf(f.lessonId).date, time: lessonOf(f.lessonId).time })),
+});
+const feeDto = (f: (typeof db.fees)[number]) => ({
+  id: f.id, lessonId: f.lessonId, date: lessonOf(f.lessonId).date, time: lessonOf(f.lessonId).time, amount: f.amount, status: f.status.toLowerCase(), paymentId: f.paymentId,
+});
 
 export const handlers = [
   // Test hook: sessionStorage['iris-mock-fail'] = 'regex' makes matching requests fail with 500 (simulates a server error).
@@ -428,7 +440,10 @@ export const handlers = [
       if (pkg.trial && !trialAvailable(r.u)) return problem(409, '單堂課限已完成諮詢或面談的學生購買一次。', 'trial_not_available');
       const file = form.get('receipt'); if (!(file instanceof File) || file.size === 0) return problem(400, '請上傳收據圖片。');
       if (file.size > 5 * 1024 * 1024) return problem(400, '圖片不能超過 5 MB。');
-      const p = { id: newId(), studentId: r.u.id, packageSize: size, amount: pkg.price, status: 'Pending' as const, uploadedAt: new Date().toISOString(), note: (form.get('note') as string) || null, rejectReason: null, receiptUrl: URL.createObjectURL(file), lqip: null, trial: !!pkg.trial };
+      // every unpaid 取消費 rides on this receipt: the amount to transfer is package + fees
+      const unpaid = db.fees.filter((f) => f.studentId === r.u.id && f.status === 'Unpaid');
+      const p = { id: newId(), studentId: r.u.id, packageSize: size, amount: pkg.price + unpaid.reduce((s, f) => s + f.amount, 0), status: 'Pending' as const, uploadedAt: new Date().toISOString(), note: (form.get('note') as string) || null, rejectReason: null, receiptUrl: URL.createObjectURL(file), lqip: null, trial: !!pkg.trial, feeIds: unpaid.map((f) => f.id) };
+      unpaid.forEach((f) => { f.status = 'Billed'; f.paymentId = p.id; });
       db.payments.push(p);
       return HttpResponse.json(payDto(p), { status: 201 });
     });
@@ -445,6 +460,7 @@ export const handlers = [
       counts: {
         receipts: pend.length, receiptsAmount: pend.reduce((s, p) => s + p.amount, 0),
         changes: db.changes.filter((c) => c.status === 'Open' && (c.by ?? 'student') === 'student').length,
+        reports: db.reports.filter((x) => x.status === 'Open').length,
         applications: db.users.filter((u) => u.status === 'Pending' && !u.declined).length,
         consults: db.consults.filter((c) => !c.contacted).length,
       },
@@ -619,6 +635,10 @@ export const handlers = [
         return { id: c.id, lessonId: l.id, studentId: l.studentId, studentName: userById(l.studentId)!.name, fromDate: l.date, fromTime: l.time, toDate: c.toDate, toTime: c.toTime, reason: c.reason, slotFree: !isTaken(c.toDate, c.toTime, l.id) && !slotPast(c.toDate, c.toTime), createdAt: new Date().toISOString() };
       }),
       applications: db.users.filter((u) => u.status === 'Pending' && !u.declined).map((u) => ({ id: u.id, name: u.name, email: u.email, createdAt: u.createdAt })),
+      reports: db.reports.filter((x) => x.status === 'Open').sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((x) => {
+        const l = lessonOf(x.lessonId);
+        return { id: x.id, lessonId: l.id, studentId: l.studentId, studentName: userById(l.studentId)!.name, date: l.date, time: l.time, minutes: l.minutes ?? 60, reason: x.reason, createdAt: x.createdAt };
+      }),
       proposals: db.changes.filter((c) => c.by === 'teacher' && (c.status === 'Open' || (c.status !== 'Withdrawn' && (c.decidedAt ?? 0) > Date.now() - 7 * 864e5)))
         .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).map((c) => {
           const l = db.lessons.find((x) => x.id === c.lessonId)!;
@@ -725,19 +745,89 @@ export const handlers = [
         if (!p.decidedAt || Date.now() - p.decidedAt > UNDO_MS) return problem(409, '已超過可以復原的時間。', 'undo_expired');
         if (p.status === 'Confirmed') { if (s.credits < p.packageSize) return problem(409, '學生已經用了部分堂數，無法復原。'); s.credits -= p.packageSize; }
         p.status = 'Pending'; p.rejectReason = null; p.decidedAt = undefined; dropQueuedAlerts(`pay:${p.id}`);
+        db.fees.filter((f) => (p.feeIds ?? []).includes(f.id)).forEach((f) => { f.status = 'Billed'; f.paymentId = p.id; });
         return new HttpResponse(null, { status: 204 });
       }
       if (p.status !== 'Pending') return problem(409, '這張收據已經處理過了。', 'already_handled');
       const { reason } = (await request.clone().json().catch(() => ({}))) as { reason?: string | null };
       if (params.action === 'confirm') {
         p.status = 'Confirmed'; s.credits += p.packageSize; s.packageSize = p.packageSize;
+        db.fees.filter((f) => f.paymentId === p.id).forEach((f) => { f.status = 'Paid'; });
         addAlert(s.id, 'payment', '付款已確認', `${p.packageSize} 堂已加入，現在剩餘 ${s.credits} 堂。`, `pay:${p.id}`);
       } else {
         if (!reason?.trim()) return problem(400, '請填寫退回原因。', 'validation');
         p.status = 'Rejected'; p.rejectReason = reason;
+        db.fees.filter((f) => f.paymentId === p.id).forEach((f) => { f.status = 'Unpaid'; f.paymentId = null; }); // back on the next receipt
         addAlert(s.id, 'payment', '收據被退回', reason, `pay:${p.id}`);
       }
       p.decidedAt = Date.now();
+      return HttpResponse.json({ ok: true });
+    };
+    return params.action === 'undo' ? run() : idempotent(request, r.u.id, run);
+  }),
+  // ---------- 回報 a past lesson + 取消費 (same rules as the server's report service) ----------
+  http.post('/api/student/lessons/:id/reports', async ({ params, request }) => {
+    const r = requireUser('Student'); if (r.err) return r.err;
+    return idempotent(request, r.u.id, async () => {
+      await lag();
+      const l = db.lessons.find((x) => x.id === params.id && x.studentId === r.u.id); if (!l) return problem(404, '找不到這堂課。');
+      if (l.status !== 'Attended') return problem(409, '只能回報已上過的課。', 'not_attended');
+      if (db.reports.some((x) => x.lessonId === l.id && x.status !== 'Withdrawn')) return problem(409, '這堂課已經回報過了。', 'already_reported');
+      if (!reportUntil(l)) return problem(409, `只能回報 ${STUDIO.reportDays} 天內上過的課。`, 'report_window_closed');
+      const { reason } = (await request.clone().json().catch(() => ({}))) as { reason?: string | null };
+      if ((reason ?? '').length > 300) return problem(400, '原因最多 300 個字。', 'validation');
+      db.reports.push({ id: newId(), lessonId: l.id, studentId: r.u.id, reason: reason?.trim() || null, status: 'Open', message: null, waived: false, createdAt: new Date().toISOString() });
+      return HttpResponse.json(lessonDto(l), { status: 201 });
+    });
+  }),
+  http.post('/api/student/reports/:id/withdraw', async ({ params }) => {
+    await lag();
+    const r = requireUser('Student'); if (r.err) return r.err;
+    const x = db.reports.find((y) => y.id === params.id && y.studentId === r.u.id); if (!x) return problem(404, '找不到這個回報。');
+    if (x.status !== 'Open') return problem(409, '老師已經處理過了，無法撤回。', 'already_handled');
+    x.status = 'Withdrawn';
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/student/fees', async () => {
+    await lag();
+    const r = requireUser('Student'); if (r.err) return r.err;
+    return HttpResponse.json(db.fees.filter((f) => f.studentId === r.u.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(feeDto));
+  }),
+  http.post('/api/teacher/reports/:id/:action', async ({ params, request }) => {
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const run = async () => {
+      await lag();
+      const x = db.reports.find((y) => y.id === params.id); if (!x) return problem(404, '找不到這個回報。');
+      const l = lessonOf(x.lessonId);
+      const s = userById(x.studentId)!;
+      const when = `${l.date.slice(5)} ${l.time}`;
+      if (params.action === 'undo') {
+        if (!x.decidedAt || Date.now() - x.decidedAt > UNDO_MS) return problem(409, '已超過可以復原的時間。', 'undo_expired');
+        if (x.status === 'Approved') {
+          const fee = db.fees.find((f) => f.reportId === x.id);
+          if (fee && fee.status !== 'Unpaid') return problem(409, '取消費已經加在收據上，無法復原。', 'fee_billed');
+          if (s.credits < 1) return problem(409, '學生已經用掉退回的堂數，無法復原。');
+          s.credits -= 1; l.status = 'Attended'; l.byReport = false;
+          db.fees = db.fees.filter((f) => f.reportId !== x.id);
+        }
+        x.status = 'Open'; x.message = null; x.waived = false; x.decidedAt = undefined;
+        dropQueuedAlerts(`report:${x.id}`);
+        return new HttpResponse(null, { status: 204 });
+      }
+      if (x.status !== 'Open') return problem(409, '這個回報已經處理過了。', 'already_handled');
+      const b = (await request.clone().json().catch(() => ({}))) as { message?: string | null; waiveFee?: boolean };
+      if (params.action === 'approve') {
+        x.status = 'Approved'; x.waived = !!b.waiveFee;
+        l.status = 'Cancelled'; l.byReport = true; s.credits += 1;
+        if (!x.waived) db.fees.push({ id: newId(), reportId: x.id, lessonId: l.id, studentId: s.id, amount: STUDIO.cancelFee, status: 'Unpaid', paymentId: null, createdAt: new Date().toISOString() });
+        addAlert(s.id, 'report', '老師同意取消這堂課',
+          x.waived ? `${when} 的課已取消，退回 1 堂，這次不收取消費。` : `${when} 的課已取消，退回 1 堂。取消費 NT$ ${STUDIO.cancelFee} 會加在下次繳費。`, `report:${x.id}`);
+      } else if (params.action === 'decline') {
+        if (!b.message?.trim()) return problem(400, '請填寫婉拒原因。', 'validation');
+        x.status = 'Declined'; x.message = b.message.trim();
+        addAlert(s.id, 'report', '老師無法取消這堂課', x.message, `report:${x.id}`);
+      } else return problem(404, '找不到。');
+      x.decidedAt = Date.now();
       return HttpResponse.json({ ok: true });
     };
     return params.action === 'undo' ? run() : idempotent(request, r.u.id, run);
@@ -779,7 +869,23 @@ export const handlers = [
     if (r.u.emailVerified) return problem(409, '這個 Email 已經驗證過了。', 'already_verified');
     return new HttpResponse(null, { status: 202 });
   }),
-  http.post('/api/auth/forgot-password', async () => { await lag(); return new HttpResponse(null, { status: 202 }); }),
+  // The real server answers 202 with no body. The mock adds demoLink so the demo can open "the email's" link.
+  http.post('/api/auth/forgot-password', async ({ request }) => {
+    await lag();
+    const { email } = (await request.json()) as { email: string };
+    const u = db.users.find((x) => x.email === email.trim().toLowerCase() && x.password);
+    resetTokens.clear();
+    if (!u) return HttpResponse.json({}, { status: 202 });
+    const token = newId();
+    resetTokens.set(token, { userId: u.id, expiresAt: Date.now() + 30 * 60_000 });
+    return HttpResponse.json({ demoLink: `/reset-password?token=${token}` }, { status: 202 });
+  }),
+  http.post('/api/auth/reset-password/validate', async ({ request }) => {
+    await lag();
+    const { token } = (await request.json()) as { token: string };
+    const t = resetTokens.get(token);
+    return t && t.expiresAt > Date.now() ? new HttpResponse(null, { status: 204 }) : problem(400, '重設連結已失效或已使用過，請重新申請。', 'invalid_token');
+  }),
   // demo links: any token works once the user is signed in (verify) / "demo" resets the signed-in user's password
   http.post('/api/auth/verify-email', async () => {
     await lag();
@@ -791,9 +897,12 @@ export const handlers = [
   http.post('/api/auth/reset-password', async ({ request }) => {
     await lag();
     const b = (await request.json()) as { token: string; password: string };
-    if ((b.password ?? '').length < 8) return problem(400, '密碼至少 8 個字元。', 'validation');
-    const u = sessionUser();
+    if (!passwordOk(b.password ?? '')) return problem(400, '密碼至少 8 個字元，需包含大寫字母、小寫字母和數字。', 'validation');
+    const tok = resetTokens.get(b.token);
+    const u = tok && tok.expiresAt > Date.now() ? userById(tok.userId) : undefined;
     if (!u) return problem(400, '重設連結已失效或已使用過，請重新申請。', 'invalid_token');
+    if (u.password === b.password) return problem(400, '不能和最近 3 次的密碼相同。', 'password_reused');
+    resetTokens.delete(b.token);
     u.password = b.password; store.removeItem(SESSION);
     return new HttpResponse(null, { status: 204 });
   }),

@@ -2,7 +2,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/re
 import { api, newIdempotencyKey } from './api';
 import type {
   AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, NotificationPrefs, Overview, Payment, PaymentStatus,
-  Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType, PublicReel, Reel,
+  Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType, PublicReel, Reel, CancellationFee,
 } from './types';
 
 /**
@@ -27,6 +27,7 @@ export const qk = {
   slots: (date: string) => ['slots', date] as const,
   alerts: ['alerts'] as const,
   myPayments: ['payments', 'mine'] as const,
+  myFees: ['fees', 'mine'] as const,
   overview: ['overview'] as const,
   students: ['students'] as const,
   student: (id: string) => ['students', id] as const,
@@ -48,6 +49,7 @@ export const useSlots = (date: string | null) =>
   useQuery({ queryKey: qk.slots(date ?? ''), queryFn: ({ signal }) => api.get<Slot[]>(`/api/slots?date=${date}`, signal), enabled: !!date, staleTime: 0 });
 export const useAlerts = () => useQuery({ queryKey: qk.alerts, queryFn: ({ signal }) => api.get<AlertItem[]>('/api/student/alerts', signal) });
 export const useMyPayments = () => useQuery({ queryKey: qk.myPayments, queryFn: ({ signal }) => api.get<Payment[]>('/api/student/payments', signal) });
+export const useMyFees = () => useQuery({ queryKey: qk.myFees, queryFn: ({ signal }) => api.get<CancellationFee[]>('/api/student/fees', signal) });
 export const useOverview = (enabled = true) => useQuery({ queryKey: qk.overview, queryFn: ({ signal }) => api.get<Overview>('/api/teacher/overview', signal), enabled });
 export const useStudents = () => useQuery({ queryKey: qk.students, queryFn: ({ signal }) => api.get<StudentSummary[]>('/api/teacher/students', signal) });
 export const useStudent = (id: string, options?: { refetchOnMount?: 'always' }) => useQuery({ queryKey: qk.student(id), queryFn: ({ signal }) => api.get<StudentDetail>(`/api/teacher/students/${id}`, signal), ...options });
@@ -188,7 +190,7 @@ export function useUploadReceipt() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: { form: FormData; key: string }) => api.post<Payment>('/api/student/payments', v.form, { idempotencyKey: v.key }),
-    onSettled: () => { qc.invalidateQueries({ queryKey: qk.myPayments }); qc.invalidateQueries({ queryKey: qk.me }); },
+    onSettled: () => { qc.invalidateQueries({ queryKey: qk.myPayments }); qc.invalidateQueries({ queryKey: qk.me }); qc.invalidateQueries({ queryKey: qk.myFees }); },
   });
 }
 
@@ -199,6 +201,42 @@ export function useSendConsult() {
 }
 
 // ---------- teacher mutations (optimistic + undo) ----------
+
+/** 回報 a past lesson, or withdraw it while Iris hasn't decided. Not optimistic: the row shows ◆ 待審核 once the server agrees. */
+export function useLessonReport() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['lessons'] });
+  const report = useMutation({
+    mutationFn: (v: { lessonId: string; reason: string; key: string }) =>
+      api.post<Lesson>(`/api/student/lessons/${v.lessonId}/reports`, { reason: v.reason.trim() || null }, { idempotencyKey: v.key }),
+    onSettled: refresh,
+  });
+  const withdraw = useMutation({ mutationFn: (id: string) => api.post(`/api/student/reports/${id}/withdraw`), onSettled: refresh });
+  return { report, withdraw };
+}
+
+/** Iris approves (+1 堂, 取消費 unless waived) or declines (reason required) a 回報; 30 s undo. */
+export function useDecideReport() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: qk.requests }); qc.invalidateQueries({ queryKey: qk.overview });
+    qc.invalidateQueries({ queryKey: ['lessons'] }); qc.invalidateQueries({ queryKey: qk.students });
+  };
+  const mutation = useMutation({
+    mutationFn: (v: { id: string; approve: boolean; message?: string; waiveFee?: boolean; key: string }) =>
+      api.post(`/api/teacher/reports/${v.id}/${v.approve ? 'approve' : 'decline'}`, { message: v.message ?? null, waiveFee: !!v.waiveFee }, { idempotencyKey: v.key }),
+    onMutate: async (v) => {
+      const snap = await snapshot(qc, qk.requests, qk.overview);
+      qc.setQueryData<Requests>(qk.requests, (r) => (r ? { ...r, reports: r.reports.filter((x) => x.id !== v.id) } : r));
+      bumpCount(qc, 'reports', -1);
+      return { snap };
+    },
+    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSettled: refresh,
+  });
+  const undo = async (id: string) => { await api.post(`/api/teacher/reports/${id}/undo`).finally(refresh); };
+  return { mutation, undo };
+}
 
 export function useDecideChange() {
   const qc = useQueryClient();

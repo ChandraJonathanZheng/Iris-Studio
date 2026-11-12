@@ -22,6 +22,10 @@ export interface Me {
   attended: number;
   /** size of the current package (4 or 8), for the quota boxes */
   packageSize: number;
+  /** of the attended lessons, how many were late cancels (counted, no refund) — shown as ✕ boxes */
+  cancelled?: number;
+  /** lessons cancelled afterwards by an approved 回報 */
+  reported?: number;
   unreadAlerts: number;
   /** what kind of student this is (set by Iris) — decides the lesson type when booking */
   classType: LessonType;
@@ -62,7 +66,31 @@ export interface Lesson {
   studentId: string;
   studentName: string;
   change: ChangeInfo | null;
+  /** the student's 回報 for this past lesson (latest one that wasn't withdrawn) */
+  report: LessonReportInfo | null;
+  /** until when 回報 is still possible (ISO); null = not reportable (not attended, window over, or already reported) */
+  reportUntil: string | null;
 }
+
+/** 回報 = the student asks Iris to cancel a lesson that was counted as attended. */
+export type ReportStatus = 'open' | 'approved' | 'declined' | 'withdrawn';
+export interface LessonReportInfo {
+  id: string;
+  status: ReportStatus;
+  reason: string | null;
+  /** Iris's reason when she declined */
+  message: string | null;
+  /** 取消費 charged for an approved report; null = none (open, declined, or waived) */
+  fee: number | null;
+}
+/** An open 回報 waiting in Iris's 申請 → 回報 tab. */
+export interface LessonReport {
+  id: string; lessonId: string; studentId: string; studentName: string;
+  date: string; time: string; minutes: number; reason: string | null; createdAt: string;
+}
+/** 取消費: unpaid → billed (added to the next receipt) → paid (receipt confirmed). */
+export type FeeStatus = 'unpaid' | 'billed' | 'paid';
+export interface CancellationFee { id: string; lessonId: string; date: string; time: string; amount: number; status: FeeStatus; paymentId: string | null }
 
 /** later = beyond 可提前預約 (not open for booking yet) */
 export type DayState = 'open' | 'closed' | 'full' | 'past' | 'later';
@@ -70,7 +98,7 @@ export interface Day { date: string; state: DayState }
 export type SlotState = 'free' | 'full' | 'past';
 export interface Slot { time: string; state: SlotState }
 
-export type AlertKind = 'moved' | 'approved' | 'declined' | 'payment' | 'added' | 'welcome' | 'cancelled' | 'reminder' | 'proposal';
+export type AlertKind = 'moved' | 'approved' | 'declined' | 'payment' | 'added' | 'welcome' | 'cancelled' | 'reminder' | 'proposal' | 'report';
 export interface AlertItem {
   id: string;
   kind: AlertKind;
@@ -96,6 +124,8 @@ export interface Payment {
   lqip: string | null;
   /** bought the one-time 單堂課 package */
   trial?: boolean;
+  /** 取消費 billed on this receipt (amount above already includes them) */
+  fees?: { id: string; amount: number; date: string; time: string }[];
 }
 
 /** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 單堂課 */
@@ -154,11 +184,11 @@ export interface Proposal {
   fromDate: string; fromTime: string; toDate: string; toTime: string;
   message: string; status: 'open' | 'approved' | 'declined'; createdAt: string; decidedAt: string | null;
 }
-export interface Requests { changes: ChangeRequest[]; applications: Application[]; proposals: Proposal[] }
+export interface Requests { changes: ChangeRequest[]; applications: Application[]; proposals: Proposal[]; reports: LessonReport[] }
 
 export interface Overview {
   today: Lesson[];
-  counts: { receipts: number; receiptsAmount: number; changes: number; applications: number; consults: number };
+  counts: { receipts: number; receiptsAmount: number; changes: number; reports: number; applications: number; consults: number };
   outOfQuota: StudentSummary[];
 }
 
@@ -187,6 +217,10 @@ export interface StudioInfo {
   cancelHours: number;
   /** 改時間 only allowed this many hours before the lesson (12) */
   moveHours: number;
+  /** 回報 allowed until this many days after the lesson (7) */
+  reportDays: number;
+  /** 取消費 for an approved 回報, NT$ (500) */
+  cancelFee: number;
   /** trial = the 1-lesson 單堂課, only offered while me.trialAvailable */
   packages: { size: number; price: number; trial?: boolean }[];
   bank: { name: string; account: string; holder: string };

@@ -1,78 +1,84 @@
-import { useEffect, useMemo, useState } from 'react';
-import { studioToday, wd, dayNum, monthNum } from '../lib/date';
+import { useEffect, useRef } from 'react';
+import { addDays, dayNum, monthNum, studioToday, wd } from '../lib/date';
 import { useDays, useSlots } from '../lib/queries';
 import type { DayState } from '../lib/types';
-import { ErrorCard, Sk } from './ui';
+import { Sk } from './ui';
 
-export interface Picked { date: string; time: string }
-
-const NOTE: Partial<Record<DayState, string>> = { closed: '休息', full: '額滿', past: '已過', later: '未開放' };
+const NOTE: Partial<Record<DayState, string>> = { past: '已過', closed: '休息', full: '額滿', later: '未開放' };
 
 /**
  * Date strip + time chips, generated from Iris's availability (always fresh: staleTime 0).
- * Used by 預約, 改時間, 老師預約 and 老師提議. Unavailable days/times are dashed or struck, never silently hidden
- * unless 只顯示空的時段 is on.
+ * Used by 預約, 改時間, 老師預約 and 老師提議. A picked time that stops being free is cleared.
+ * `exclude` = the lesson's own current slot, shown as 目前 so it can't be re-picked.
  */
-export function SlotPicker({ value, onChange, onlyFreeToggle = true, ignore }: {
-  value: Picked | null; onChange: (p: Picked | null) => void; onlyFreeToggle?: boolean;
-  /** a slot that is the lesson's own current slot — shown as taken so it can't be re-picked */
-  ignore?: Picked;
+export function SlotPicker({ date, time, onDate, onTime, onlyFree, setOnlyFree, exclude }: {
+  date: string | null; time: string | null;
+  onDate: (date: string) => void; onTime: (time: string | null) => void;
+  onlyFree: boolean; setOnlyFree: (v: boolean) => void;
+  exclude?: { date: string; time: string };
 }) {
-  const from = useMemo(() => studioToday(), []);
-  const days = useDays(from);
-  const [date, setDate] = useState<string | null>(value?.date ?? null);
-  const [onlyFree, setOnlyFree] = useState(false);
+  const today = studioToday();
+  const days = useDays(addDays(today, -1));
   const slots = useSlots(date);
+  const strip = useRef<HTMLDivElement>(null);
 
-  // first open day is preselected
   useEffect(() => {
-    if (!date && days.data) setDate(days.data.find((d) => d.state === 'open')?.date ?? null);
-  }, [days.data, date]);
+    strip.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [days.data]);
+  useEffect(() => {
+    if (!time || !slots.data) return;
+    const s = slots.data.find((x) => x.time === time);
+    if (!s || s.state !== 'free') onTime(null);
+  }, [slots.data, time, onTime]);
 
-  if (days.isError) return <ErrorCard error={days.error} retry={() => days.refetch()} />;
-  if (days.isPending) return <Sk h={96} card />;
-
-  const pickDate = (d: string) => { setDate(d); if (value && value.date !== d) onChange(null); };
-  const list = (slots.data ?? []).filter((s) => !onlyFree || s.state === 'free');
-
+  const shown = (slots.data ?? []).filter((s) => !onlyFree || s.state === 'free');
   return (
-    <div className="stack">
-      <div className="daystrip" role="group" aria-label="選擇日期">
-        {days.data.map((d) => {
-          const off = d.state !== 'open';
-          return (
-            <button key={d.date} type="button" className="day" disabled={off} aria-pressed={d.date === date} onClick={() => pickDate(d.date)}>
-              <span className="sr">{monthNum(d.date)} 月</span>
-              <span className="dw">週{wd(d.date)}</span><span className="dn">{dayNum(d.date)}</span>
-              <span className="dx">{NOTE[d.state] ?? (d.date === from ? '今天' : '')}</span>
-            </button>
-          );
-        })}
+    <>
+      <div className="row between">
+        <p className="overline">選擇日期</p>
+        <p className="caption">{date ? `${Number(date.slice(5, 7))} 月` : ''}</p>
       </div>
-      {onlyFreeToggle && (
-        <label className="row between" style={{ minHeight: 44 }}>
-          <span className="sub">只顯示空的時段</span>
-          <button type="button" role="switch" aria-checked={onlyFree} className="switch" onClick={() => setOnlyFree(!onlyFree)} />
+      <div className="dstrip" ref={strip} role="group" aria-label="日期">
+        {days.isPending
+          ? Array.from({ length: 6 }, (_, i) => <Sk key={i} w={60} h={80} />)
+          : days.data?.map((d) => {
+            const off = d.state !== 'open';
+            const note = d.date === today && !off ? '今天' : NOTE[d.state] ?? '';
+            return (
+              <button key={d.date} className={`day${d.state === 'past' ? ' past' : ''}`} disabled={off} aria-pressed={date === d.date} onClick={() => onDate(d.date)}>
+                <span className="sr-only">{monthNum(d.date)}月</span>
+                <span>{wd(d.date)}</span>
+                <b>{dayNum(d.date)}<span className="sr-only">日</span></b>
+                <small>{note}{!note && <span className="sr-only">可預約</span>}</small>
+              </button>
+            );
+          })}
+      </div>
+      <hr className="line" />
+      <div className="row between">
+        <p className="overline">選擇時段</p>
+        <label className="switch-row">
+          只顯示空的時段
+          <button type="button" className="switch" role="switch" aria-checked={onlyFree} onClick={() => setOnlyFree(!onlyFree)} />
         </label>
-      )}
-      {!date ? <p className="sub">目前沒有可預約的日期。</p>
-        : slots.isPending ? <Sk h={110} card />
-        : slots.isError ? <ErrorCard error={slots.error} retry={() => slots.refetch()} />
-        : list.length === 0 ? <p className="sub">這天沒有空的時段，請換一天。</p>
+      </div>
+      {!date ? <p className="caption">請先選擇日期。</p>
+        : slots.isPending ? <div className="chips">{Array.from({ length: 8 }, (_, i) => <Sk key={i} h={52} />)}</div>
+        : shown.length === 0 ? <p className="caption">這天沒有空的時段，請選其他日期。</p>
         : (
-          <div className="times" role="group" aria-label="選擇時間">
-            {list.map((s) => {
-              const own = !!ignore && ignore.date === date && ignore.time === s.time;
-              const free = s.state === 'free' && !own;
+          <div className="chips" role="group" aria-label="時段">
+            {shown.map((s) => {
+              const current = !!exclude && exclude.date === date && exclude.time === s.time;
+              const note = current ? '目前' : s.state === 'full' ? '額滿' : s.state === 'past' ? '不可預約' : '';
               return (
-                <button key={s.time} type="button" className="time" disabled={!free} aria-pressed={value?.date === date && value?.time === s.time}
-                  onClick={() => onChange({ date: date, time: s.time })}>
-                  {s.time}{!free && <span className="sr">{own ? '（目前時段）' : '（不可選）'}</span>}
+                <button key={s.time} className="chip" disabled={s.state !== 'free' || current} aria-pressed={time === s.time}
+                  aria-label={`${s.time} ${note || '可預約'}`} onClick={() => onTime(s.time)}>
+                  <b>{s.time}</b>{note && <small>{note}</small>}
                 </button>
               );
             })}
           </div>
         )}
-    </div>
+    </>
   );
 }
