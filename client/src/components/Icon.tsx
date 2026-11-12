@@ -1,7 +1,7 @@
 // Icons: Phosphor via @phosphor-icons/react. The name → glyph map lives only here (DESIGN-SYSTEM §7).
 import {
-  ArrowRight, Bell, CalendarBlank, CalendarPlus, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsThree, EnvelopeSimple,
-  Eye, EyeSlash, GearSix, House, Image, Info, LockSimple, MagnifyingGlass, Microphone, Minus, MusicNotes, Package, Pause, Play,
+  ArrowRight, ArrowSquareOut, Bell, CalendarBlank, CalendarPlus, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsSixVertical, DotsThree, EnvelopeSimple,
+  Eye, EyeSlash, GearSix, House, Image, Info, InstagramLogo, LockSimple, MagnifyingGlass, Microphone, Minus, MusicNotes, Package, Pause, PencilSimple, Play,
   Plus, Receipt, Repeat, SignOut, Sparkle, Star, Trash, Tray, UploadSimple, User, Users, X,
   type Icon as PhosphorIcon, type IconWeight,
 } from '@phosphor-icons/react';
@@ -12,6 +12,7 @@ const ICONS = {
   check: Check, x: X, upload: UploadSimple, search: MagnifyingGlass, arrow: ArrowRight, info: Info, image: Image,
   minus: Minus, plus: Plus, trash: Trash, gear: GearSix, mail: EnvelopeSimple, clock: Clock, mic: Microphone, music: MusicNotes,
   star: Star, eye: Eye, eyeOff: EyeSlash, logout: SignOut, play: Play, pause: Pause, sparkle: Sparkle, pkg: Package, lock: LockSimple,
+  edit: PencilSimple, drag: DotsSixVertical, ig: InstagramLogo, external: ArrowSquareOut,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof ICONS;

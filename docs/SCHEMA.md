@@ -314,3 +314,20 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Enum conversions added | `ChangeBy`, `TeacherStatus`, `ConsentKind`, `ConsentSource`, `PrivacyRequestType` stored as text |
 
 Retention job (`RetentionService`, every 6 h, `Studio:Retention`): idempotency 24 h · consults 12 mo · read alerts 12 mo · handled privacy requests 3 y. See `LEGAL.md`.
+
+## 9. Added 12 Nov: 精彩片段 (Instagram Reels)
+
+### `InstagramReels`
+| Column | Type | Note |
+|---|---|---|
+| Id | uuid PK | |
+| Url | varchar(200) | always the clean form `https://www.instagram.com/reel/{Shortcode}/` (tracking `?igsh=` removed) |
+| Shortcode | varchar(40) | Reel id from the link. **`UX_Reel_Shortcode_Active`**: unique while `DeletedAtUtc IS NULL` (same Reel can't be listed twice; a deleted one can be added again) |
+| ThumbnailFile / ThumbnailType | varchar(60) / varchar(20) | random file name in `Studio:ReelsFolder` (`App_Data/reels`), JPG/PNG/WEBP checked by bytes, ≤ 5 MB |
+| Lqip | text null | 16 px blurred preview |
+| SortOrder | int | 1 = first card; gaps allowed |
+| CreatedAtUtc / UpdatedAtUtc | timestamp | |
+| DeletedAtUtc | timestamp null | **soft delete**; a global query filter hides these rows, restore uses `IgnoreQueryFilters()` |
+
+Index `(DeletedAtUtc, SortOrder)`. Max 8 visible is enforced in `ReelEndpoints` inside `StudioTransaction` (one writer at a time), not by a DB constraint.
+Migration: `dotnet ef migrations add InstagramReels` (both providers, commands in BACKEND.md). Back up `App_Data/reels` with the DB.

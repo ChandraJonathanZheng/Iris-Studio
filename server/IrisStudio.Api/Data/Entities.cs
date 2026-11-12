@@ -302,3 +302,27 @@ public class PrivacyRequest
     public DateTime? HandledAtUtc { get; set; }
     public static int DaysFor(PrivacyRequestType t) => t is PrivacyRequestType.Access or PrivacyRequestType.Copy ? 15 : 30;
 }
+
+/// <summary>
+/// One Instagram Reel in the landing page 精彩片段 row (max 8 visible, Iris picks the order).
+/// Soft delete: DELETE only sets DeletedAtUtc. The row and its thumbnail stay, so 復原 can bring it back
+/// and nothing is lost by a wrong tap. AppDbContext hides deleted rows with a global query filter.
+/// </summary>
+public class InstagramReel
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Always the clean form https://www.instagram.com/reel/{Shortcode}/ (tracking params removed).</summary>
+    public required string Url { get; set; }
+    /// <summary>The Reel's id from the link (e.g. "C9xYz12AbCd"). Used to stop the same Reel being added twice.</summary>
+    public required string Shortcode { get; set; }
+    /// <summary>Random file name inside Studio:ReelsFolder. Never taken from the uploaded file name.</summary>
+    public required string ThumbnailFile { get; set; }
+    public required string ThumbnailType { get; set; }
+    /// <summary>16 px blurred preview shown while the real thumbnail loads.</summary>
+    public string? Lqip { get; set; }
+    /// <summary>1 = first card. Gaps are fine (deleted reels leave them); only the order matters.</summary>
+    public int SortOrder { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
+}

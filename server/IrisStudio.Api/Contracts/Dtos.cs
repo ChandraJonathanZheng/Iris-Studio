@@ -111,3 +111,10 @@ public record WeeklyDayDto(int Weekday, bool Enabled, TimeRangeDto[] Ranges);
 public record DateOverrideDto(string Date, bool Closed, TimeRangeDto[] Ranges, string Note);
 public record AvailabilityDto(BookingSettingsDto Settings, WeeklyDayDto[] Weekly, DateOverrideDto[] Overrides);
 public record OverrideRequest(bool Closed, TimeRangeDto[]? Ranges, string? Note);
+
+// ---------- 精彩片段 (Instagram Reels) ----------
+public record ReelDto(Guid Id, string Url, string Shortcode, string ThumbnailUrl, string? Lqip, int SortOrder, DateTime UpdatedAt);
+/// <summary>What the website needs: no ids of internal state, just what to draw.</summary>
+public record PublicReelDto(Guid Id, string Url, string ThumbnailUrl, string? Lqip);
+/// <summary>All visible reel ids, first card first.</summary>
+public record ReelOrderRequest(Guid[]? Ids);

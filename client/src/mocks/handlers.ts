@@ -1,4 +1,5 @@
-import type { MConsent, MConsult, MPrivacyRequest } from './db';
+import type { MConsent, MConsult, MPrivacyRequest, MReel } from './db';
+import { reelShortcode, reelUrl, thumbError, MAX_REELS } from '../lib/reels';
 import { delay, http, HttpResponse } from 'msw';
 import { addDays, compareSlot, fmtSlot, studioToday } from '../lib/date';
 import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
@@ -804,6 +805,82 @@ export const handlers = [
     c.contacted = ((await request.json()) as { contacted: boolean }).contacted;
     return new HttpResponse(null, { status: 204 });
   }),
+  // ---------- 精彩片段 (same rules as ReelEndpoints.cs) ----------
+  http.get('/api/public/reels', async () => {
+    await lag();
+    return HttpResponse.json(activeReels().map(({ id, url, thumbnailUrl, lqip }) => ({ id, url, thumbnailUrl, lqip })));
+  }),
+  http.get('/api/teacher/reels', async () => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    return HttpResponse.json(activeReels().map(reelDto));
+  }),
+  http.post('/api/teacher/reels', async ({ request }) => {
+    await delay(600);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const form = await request.formData();
+    const code = reelShortcode(String(form.get('url') ?? ''));
+    if (!code) return problem(400, '請貼上 Instagram Reels 連結，例如 https://www.instagram.com/reel/ABC123xyz/', 'bad_link');
+    const f = form.get('thumbnail');
+    if (!(f instanceof File) || f.size === 0) return problem(400, '請選擇封面圖片。', 'validation');
+    const bad = thumbProblem(f); if (bad) return bad;
+    const live = activeReels();
+    if (live.length >= MAX_REELS) return problem(409, '最多只能放 8 支 Reels，請先刪除一支。', 'limit');
+    if (live.some((x) => x.shortcode === code)) return problem(409, '這支 Reels 已經在列表裡了。', 'duplicate');
+    const now = new Date().toISOString();
+    const reel: MReel = { id: newId(), url: reelUrl(code), shortcode: code, thumbnailUrl: URL.createObjectURL(f), lqip: null,
+      sortOrder: Math.max(0, ...db.reels.map((x) => x.sortOrder)) + 1, updatedAt: now, createdAt: Date.now() };
+    db.reels.push(reel);
+    return HttpResponse.json(reelDto(reel), { status: 201 });
+  }),
+  http.put('/api/teacher/reels/order', async ({ request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const ids = ((await request.json()) as { ids?: string[] }).ids ?? [];
+    const live = activeReels();
+    if (ids.length !== live.length || new Set(ids).size !== ids.length || !live.every((x) => ids.includes(x.id)))
+      return problem(409, '列表剛剛有變動，請重新整理後再排序。', 'order_stale');
+    ids.forEach((id, i) => { live.find((x) => x.id === id)!.sortOrder = i + 1; });
+    return HttpResponse.json(activeReels().map(reelDto));
+  }),
+  http.put('/api/teacher/reels/:id', async ({ params, request }) => {
+    await delay(600);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const reel = activeReels().find((x) => x.id === params.id);
+    if (!reel) return problem(404, '找不到這支 Reels，可能已被刪除。', 'not_found');
+    const form = await request.formData();
+    const code = reelShortcode(String(form.get('url') ?? ''));
+    if (!code) return problem(400, '請貼上 Instagram Reels 連結，例如 https://www.instagram.com/reel/ABC123xyz/', 'bad_link');
+    if (activeReels().some((x) => x.shortcode === code && x.id !== reel.id)) return problem(409, '這支 Reels 已經在列表裡了。', 'duplicate');
+    const f = form.get('thumbnail');
+    if (f instanceof File && f.size > 0) { const bad = thumbProblem(f); if (bad) return bad; reel.thumbnailUrl = URL.createObjectURL(f); }
+    Object.assign(reel, { shortcode: code, url: reelUrl(code), updatedAt: new Date().toISOString() });
+    return HttpResponse.json(reelDto(reel));
+  }),
+  http.delete('/api/teacher/reels/:id', async ({ params }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const reel = db.reels.find((x) => x.id === params.id);
+    if (!reel) return problem(404, '找不到這支 Reels，可能已被刪除。', 'not_found');
+    reel.deletedAt ??= Date.now();
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/teacher/reels/:id/restore', async ({ params }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const reel = db.reels.find((x) => x.id === params.id);
+    if (!reel) return problem(404, '找不到這支 Reels，可能已被刪除。', 'not_found');
+    if (reel.deletedAt) {
+      if (activeReels().length >= MAX_REELS) return problem(409, '最多只能放 8 支 Reels，請先刪除一支。', 'limit');
+      if (activeReels().some((x) => x.shortcode === reel.shortcode)) return problem(409, '這支 Reels 已經在列表裡了。', 'duplicate');
+      reel.deletedAt = undefined;
+    }
+    return HttpResponse.json(reelDto(reel));
+  }),
 ];
+
+const activeReels = () => db.reels.filter((x) => !x.deletedAt).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+const reelDto = ({ id, url, shortcode, thumbnailUrl, lqip, sortOrder, updatedAt }: MReel) => ({ id, url, shortcode, thumbnailUrl, lqip, sortOrder, updatedAt });
+const thumbProblem = (f: File) => { const e = thumbError(f); return e ? problem(400, e, 'bad_image') : null; };
 
 export const MOCK_ALERT_DELAY_MS = ALERT_DELAY_MS;

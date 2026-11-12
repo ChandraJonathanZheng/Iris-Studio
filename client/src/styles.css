@@ -803,3 +803,58 @@ mark.lg-todo{background:#F7EFE3;color:#75561A;border-radius:4px;padding:0 3px;fo
 .mo-out-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin: 12px 4px 0; padding: 0 4px; border: 0; background: none; color: var(--bad); font-weight: 600; font-size: 15px; }
 .mo-out-link:hover { text-decoration: underline; text-underline-offset: 4px; }
 @media (max-width: 479px) { .mo-edit { font-size: 0; } .mo-id.mo-list { padding: 16px; } .mo-id .avatar { width: 56px; height: 56px; font-size: 22px; } }
+
+/* ---------- 網站精彩片段 (teacher-reels.tsx) ---------- */
+.rl-intro { max-width: 720px; color: var(--muted); font-size: 14.5px; line-height: 22px; margin-bottom: var(--s4); }
+.rl-intro svg { vertical-align: -3px; }
+.rl-card { max-width: 720px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--sh1); padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.rl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.rl-h { font: 600 18px/26px var(--font-display); }
+.rl-count { font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rl-full { font-size: 14px; line-height: 21px; color: var(--warn); background: var(--warn-tint); border-radius: 12px; padding: 10px 12px; }
+.rl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.rl-row { display: flex; align-items: center; gap: var(--s3); min-height: 96px; padding: 8px 8px 8px 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; position: relative; }
+.rl-row.is-drag { z-index: 2; box-shadow: var(--sh2); border-color: var(--sage); background: var(--sage-wash); cursor: grabbing; }
+/* touch-action: none = the browser doesn't scroll the page while the finger drags the handle */
+.rl-handle { width: 36px; height: 44px; border: 0; background: none; border-radius: 10px; color: var(--muted-2); display: inline-flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; flex: none; }
+.rl-handle:hover { background: var(--ivory); color: var(--ink); }
+.rl-row.is-drag .rl-handle { cursor: grabbing; color: var(--sage-deep); }
+.rl-pos { width: 18px; text-align: center; font: 600 15px/20px var(--font-display); color: var(--sage-text); flex: none; }
+.rl-thumb { width: 45px; height: 80px; border-radius: 8px; overflow: hidden; background: var(--ivory-deep); flex: none; }
+.rl-thumb img { width: 100%; height: 100%; object-fit: cover; background-size: cover; user-select: none; }
+.rl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rl-t { font-weight: 600; font-size: 16px; line-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-link { font-size: 13.5px; line-height: 20px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; width: fit-content; }
+.rl-acts { display: flex; gap: var(--s2); flex: none; }
+.rl-ib { border: 1px solid var(--border-input); box-shadow: none; color: var(--ink); }
+.rl-ib:hover { background: var(--ivory); text-decoration: none; }
+.rl-ib.danger { color: var(--bad); border-color: var(--bad-line); }
+.rl-ib.danger:hover { background: var(--bad-tint); }
+
+.rl-form { display: flex; flex-direction: column; gap: var(--s5); }
+.rl-form .req { color: var(--bad); }
+.rl-form .hint a { white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
+.rl-drop { display: flex; gap: var(--s4); align-items: flex-start; padding: var(--s3); border: 1.5px dashed var(--border-input); border-radius: 16px; background: var(--ivory); transition: border-color .15s, background .15s; }
+.rl-drop.is-over { border-color: var(--sage); background: var(--sage-wash); }
+.rl-drop.is-bad { border-color: var(--bad-line); }
+.rl-frame { position: relative; width: 108px; aspect-ratio: 9 / 16; border-radius: 12px; overflow: hidden; background: var(--ivory-deep); flex: none; box-shadow: var(--sh0); }
+.rl-frame img { width: 100%; height: 100%; object-fit: cover; }
+.rl-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted-2); font-size: 12.5px; }
+/* same marks as the website card, so Iris sees how it will look */
+.rl-play { position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 99px; background: rgba(255, 255, 255, .92); color: var(--ink); display: flex; align-items: center; justify-content: center; }
+.rl-badge { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 3px; color: #fff; font: 600 11px/14px var(--font); text-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
+.rl-drop-text { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); min-width: 0; }
+.rl-file-name { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.rl-foot { width: 100%; }
+.rl-foot .btn { flex: 1; }
+.rl-foot .btn.wide { flex: 1.5; }
+
+@media (max-width: 520px) {
+  /* phone: no outer box, so each row gets the full width (no card-in-card) */
+  .rl-card { background: none; border: 0; box-shadow: none; padding: 0; }
+  .rl-row { gap: var(--s2); box-shadow: var(--sh1); }
+  .rl-pos { display: none; }
+  .rl-link { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .rl-drop { transition: none; } }
+.rl-sheet .s-footer { flex: none; display: flex; padding: 12px 20px 16px; border-top: 1px solid var(--line-soft); background: var(--card); }

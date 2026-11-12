@@ -234,3 +234,7 @@ export interface PrivacyRequest {
   id: string; name: string; contact: string; type: PrivacyRequestType; detail: string;
   status: 'open' | 'done'; createdAt: string; dueAt: string; handledAt: string | null; note: string | null;
 }
+
+/* ---------- 精彩片段 (Instagram Reels on the website) ---------- */
+export interface Reel { id: string; url: string; shortcode: string; thumbnailUrl: string; lqip: string | null; sortOrder: number; updatedAt: string }
+export interface PublicReel { id: string; url: string; thumbnailUrl: string; lqip: string | null }

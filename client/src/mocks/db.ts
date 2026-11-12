@@ -41,6 +41,8 @@ export interface MLesson { id: string; studentId: string; date: string; time: st
 export interface MAlert extends AlertItem { userId: string; sendAfter: number; source?: string }
 export interface MPayment extends Omit<Payment, 'studentName'> { decidedAt?: number }
 export interface MConsent { id: string; userId: string; kind: 'terms' | 'privacy' | 'media' | 'marketing' | 'guardian'; granted: boolean; version: string; scope: string; source: 'register' | 'profile' | 'request'; at: string; guardian?: { name: string; relation: string; contact: string } }
+/** 精彩片段. deletedAt = soft delete (row stays so 復原 works), like InstagramReel on the server. */
+export interface MReel { id: string; url: string; shortcode: string; thumbnailUrl: string; lqip: string | null; sortOrder: number; updatedAt: string; createdAt: number; deletedAt?: number }
 export interface MPrivacyRequest { id: string; name: string; contact: string; type: 'access' | 'copy' | 'correct' | 'stop' | 'delete' | 'withdraw'; detail: string; status: 'open' | 'done'; createdAt: string; handledAt: string | null; note: string | null }
 export interface MConsult { id: string; name: string; contactType: 'line' | 'email'; contact: string; preferredTime: 'weekdayDay' | 'weekdayEvening' | 'weekend' | 'any'; topic: string; createdAt: string; contacted: boolean; scheduledDate?: string | null; scheduledTime?: string | null; scheduleNote?: string | null }
 
@@ -109,7 +111,13 @@ function seed() {
     { id: 'cm-s2b', userId: 's2', kind: 'media', granted: false, version: v, scope: 'photo,video,voice', source: 'profile', at: ago(3) },
   ];
   const privacyRequests: MPrivacyRequest[] = [];
-  return { users, lessons, changes, alerts, payments, consults, consents, privacyRequests };
+  // demo 精彩片段: plain sage covers (an SVG), so the mock needs no image files
+  const cover = (n: number, c: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 160"><rect width="90" height="160" fill="${c}"/><text x="45" y="86" font-family="sans-serif" font-size="14" fill="#2F4536" text-anchor="middle">示意 ${n}</text></svg>`)}`;
+  const reels: MReel[] = (['C9demoAAA01', 'C9demoBBB02', 'C9demoCCC03'] as const).map((code, i) => ({
+    id: `reel-${i + 1}`, shortcode: code, url: `https://www.instagram.com/reel/${code}/`, thumbnailUrl: cover(i + 1, ['#DDE4DC', '#E5DFD2', '#D9E1DE'][i]),
+    lqip: null, sortOrder: i + 1, updatedAt: ago(10 - i), createdAt: Date.now() - (10 - i) * 864e5,
+  }));
+  return { users, lessons, changes, alerts, payments, consults, consents, privacyRequests, reels };
 }
 
 export const db = seed();

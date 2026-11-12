@@ -103,13 +103,14 @@ node e2e/smoke.mjs                # 22 checks: idempotency, undo, rollback, back
 | Student status checked from the DB on every call | Approval works instantly without logging in again. |
 | `StudioClock` (Asia/Taipei) | Lessons are studio wall-clock times even if the server runs in UTC. |
 | Receipts served only via `/api/receipts/{id}` | Transfer screenshots contain bank details: only the uploader and Iris. File type checked by bytes. |
+| 精彩片段 Reels: max 8, soft delete, whole-list reorder (`/teacher/reels`, `ReelEndpoints.cs`) | Soft delete makes 復原 a simple restore; a global query filter means no query forgets to hide deleted rows; reorder sends every id so a stale list gets 409 instead of a half-saved order. **Needs migration `InstagramReels`** (both providers, see `docs/BACKEND.md`). |
 
 ## Before going live
 - [ ] Real content on the landing page (photos, bio, **real, consented** testimonials), real bank details and prices
 - [ ] Strong teacher password via environment variable / user-secrets
 - [ ] HTTPS (the auth cookie is `Secure` outside Development)
 - [ ] LINE Login channel + callback URL; LINE Messaging and Gmail SMTP credentials, then `Notifications:Enabled=true` for external notifications
-- [ ] Backups for the database and `App_Data/receipts`
+- [ ] Backups for the database, `App_Data/receipts` and `App_Data/reels`
 
 
 ## Clickable demo

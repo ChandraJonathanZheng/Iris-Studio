@@ -28,6 +28,7 @@ export function CommandMenu({ open, onClose, role }: { open: boolean; onClose: (
         { label: '學生', to: '/teacher/students', icon: 'users' }, { label: '申請', to: '/teacher/requests', icon: 'inbox' },
         { label: '付款', to: '/teacher/payments', icon: 'receipt' }, { label: '諮詢', to: '/teacher/consults', icon: 'msg' },
         { label: '可預約時段', to: '/teacher/availability', icon: 'clock' },
+        { label: '網站精彩片段', to: '/teacher/reels', icon: 'ig' },
       ]
     : [
         { label: '首頁', to: '/app', icon: 'home' }, { label: '預約課程', to: '/app/book', icon: 'book' },

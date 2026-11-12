@@ -2,7 +2,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/re
 import { api, newIdempotencyKey } from './api';
 import type {
   AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, NotificationPrefs, Overview, Payment, PaymentStatus,
-  Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType,
+  Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType, PublicReel, Reel,
 } from './types';
 
 /**
@@ -484,5 +484,58 @@ export function useMarkPrivacyDone() {
   return useMutation({
     mutationFn: (v: { id: string; note: string }) => api.post<PrivacyRequest>(`/api/teacher/privacy-requests/${v.id}/done`, { note: v.note }),
     onSettled: () => qc.invalidateQueries({ queryKey: ['privacy-requests'] }),
+  });
+}
+
+/* ---------- 精彩片段 (Instagram Reels) ---------- */
+const reelsKey = ['reels'] as const;
+export const useReels = () => useQuery({ queryKey: reelsKey, queryFn: ({ signal }) => api.get<Reel[]>('/api/teacher/reels', signal) });
+export const usePublicReels = () => useQuery({ queryKey: ['public-reels'], queryFn: ({ signal }) => api.get<PublicReel[]>('/api/public/reels', signal), staleTime: 5 * 60_000 });
+
+/** Add (no id) or edit (id). Waits for the server: the upload can fail on size/format, so nothing is shown before it's saved. */
+export function useSaveReel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id?: string; url: string; thumbnail: File | null }) => {
+      const fd = new FormData();
+      fd.append('url', v.url.trim());
+      if (v.thumbnail) fd.append('thumbnail', v.thumbnail);
+      return v.id ? api.put<Reel>(`/api/teacher/reels/${v.id}`, fd) : api.post<Reel>('/api/teacher/reels', fd);
+    },
+    onSettled: () => { qc.invalidateQueries({ queryKey: reelsKey }); qc.invalidateQueries({ queryKey: ['public-reels'] }); },
+  });
+}
+
+/** Optimistic: the row disappears at once; on error it comes back. Undo = POST …/restore (server keeps the row: soft delete). */
+export function useDeleteReel() {
+  const qc = useQueryClient();
+  const settle = () => { qc.invalidateQueries({ queryKey: reelsKey }); qc.invalidateQueries({ queryKey: ['public-reels'] }); };
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/api/teacher/reels/${id}`),
+    onMutate: async (id) => {
+      const snap = await snapshot(qc, reelsKey);
+      qc.setQueryData<Reel[]>(reelsKey, (l) => l?.filter((r) => r.id !== id));
+      return { snap };
+    },
+    onError: (_e, _id, ctx) => restore(qc, ctx?.snap),
+    onSettled: settle,
+  });
+  const undo = useMutation({ mutationFn: (id: string) => api.post<Reel>(`/api/teacher/reels/${id}/restore`), onSettled: settle });
+  return { remove, undo };
+}
+
+/** Optimistic: the new order shows at once; if the server says the list changed (409) we roll back and reload. */
+export function useReorderReels() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.put<Reel[]>('/api/teacher/reels/order', { ids }),
+    onMutate: async (ids) => {
+      const snap = await snapshot(qc, reelsKey);
+      qc.setQueryData<Reel[]>(reelsKey, (l) => l && ids.map((id) => l.find((r) => r.id === id)!).filter(Boolean));
+      return { snap };
+    },
+    onError: (_e, _ids, ctx) => restore(qc, ctx?.snap),
+    onSuccess: (list) => qc.setQueryData(reelsKey, list),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['public-reels'] }),
   });
 }

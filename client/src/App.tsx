@@ -53,6 +53,7 @@ export const routes: RouteObject[] = [
       { path: 'inbox', lazy: lazy(teacher, 'InboxIndex') },
       { path: 'profile', lazy: lazy(teacher, 'TeacherProfilePage') },
       { path: 'privacy-requests', lazy: lazy(teacher, 'PrivacyRequestsPage') },
+      { path: 'reels', lazy: lazy(teacher, 'ReelsPage'), children: [{ path: 'new', lazy: lazy(teacher, 'NewReelSheet') }, { path: ':id/edit', lazy: lazy(teacher, 'EditReelSheet') }] },
       { path: 'more', lazy: lazy(teacher, 'TeacherMore'), children: [{ path: 'packages', lazy: lazy(teacher, 'PackagesSheet') }] },
       { path: 'availability', lazy: lazy(availability, 'AvailabilityPage'), children: [{ path: 'range/:weekday/:idx', lazy: lazy(availability, 'RangeSheet') }, { path: 'date/:date', lazy: lazy(availability, 'OverrideSheet') }] },
     ],

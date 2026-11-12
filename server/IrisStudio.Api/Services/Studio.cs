@@ -17,6 +17,8 @@ public class StudioOptions
     public string TeacherPassword { get; set; } = "";
     public string ReceiptsFolder { get; set; } = "App_Data/receipts";
     public string AvatarsFolder { get; set; } = "App_Data/avatars";
+    /// <summary>Thumbnails for the 精彩片段 Instagram Reels (public images).</summary>
+    public string ReelsFolder { get; set; } = "App_Data/reels";
 
     public TimeSpan UndoWindow => TimeSpan.FromSeconds(UndoSeconds);
 }

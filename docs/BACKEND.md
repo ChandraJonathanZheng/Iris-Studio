@@ -130,3 +130,16 @@ To run the same tests against local PostgreSQL, set `IRIS_TEST_PROVIDER=PostgreS
 Coverage includes registration/approval, JWT cookie and bearer sessions, rejected token signatures/issuers/audiences/expiration/roles, complete LINE HS256 callback processing with a stub backchannel, state/nonce rejection, repeat login without duplicate users, role and data isolation, concurrent booking and payment confirmation, last-credit protection, refund boundary, proposal consent, availability revalidation, audit-backed undo, receipt privacy/content hashing, automatic reminders, attendance, outbox retry isolation, LINE/Resend request contracts using an HTTP stub, and SMTP delivery against a local STARTTLS server. The SMTP tests check authentication, message content, missing credentials, TLS enforcement and authentication failure without contacting Gmail.
 
 For the frontend build, run `npm run build` in `client/`. This runs the TypeScript check and builds the browser and SSR bundles. Backend tests do not use the MSW prototype.
+
+## 精彩片段 (Instagram Reels) — `Endpoints/ReelEndpoints.cs`
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/public/reels` | — | visible reels in order (for the website) |
+| GET | `/api/public/reels/thumbs/{name}` | — | thumbnail, cached 1 year (random names, never reused) |
+| GET | `/api/teacher/reels` | — | `ReelDto[]` in order |
+| POST | `/api/teacher/reels` | multipart `url`, `thumbnail` | 201 `ReelDto` · 400 `bad_link`/`bad_image`/`too_large` · 409 `limit` (8) / `duplicate` |
+| PUT | `/api/teacher/reels/{id}` | multipart `url`, `thumbnail?` | 200 · no thumbnail = keep the current one; old file deleted after the DB saves |
+| DELETE | `/api/teacher/reels/{id}` | — | 204, soft delete (repeat = still 204) |
+| POST | `/api/teacher/reels/{id}/restore` | — | 200 (the 復原 in the toast) · 409 if the list is full or the link was added again |
+| PUT | `/api/teacher/reels/order` | `{ ids: [...] }` — **all** visible ids | 200 new list · 409 `order_stale` if the set doesn't match |

@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
     public DbSet<AuthToken> AuthTokens => Set<AuthToken>();
+    public DbSet<InstagramReel> InstagramReels => Set<InstagramReel>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -47,6 +48,20 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder m)
     {
         var sqlServer = Database.IsSqlServer();
+        m.Entity<InstagramReel>(e =>
+        {
+            e.Property(x => x.Url).HasMaxLength(200);
+            e.Property(x => x.Shortcode).HasMaxLength(40);
+            e.Property(x => x.ThumbnailFile).HasMaxLength(60);
+            e.Property(x => x.ThumbnailType).HasMaxLength(20);
+            // Soft delete: every normal query skips deleted reels automatically, so no endpoint can "forget" the filter.
+            // Restore uses IgnoreQueryFilters() on purpose.
+            e.HasQueryFilter(x => x.DeletedAtUtc == null);
+            // The same Reel can't be listed twice. Deleted rows don't count, so a deleted Reel can be added again.
+            e.HasIndex(x => x.Shortcode).IsUnique()
+                .HasFilter(sqlServer ? "[DeletedAtUtc] IS NULL" : "\"DeletedAtUtc\" IS NULL").HasDatabaseName("UX_Reel_Shortcode_Active");
+            e.HasIndex(x => new { x.DeletedAtUtc, x.SortOrder });
+        });
         m.Entity<ConsentRecord>(e =>
         {
             e.Property(x => x.Version).HasMaxLength(40);

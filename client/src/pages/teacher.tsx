@@ -23,6 +23,7 @@ import { Avatar, Empty, ErrorCard, ListSkeleton, PageHead, PageSkeleton, Tag } f
 
 export * from './teacher-students';
 export * from './teacher-inbox';
+export * from './teacher-reels';
 
 const greeting = () => {
   const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: 'numeric', hour12: false }).format(new Date()));
@@ -290,6 +291,10 @@ export function TeacherMore() {
         {row('/teacher/availability', 'clock', '可預約時段', '每週時段、特殊日期')}
         {row('/teacher/more/packages', 'receipt', '課程方案', '堂數與價格')}
         {row('/teacher/availability?tab=settings', 'gear', '設定', '每堂課時長、課程間隔、可提前預約')}
+      </section>
+      <h2 className="mo-h">網站</h2>
+      <section className="mo-list" aria-label="網站">
+        {row('/teacher/reels', 'ig', '網站精彩片段', 'Instagram Reels · 最多 8 支 · 排序')}
       </section>
       <h2 className="mo-h">隱私與法律</h2>
       <section className="mo-list" aria-label="隱私">

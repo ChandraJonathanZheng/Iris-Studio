@@ -92,6 +92,7 @@ public class StudioFactory : WebApplicationFactory<Program>, IAsyncLifetime
             ["Studio:TeacherPassword"] = "test-teacher-Password12!",
             ["Studio:SeedDemo"] = "false",
             ["Studio:ReceiptsFolder"] = _folder,
+            ["Studio:ReelsFolder"] = Path.Combine(_folder, "reels"),
             ["Studio:RunBackgroundJobs"] = "false",
             ["Notifications:Enabled"] = NotificationsEnabled ? "true" : "false",
             ["Notifications:BaseUrl"] = "https://iris.test",
@@ -183,9 +184,9 @@ public class StudioFactory : WebApplicationFactory<Program>, IAsyncLifetime
             DELETE FROM [Alerts]; DELETE FROM [ChangeRequests]; DELETE FROM [CreditLogs];
             DELETE FROM [IdempotencyRecords]; DELETE FROM [ConsentRecords]; DELETE FROM [PrivacyRequests];
             DELETE FROM [Lessons]; DELETE FROM [Payments]; DELETE FROM [Users]; DELETE FROM [Consults];
-            DELETE FROM [BookingSettings]; DELETE FROM [WeeklyAvailability]; DELETE FROM [DateOverrides];
+            DELETE FROM [BookingSettings]; DELETE FROM [WeeklyAvailability]; DELETE FROM [DateOverrides]; DELETE FROM [InstagramReels];
             """ : """
-            TRUNCATE "EmailMessages", "AuthTokens", "Alerts", "ChangeRequests", "CreditLogs", "IdempotencyRecords", "ConsentRecords", "PrivacyRequests", "Lessons", "Payments", "Users", "Consults", "BookingSettings", "WeeklyAvailability", "DateOverrides" CASCADE
+            TRUNCATE "EmailMessages", "AuthTokens", "Alerts", "ChangeRequests", "CreditLogs", "IdempotencyRecords", "ConsentRecords", "PrivacyRequests", "Lessons", "Payments", "Users", "Consults", "BookingSettings", "WeeklyAvailability", "DateOverrides", "InstagramReels" CASCADE
             """));
         await Seed.RunAsync(Services, false);
     }

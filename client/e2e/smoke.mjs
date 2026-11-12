@@ -171,8 +171,24 @@ const axe = async (p, label, selector = null) => {
     await p.getByRole('switch', { name: /開放預約/ }).first().click();
     await p.getByRole('status').getByRole('button', { name: '復原' }).waitFor();
   });
+  await check('精彩片段: bad link is caught, ↑↓ reorders, delete offers 復原', async () => {
+    await p.goto(BASE + '/teacher/reels');
+    await p.locator('.rl-row').first().waitFor();
+    assert((await p.locator('.rl-row').count()) === 3, 'demo reels');
+    await p.getByRole('link', { name: '新增' }).first().click();
+    await p.getByLabel(/Instagram 連結/).fill('https://youtube.com/watch?v=1');
+    await p.getByRole('button', { name: '新增', exact: true }).click();
+    await p.getByText(/這不是 Instagram Reels 連結/).waitFor();
+    await p.getByRole('button', { name: '取消' }).click();
+    await p.waitForURL(/\/teacher\/reels$/); await p.locator('.v-sheet').waitFor({ state: 'detached' });
+    const first = await p.locator('.rl-t').first().textContent();
+    await p.locator('.rl-handle').first().focus(); await p.keyboard.press('ArrowDown');
+    await p.waitForFunction((t) => document.querySelectorAll('.rl-t')[1]?.textContent === t, first);
+    await p.locator('.rl-ib.danger').first().click();
+    await p.getByRole('status').getByRole('button', { name: '復原' }).waitFor();
+  });
   await check('teacher pages: axe is clean', async () => {
-    for (const path of ['/teacher', '/teacher/calendar', '/teacher/students', '/teacher/requests', '/teacher/payments', '/teacher/consults', '/teacher/availability']) {
+    for (const path of ['/teacher', '/teacher/calendar', '/teacher/students', '/teacher/requests', '/teacher/payments', '/teacher/consults', '/teacher/availability', '/teacher/reels']) {
       await p.goto(BASE + path); await p.waitForTimeout(500); await axe(p, path);
     }
   });

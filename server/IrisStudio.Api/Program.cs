@@ -209,6 +209,7 @@ app.MapPublicAndAuth();
 app.MapSlotsAndStudent();
 app.MapTeacher();
 app.MapTeacherProfile();
+app.MapReels();
 app.MapPrivacy();
 if (app.Environment.IsDevelopment()) app.MapEmailPreviews(); // /api/dev/emails — never in production
 
