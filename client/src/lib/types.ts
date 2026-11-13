@@ -20,17 +20,21 @@ export interface Me {
   credits: number;
   booked: number;
   attended: number;
+  /** cancelled too late — the credit was used (shown as 已取消 on the quota card) */
+  cancelled?: number;
+  /** past classes the student reported (回報) and Iris approved — the credit came back (shown as 取消 in red) */
+  reported?: number;
   /** size of the current package (4 or 8), for the quota boxes */
   packageSize: number;
   unreadAlerts: number;
   /** what kind of student this is (set by Iris) — decides the lesson type when booking */
   classType: LessonType;
-  /** a 體驗 student who hasn't bought the trial yet: the 體驗課 package is offered */
+  /** a 體驗 student who hasn't bought the trial yet: the 單堂課 package is offered */
   trialAvailable: boolean;
 }
 
 export type LessonStatus = 'Booked' | 'Attended' | 'Cancelled';
-/** private = 一對一, group = 團體課, trial = 體驗課 */
+/** private = 一對一, group = 團體課, trial = 單堂課 */
 export type LessonType = 'private' | 'group' | 'trial';
 
 export interface ChangeInfo {
@@ -55,7 +59,31 @@ export interface Lesson {
   studentId: string;
   studentName: string;
   change: ChangeInfo | null;
+  /** 回報 on this past lesson (the latest one that wasn't withdrawn) */
+  report: LessonReportInfo | null;
+  /** set while the student may still 回報 this lesson (Attended, inside Studio:ReportDays, no report yet) */
+  reportUntil: string | null;
 }
+
+/** 回報 = the student asks Iris to cancel a lesson that already passed (e.g. they didn't come). */
+export type ReportStatus = 'open' | 'approved' | 'declined';
+export interface LessonReportInfo {
+  id: string;
+  status: ReportStatus;
+  reason: string | null;
+  /** Iris's reason when she declined */
+  message: string | null;
+  /** 取消費 charged when approved (null = none / waived) */
+  fee: number | null;
+}
+/** A report waiting for Iris (收件匣 → 申請 → 回報) */
+export interface LessonReport {
+  id: string; lessonId: string; studentId: string; studentName: string;
+  date: string; time: string; minutes: number; reason: string | null; createdAt: string;
+}
+/** 取消費: Unpaid → Billed (attached to the next receipt) → Paid (receipt confirmed) */
+export type FeeStatus = 'unpaid' | 'billed' | 'paid';
+export interface CancellationFee { id: string; lessonId: string; date: string; time: string; amount: number; status: FeeStatus; paymentId: string | null }
 
 /** later = beyond 可提前預約 (not open for booking yet) */
 export type DayState = 'open' | 'closed' | 'full' | 'past' | 'later';
@@ -63,7 +91,7 @@ export interface Day { date: string; state: DayState }
 export type SlotState = 'free' | 'full' | 'past';
 export interface Slot { time: string; state: SlotState }
 
-export type AlertKind = 'moved' | 'approved' | 'declined' | 'payment' | 'added' | 'welcome' | 'cancelled' | 'reminder' | 'proposal';
+export type AlertKind = 'moved' | 'approved' | 'declined' | 'payment' | 'added' | 'welcome' | 'cancelled' | 'reminder' | 'proposal' | 'report' | 'homework';
 export interface AlertItem {
   id: string;
   kind: AlertKind;
@@ -78,6 +106,8 @@ export interface Payment {
   id: string;
   studentId: string;
   studentName: string;
+  /** the student's profile photo (null → initial in a circle) */
+  studentAvatarUrl?: string | null;
   packageSize: number;
   amount: number;
   status: PaymentStatus;
@@ -87,11 +117,13 @@ export interface Payment {
   receiptUrl: string;
   /** tiny blurred preview as a data: URL, made by the server at upload (#8) */
   lqip: string | null;
-  /** bought the one-time 體驗課 package */
+  /** bought the one-time 單堂課 package */
   trial?: boolean;
+  /** 取消費 billed on this receipt; amount = package price + these */
+  fees?: { id: string; amount: number; date: string; time: string }[];
 }
 
-/** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 體驗課 */
+/** What kind of student this is (set by Iris): private = 一對一, group = 團體課, trial = 單堂課 */
 export type ClassType = 'private' | 'group' | 'trial';
 
 export interface StudentSummary {
@@ -99,12 +131,24 @@ export interface StudentSummary {
   name: string;
   status: UserStatus;
   classType: ClassType;
+  /** Iris marked the consultation / interview done → the student may buy one 單堂課 */
+  consultationCompleted?: boolean;
   credits: number;
   booked: number;
   nextLesson: { date: string; time: string } | null;
   paymentPending: boolean;
   lineId: string | null;
   voiceType: string | null;
+  /** 學號 shown as ID in the 學生列表 */
+  studentNo: number;
+  gender: 'M' | 'F' | null;
+  /** when the student started lessons → 上課資年 (months) */
+  joinedAt: string;
+  avatarUrl: string | null;
+  /** 停用: kept for history, can't book */
+  disabled: boolean;
+  /** 學生列表 filter: 活躍 / 未上單堂課 / 未購買課程 / 冷漠 (null = pending or 停用) */
+  segment: 'active' | 'noTrial' | 'lapsed' | 'cold' | null;
 }
 
 export interface StudentDetail extends StudentSummary {
@@ -120,6 +164,13 @@ export interface StudentDetail extends StudentSummary {
   /** where 通知學生繳學費 goes: LINE if the student signed in with LINE, else email; null = no way to reach them */
   remindChannel: 'line' | 'email' | null;
   lastRemindedAt: string | null;
+  /** 個人資料 header numbers */
+  firstLessonDate: string | null;
+  firstPurchaseAt: string | null;
+  /** sum of confirmed payments (NT$) */
+  totalPaid: number;
+  /** how the student signs in: LINE or email + password */
+  loginMethod: 'line' | 'email';
   /** what Iris may do with this student's photos / videos / voice, and marketing — latest consent record */
   consent: StudentConsentSummary;
 }
@@ -145,11 +196,11 @@ export interface Proposal {
   fromDate: string; fromTime: string; toDate: string; toTime: string;
   message: string; status: 'open' | 'approved' | 'declined'; createdAt: string; decidedAt: string | null;
 }
-export interface Requests { changes: ChangeRequest[]; applications: Application[]; proposals: Proposal[] }
+export interface Requests { changes: ChangeRequest[]; applications: Application[]; proposals: Proposal[]; reports: LessonReport[] }
 
 export interface Overview {
   today: Lesson[];
-  counts: { receipts: number; receiptsAmount: number; changes: number; applications: number; consults: number };
+  counts: { receipts: number; receiptsAmount: number; changes: number; reports: number; applications: number; consults: number };
   outOfQuota: StudentSummary[];
 }
 
@@ -174,7 +225,11 @@ export interface StudioInfo {
   cancelHours: number;
   /** 改時間 only allowed this many hours before the lesson (12) */
   moveHours: number;
-  /** trial = the 1-lesson 體驗課, only offered while me.trialAvailable */
+  /** 回報 allowed until this many days after the lesson ended (7) */
+  reportDays: number;
+  /** 取消費 when Iris approves a 回報 (NT$ 500) */
+  cancelFee: number;
+  /** trial = the 1-lesson 單堂課, only offered while me.trialAvailable */
   packages: { size: number; price: number; trial?: boolean }[];
   bank: { name: string; account: string; holder: string };
   /** what students may see about Iris (lineId only when she made it public) */
@@ -221,3 +276,6 @@ export interface PrivacyRequest {
   id: string; name: string; contact: string; type: PrivacyRequestType; detail: string;
   status: 'open' | 'done'; createdAt: string; dueAt: string; handledAt: string | null; note: string | null;
 }
+
+/** 精彩片段 — an Instagram Reel shown on the website (max 8, ordered by sortOrder). */
+export interface Reel { id: string; sortOrder: number; title: string; url: string; coverUrl: string | null; coverLqip?: string | null }

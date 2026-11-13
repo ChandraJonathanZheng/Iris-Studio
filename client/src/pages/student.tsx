@@ -1,5 +1,6 @@
+import { SaveButton, useSaveFlow } from '../components/SaveButton';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { useCurrentUser } from '../components/Shell';
 import { RouteSheet } from '../components/Sheet';
@@ -9,11 +10,11 @@ import { CONSENT_TEXT, CONSENT_VERSION } from '../lib/legal';
 import { useToast } from '../components/Toast';
 import { DateBox, Empty, ErrorCard, ListSkeleton, PageHead, PageSkeleton, Quota, Tag } from '../components/ui';
 import { ApiError, newIdempotencyKey } from '../lib/api';
-import { compareSlot, fmtDate, fmtMoney, fmtRelative, fmtSlot, monthGrid, studioToday, dayNum, initialOf, fmtDuration, LESSON_TYPE_LABEL } from '../lib/date';
+import { compareSlot, fmtDate, fmtDateFull, fmtWeekdayTime, fmtSlotSpaced, fmtMoney, fmtRelative, fmtSlot, monthGrid, studioToday, dayNum, initialOf, fmtDuration, LESSON_TYPE_LABEL } from '../lib/date';
 import { monthRange } from '../lib/prefetch';
 import {
   useAlerts, useAnswerProposal, useAskMove, useBook, useCancelLesson, useDays, useLessons, useMarkAllRead, useMyConsents, useMyPayments, useSaveConsents, useStudio,
-  useLogout, useUpdateProfile, useUploadReceipt, useWithdrawMove,
+  useLogout, useMyFees, useReportLesson, useUpdateProfile, useUploadReceipt, useWithdrawMove,
 } from '../lib/queries';
 import type { AlertKind, Lesson, Me } from '../lib/types';
 
@@ -25,6 +26,8 @@ function useMyLessons() {
   return useLessons('student', from, to);
 }
 function lessonTag(l: Lesson) {
+  if (l.report?.status === 'approved') return <Tag tone="bad">已取消（回報）</Tag>;
+  if (l.report?.status === 'open') return <Tag tone="warn">待審核</Tag>;
   if (l.status === 'Attended') return <Tag tone="grey">已上課</Tag>;
   if (l.status === 'Cancelled') return <Tag tone="bad">已取消</Tag>;
   if (l.change) return <Tag tone="warn">{l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</Tag>;
@@ -32,11 +35,6 @@ function lessonTag(l: Lesson) {
 }
 
 /* =================== Home =================== */
-/** "今天上課 / 明天上課 / 3 天後上課" — counts calendar days in studio time. */
-function untilLabel(date: string, today: string): string {
-  const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5);
-  return days <= 0 ? '今天上課' : days === 1 ? '明天上課' : `${days} 天後上課`;
-}
 
 /** ms timestamp when a lesson starts (studio time is UTC+8) */
 const startOf = (l: { date: string; time: string }) => new Date(`${l.date}T${l.time}:00+08:00`).getTime();
@@ -88,7 +86,7 @@ function ProposalCard({ l }: { l: Lesson }) {
     .catch((e) => toast({ text: (e as Error).message, kind: 'error' }));
   return (
     <section className="sh-card sh-prop" aria-labelledby={`prop-${l.id}`}>
-      <p className="overline" id={`prop-${l.id}`}><Icon name="repeat" size={14} weight="bold" /> 老師想調整上課時間</p>
+      <p className="overline" id={`prop-${l.id}`}><Icon name="reschedule" size={14} weight="bold" /> 老師想調整上課時間</p>
       <p className="sh-prop-time">
         <span className="sh-prop-old"><span className="sr-only">原時段 </span>{fmtSlot(l.date, l.time)}</span>
         <span aria-hidden="true">→</span>
@@ -117,7 +115,7 @@ export function StudentHome() {
 
   return (
     <>
-      <PageHead title={`${greeting()}，${firstName(me.name)}`} over={fmtDate(today)}
+      <PageHead title={`${greeting()}，${firstName(me.name)}`} under={fmtDateFull(today)}
         right={<Link to="/app/alerts" className="icon-btn mobile-only sh-bell" aria-label={`通知${me.unreadAlerts ? '，有未讀' : ''}`} viewTransition><Icon name="bell" />{me.unreadAlerts > 0 && <span className="sh-dot" aria-hidden="true" />}</Link>} />
       {lessons.isPending ? <PageSkeleton blocks={[160, 200]} /> : lessons.isError ? <ErrorCard error={lessons.error} retry={lessons.refetch} /> : (
         <div className="sh">
@@ -127,25 +125,25 @@ export function StudentHome() {
           {studioInfo.data && (studioInfo.data.teacher.status !== 'normal' || studioInfo.data.teacher.statusMessage) && <TeacherStatusCard t={studioInfo.data.teacher} />}
           {/* 1. next class */}
           <section className="sh-card sh-next" aria-labelledby="next-t">
-            <p className="overline" id="next-t">下一堂課</p>
+            <div className="sh-next-head">
+              <p className="overline" id="next-t">下一堂課</p>
+              {next && !next.change && <span className="sh-chip ok">已確認</span>}
+            </div>
             {next ? (
               <>
-                <p className="sh-until">{untilLabel(next.date, today)}</p>
                 <div className="sh-when">
                   <DateBox date={next.date} />
                   <div className="sh-when-text">
-                    <p className="sh-time">{fmtSlot(next.date, next.time)}</p>
+                    <p className="sh-time">{fmtWeekdayTime(next.date, next.time)}</p>
                     <p className="sh-meta">{fmtDuration(next.minutes)} · {LESSON_TYPE_LABEL[next.type]}</p>
-                    <p className="sh-meta">{next.room}</p>
+                    <p className="sh-tip">記得上課前暖暖聲，多喝溫水</p>
                   </div>
                 </div>
-                {next.change
-                  ? <p className="sh-status wait">{next.change.by === 'teacher'
-                    ? `● 老師提議改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 請在上方回覆`
-                    : `● 申請改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 等待老師回覆`}</p>
-                  : <p className="sh-status ok">● 已確認</p>}
+                {next.change && <p className="sh-status wait">{next.change.by === 'teacher'
+                    ? `老師提議改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 請在上方回覆`
+                    : `申請改到 ${fmtSlot(next.change.toDate, next.change.toTime)} · 等待老師回覆`}</p>}
                 <div className="sh-actions">
-                  {!next.change && nextCanMove && <Link to={`/app/lessons/${next.id}/move`} className="btn secondary sh-move" viewTransition><Icon name="repeat" size={18} />改時間</Link>}
+                  {!next.change && nextCanMove && <Link to={`/app/lessons/${next.id}/move`} className="btn secondary sh-move" viewTransition><Icon name="reschedule" size={18} />改時間</Link>}
                   <Link to={`lessons/${next.id}/cancel`} className="sh-cancel" aria-label={`取消預約：${fmtSlot(next.date, next.time)}`}>取消預約</Link>
                 </div>
               </>
@@ -158,13 +156,13 @@ export function StudentHome() {
           {/* 3. later reservations */}
           {others.length > 0 && (
             <section className="sh-card" aria-labelledby="others-t">
-              <p className="overline" id="others-t">其他預約 · {others.length}</p>
+              <p className="sh-sec-t" id="others-t">其他預約 · {others.length}</p>
               <ul className="sh-list">{others.map((l) => (
                 <li key={l.id}>
                   <div className="sh-li-text">
-                    <p className="sh-li-time">{fmtSlot(l.date, l.time)}</p>
+                    <p className="sh-li-time">{fmtSlotSpaced(l.date, l.time)}</p>
                     {l.change
-                      ? <><p className="sh-li-sub">{l.change.by === 'teacher' ? '老師提議改到' : '申請改到'} {fmtSlot(l.change.toDate, l.change.toTime)}</p><p className="sh-status wait">● {l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</p></>
+                      ? <><p className="sh-li-sub">{l.change.by === 'teacher' ? '老師建議改到' : '申請改到'} {fmtSlotSpaced(l.change.toDate, l.change.toTime)}</p><span className="sh-chip wait">{l.change.by === 'teacher' ? '等你回覆' : '等待老師回覆'}</span></>
                       : <p className="sh-li-sub">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]}</p>}
                   </div>
                   <LessonMenu l={l} />
@@ -184,22 +182,35 @@ export function StudentHome() {
  * the history link sits left-aligned as plain text, and spacing steps 24 / 16 / 32 / 16 rather than one gap everywhere.
  */
 function QuotaCard({ me, withBook }: { me: Me; withBook?: boolean }) {
+  const cancelled = me.cancelled ?? 0;
   const total = Math.max(me.packageSize, me.attended + me.booked + me.credits);
   const attended = Math.max(0, Math.min(me.attended, total - me.booked - me.credits));
+  const used = Math.min(cancelled, attended); // late cancellations used a credit — show them apart from 已上課
+  const chips = [
+    { k: 'a', label: '已上課', n: attended - used },
+    ...(used > 0 ? [{ k: 'x', label: '逾時取消', n: used }] : []),
+    { k: 'b', label: '已預約', n: me.booked },
+    { k: 'f', label: '可預約', n: me.credits },
+    { k: 'r', label: '已取消', n: me.reported ?? 0 },
+  ];
   return (
-    <section className="card quota-card" aria-labelledby="quota-t">
-      <p className="overline" id="quota-t">我的堂數</p>
-      <p className="qc-remaining"><span>剩餘</span><b>{me.credits}</b><span>堂</span></p>
-      <div className="qc-boxes"><Quota attended={attended} booked={me.booked} free={me.credits} /></div>
-      <ul className="qc-legend" aria-label="圖示說明">
-        <li><span className="qc-key a" aria-hidden="true"><Icon name="check" size={12} weight="bold" /></span>已上課</li>
-        <li><span className="qc-key b" aria-hidden="true">●</span>已預約</li>
-        <li><span className="qc-key f" aria-hidden="true">○</span>可預約</li>
-      </ul>
-      {withBook && (me.credits > 0
-        ? <Link to="/app/book" className="btn primary block qc-book" viewTransition><Icon name="book" size={20} />預約課程</Link>
-        : <div className="stack g2 qc-book-wrap"><button className="btn primary block qc-book" disabled>預約課程</button><p className="caption">{me.trialAvailable ? <>先購買體驗課，就可以預約。<Link to="/app/quota">購買體驗課</Link></> : <>堂數已用完。<Link to="/app/quota">上傳匯款證明購買新方案</Link></>}</p></div>)}
-      {withBook && <Link to="/app/quota" className="qc-history" viewTransition>查看堂數與付款紀錄<Icon name="arrow" size={16} /></Link>}
+    <section className="card quota-card qc2" aria-labelledby="quota-t">
+      <div className="qc2-main">
+        <div className="qc2-left">
+          <p className="qc2-title" id="quota-t">我的額度</p>
+          <p className="qc-remaining"><span>剩餘</span><b>{me.credits}</b><span>堂</span></p>
+          <ul className="qc2-chips" aria-label="堂數狀態">
+            {chips.map((c) => <li key={c.k} className={`qc2-chip ${c.k}`}>{c.k === 'x' && <Icon name="x" size={14} weight="bold" />}{c.label}<b>{c.n}</b></li>)}
+          </ul>
+        </div>
+        <div className="qc2-boxes"><Quota attended={attended - used} cancelled={used} reported={me.reported ?? 0} booked={me.booked} free={me.credits} plain /></div>
+      </div>
+      {withBook && <div className="qc2-foot">
+        {me.credits > 0
+          ? <Link to="/app/book" className="btn primary qc-book" viewTransition><Icon name="book" size={20} />預約課程</Link>
+          : <div className="stack g2 qc-book-wrap"><button className="btn primary qc-book" disabled>預約課程</button><p className="caption">{me.trialAvailable ? <>先購買單堂課，就可以預約。<Link to="/app/quota">購買單堂課</Link></> : <>堂數已用完。<Link to="/app/quota">上傳匯款證明購買新方案</Link></>}</p></div>}
+        <Link to="/app/quota" className="qc-history" viewTransition>查看歷程記錄<Icon name="arrow" size={16} /></Link>
+      </div>}
     </section>
   );
 }
@@ -219,7 +230,7 @@ export function CancelSheet() {
 
   return (
     <RouteSheet title="取消這堂課？" dismissible={!cancel.isPending}>
-      <div className="inner stack g1"><p className="t">{fmtSlot(l.date, l.time)}</p><p className="caption">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]} · {l.room}</p></div>
+      <div className="inner stack g1 warn-pulse"><p className="t">{fmtSlot(l.date, l.time)}</p><p className="caption">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]} · {l.room}</p></div>
       <div className={`notice${refund ? '' : ' quiet'}`}><Icon name={refund ? 'check' : 'info'} />
         <span>{refund ? <><b>堂數會退回。</b>距離上課超過 24 小時。</> : <><b>堂數不會退回。</b>距離上課不到 24 小時。</>}</span></div>
       {cancel.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(cancel.error as Error).message}</span></div>}
@@ -273,7 +284,7 @@ export function Book() {
             ) : <p className="caption">{date ? '再選一個時段。' : '請選擇日期和時段。'}</p>}
             {me.credits <= 0 && <p className="caption" style={{ color: 'var(--bad)' }}>堂數已用完，請先<Link to="/app/quota">購買新方案</Link>。</p>}
           </section>
-          <div className="notice quiet"><Icon name="info" /><span>上課前 24 小時以上取消，使用的堂數將退回。</span></div>
+          <div className="notice quiet bk-warn"><Icon name="warning" /><span>上課前 24 小時以上取消，使用的堂數將退回。</span></div>
           <div className="sticky-cta">
             <button className="btn primary block" disabled={!ready}
               onClick={() => nav(`confirm?date=${date}&time=${time}`)}>
@@ -366,7 +377,7 @@ export function Move() {
         ask.mutate({ lessonId: l.id, date, time, reason }, { onSuccess: () => { nav('/app', { replace: true, viewTransition: true }); toast({ text: '已送出申請，等待老師回覆' }); } }); }}>
         <section className="card">
           <SlotPicker date={date} time={time} onDate={(d) => { setDate(d); setTime(null); }} onTime={onTime} onlyFree={onlyFree} setOnlyFree={setOnlyFree} exclude={{ date: l.date, time: l.time }} />
-          <div className="field"><label htmlFor="why">原因（老師會看到）</label><textarea id="why" className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} /></div>
+          <div className="field"><label htmlFor="why">原因（老師會看到）</label><textarea id="why" placeholder="例如：那天要加班，想改到週末" className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} /></div>
         </section>
         <div className="notice"><Icon name="info" /><span>老師確認前，原本的時段會幫你保留。改時間不會扣堂數。</span></div>
         {ask.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(ask.error as Error).message}</span></div>}
@@ -377,26 +388,42 @@ export function Move() {
 }
 
 /* =================== Calendar =================== */
+/** A cancelled lesson stays in the list only when it was cancelled through 回報 (so the student sees the outcome). */
+const shownInCalendar = (l: Lesson) => l.status !== 'Cancelled' || l.report?.status === 'approved';
+
+/** One line under a past lesson that says where its 回報 stands. */
+function reportCaption(l: Lesson): string | null {
+  const r = l.report; if (!r) return null;
+  if (r.status === 'open') return '已回報，等老師確認';
+  if (r.status === 'approved') return r.fee ? `已退回 1 堂 · 取消費 ${fmtMoney(r.fee)} 加在下次繳費` : '已退回 1 堂 · 這次不收取消費';
+  return `老師無法取消：${r.message ?? ''}`;
+}
+
 export function StudentCalendar() {
   const lessons = useMyLessons();
   const withdraw = useWithdrawMove();
+  const { withdraw: withdrawReport } = useReportLesson();
+  const [reporting, setReporting] = useState<Lesson | null>(null);
   const toast = useToast();
   const today = studioToday();
   const [view, setView] = useState<'month' | 'list'>('month');
   const [filter, setFilter] = useState<'past' | 'today' | 'up'>('up');
   const [ym, setYm] = useState(() => [Number(today.slice(0, 4)), Number(today.slice(5, 7))]);
   const [sel, setSel] = useState(today);
-  const byDay = useMemo(() => { const m = new Map<string, Lesson[]>(); (lessons.data ?? []).filter((l) => l.status !== 'Cancelled').forEach((l) => m.set(l.date, [...(m.get(l.date) ?? []), l])); return m; }, [lessons.data]);
+  const byDay = useMemo(() => { const m = new Map<string, Lesson[]>(); (lessons.data ?? []).filter(shownInCalendar).forEach((l) => m.set(l.date, [...(m.get(l.date) ?? []), l])); return m; }, [lessons.data]);
   const grid = monthGrid(ym[0], ym[1]);
   const shift = (d: number) => setYm(([y, m]) => { const t = m + d; return t < 1 ? [y - 1, 12] : t > 12 ? [y + 1, 1] : [y, t]; });
-  const listed = (lessons.data ?? []).filter((l) => l.status !== 'Cancelled' && (filter === 'past' ? l.date < today : filter === 'today' ? l.date === today : l.date > today));
+  const listed = (lessons.data ?? []).filter((l) => shownInCalendar(l) && (filter === 'past' ? l.date < today : filter === 'today' ? l.date === today : l.date > today));
   if (filter === 'past') listed.reverse();
 
   const row = (l: Lesson) => (
     <div className="li" key={l.id}><DateBox date={l.date} />
-      <div className="grow stack g1"><p className="t">{l.time} – {endTime(l.time)}</p><p className="caption">{l.change ? `${l.change.by === 'teacher' ? '老師提議改到' : '申請改到'} ${fmtSlot(l.change.toDate, l.change.toTime)}` : l.room}</p></div>
+      <div className="grow stack g1"><p className="t">{l.time} – {endTime(l.time, l.minutes)}</p><p className="caption">{l.change ? `${l.change.by === 'teacher' ? '老師提議改到' : '申請改到'} ${fmtSlot(l.change.toDate, l.change.toTime)}` : reportCaption(l) ?? l.room}</p></div>
       {lessonTag(l)}
       {l.change?.by === 'student' && <button className="btn sm secondary" disabled={withdraw.isPending} onClick={() => withdraw.mutate(l.change!.id, { onSuccess: () => toast({ text: '已撤回改時間申請' }) })}>撤回</button>}
+      {l.reportUntil && <button className="btn sm secondary" aria-label={`回報 ${fmtSlot(l.date, l.time)} 的課`} onClick={() => setReporting(l)}>回報</button>}
+      {l.report?.status === 'open' && <button className="btn sm secondary" disabled={withdrawReport.isPending}
+        onClick={() => withdrawReport.mutate(l.report!.id, { onSuccess: () => toast({ text: '已撤回回報' }), onError: (e) => toast({ text: (e as Error).message, kind: 'error' }) })}>撤回</button>}
     </div>
   );
 
@@ -437,22 +464,72 @@ export function StudentCalendar() {
             {(['past', 'today', 'up'] as const).map((f) => <button key={f} className="fchip" aria-pressed={filter === f} onClick={() => setFilter(f)}>{{ past: '過去', today: '今天', up: '即將' }[f]}</button>)}
           </div>
           <section className="card tight">{listed.length ? <div className="list">{listed.map(row)}</div> : <p className="caption" style={{ padding: '16px 0' }}>沒有課程。</p>}</section>
+          {filter === 'past' && <p className="caption" style={{ padding: '0 4px' }}>沒有上到的課，可以在上課後 7 天內按「回報」，請老師取消。</p>}
         </>
       )}
+      {reporting && <ReportDialog lesson={reporting} onClose={() => setReporting(null)} />}
     </>
   );
 }
-const endTime = (t: string) => { const [h, m] = t.split(':').map(Number); const x = h * 60 + m + 45; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
+
+/**
+ * 回報 dialog: asks once, and says the outcome BEFORE the student confirms
+ * (+1 堂 back, 取消費 on the next payment) — the same "tell the cost first" rule as 取消預約.
+ * 返回 closes and nothing is sent. 確定 sends one report (idempotency key, so a double tap can't send two).
+ */
+function ReportDialog({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const studio = useStudio();
+  const { report } = useReportLesson();
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const [key] = useState(newIdempotencyKey);
+  const fee = studio.data?.cancelFee ?? 500;
+  useEffect(() => {
+    const d = ref.current; if (!d) return;
+    d.showModal();
+    document.documentElement.classList.add('modal-open');
+    return () => document.documentElement.classList.remove('modal-open');
+  }, []);
+  const close = () => ref.current?.close();
+  const send = () => report.mutate({ lessonId: lesson.id, reason, key }, {
+    onSuccess: () => { toast({ text: '已送出回報，老師確認後會通知你' }); close(); },
+  });
+  return (
+    <dialog ref={ref} className="rcpt rpt" aria-labelledby="rpt-t" aria-describedby="rpt-d" onClose={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget && !report.isPending) close(); }}>
+      <div className="rcpt-box">
+        <h2 id="rpt-t" className="rpt-h">要申請取消這堂課嗎？</h2>
+        <p className="rpt-when">{fmtSlot(lesson.date, lesson.time)} · {LESSON_TYPE_LABEL[lesson.type]}</p>
+        <div id="rpt-d" className="rpt-result">
+          <p>老師會先確認。如果老師同意：</p>
+          <ul><li>退回 <b>1 堂</b></li><li>下次繳費加收取消費 <b>{fmtMoney(fee)}</b></li></ul>
+        </div>
+        <div className="field"><label htmlFor="rpt-r">原因（選填，老師會看到）</label>
+          <textarea id="rpt-r" className="input" maxLength={200} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：那天生病沒有去上課" /></div>
+        {report.isError && <div className="notice error" role="alert"><Icon name="info" /><span>{(report.error as Error).message}</span></div>}
+        <div className="rpt-actions">
+          <button type="button" className="btn secondary" disabled={report.isPending} onClick={close}>返回</button>
+          <button type="button" className="btn primary" disabled={report.isPending} onClick={send}>{report.isPending ? '送出中…' : '確定'}</button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+const endTime = (t: string, minutes = 60) => { const [h, m] = t.split(':').map(Number); const x = h * 60 + m + minutes; return `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; };
 
 /* =================== Quota & payments =================== */
 export function QuotaPage() {
   const me = useCurrentUser();
   const studio = useStudio();
   const pays = useMyPayments();
+  const fees = useMyFees();
+  const unpaid = (fees.data ?? []).filter((f) => f.status === 'unpaid');
+  const feeTotal = unpaid.reduce((n, f) => n + f.amount, 0);
   const upload = useUploadReceipt();
   const toast = useToast();
   // 體驗 students who haven't tried yet see only the trial; everyone else sees the normal packages
-  const offered = studio.data?.packages.filter((p) => !!p.trial === me.trialAvailable) ?? [];
+  const offered = studio.data?.packages.filter((p) => !p.trial || me.trialAvailable) ?? [];
   const [picked, setPkg] = useState<number | null>(null);
   const pkg = picked ?? offered[0]?.size ?? 4;
   const [file, setFile] = useState<File | null>(null);
@@ -478,7 +555,8 @@ export function QuotaPage() {
           <section className="card"><p className="overline">付款紀錄</p>
             {pays.isPending ? <ListSkeleton rows={2} /> : pays.data?.length ? (
               <div className="list">{pays.data.map((p) => (
-                <div className="li" key={p.id}><div className="grow stack g1"><p className="t">{p.trial ? '體驗課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)}</p>
+                <div className="li" key={p.id}><div className="grow stack g1"><p className="t">{p.trial ? '單堂課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)}</p>
+                  {!!p.fees?.length && <p className="caption">含取消費 {fmtMoney(p.fees.reduce((n, f) => n + f.amount, 0))}</p>}
                   <p className="caption">{fmtRelative(p.uploadedAt)} 上傳{p.rejectReason ? ` · 退回原因：${p.rejectReason}` : ''}</p></div>
                   <Tag tone={p.status === 'Confirmed' ? 'ok' : p.status === 'Rejected' ? 'bad' : 'warn'}>{{ Confirmed: '已確認', Rejected: '已退回', Pending: '確認中' }[p.status]}</Tag></div>
               ))}</div>
@@ -486,13 +564,20 @@ export function QuotaPage() {
           </section>
         </div>
         <form className="card" onSubmit={submit}>
-          <p className="overline">{me.trialAvailable ? '購買體驗課' : '購買新方案'}</p>
-          <p className="caption">{me.trialAvailable ? '第一次上課：1 堂體驗課，老師確認收據後就可以預約。' : '隨時都可以購買，老師確認後，堂數會加在目前剩餘的堂數上。'}</p>
+          <p className="overline">{me.trialAvailable ? '購買單堂課' : '購買新方案'}</p>
+          <p className="caption">{me.trialAvailable ? '第一次上課：1 堂單堂課，老師確認收據後就可以預約。' : '隨時都可以購買，老師確認後，堂數會加在目前剩餘的堂數上。'}</p>
           <div className="list">{offered.map((p) => (
             <label className="li" key={p.size} style={{ cursor: canBuy ? 'pointer' : 'default' }}>
               <input type="radio" name="pkg" value={p.size} checked={pkg === p.size} disabled={!canBuy} onChange={() => setPkg(p.size)} style={{ width: 22, height: 22, accentColor: 'var(--sage-700)' }} />
-              <span className="grow t">{p.trial ? `體驗課 · ${p.size} 堂` : `${p.size} 堂`}</span><span className="t">{fmtMoney(p.price)}</span>
+              <span className="grow t">{p.trial ? `單堂課 · ${p.size} 堂` : `${p.size} 堂`}</span><span className="t">{fmtMoney(p.price)}</span>
             </label>))}</div>
+          {feeTotal > 0 && (
+            <div className="fee-due" role="note">
+              <p className="t">◆ 未付取消費 {fmtMoney(feeTotal)}</p>
+              <ul>{unpaid.map((f) => <li key={f.id}>{fmtSlot(f.date, f.time)} 的課（回報取消）· {fmtMoney(f.amount)}</li>)}</ul>
+              <p className="caption">這次請一起匯款：{fmtMoney(offered.find((o) => o.size === pkg)?.price ?? 0)} + {fmtMoney(feeTotal)} = <b>{fmtMoney((offered.find((o) => o.size === pkg)?.price ?? 0) + feeTotal)}</b></p>
+            </div>
+          )}
           {studio.data && <div className="inner stack g1"><p className="caption">匯款帳號</p><p className="t">{studio.data.bank.name} · {studio.data.bank.account}</p><p className="caption">戶名 {studio.data.bank.holder}</p></div>}
           <div className="field"><label htmlFor="rc">匯款證明（JPG、PNG、WEBP，5 MB 以內）</label>
             <input id="rc" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={!canBuy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ paddingTop: 10 }} /></div>
@@ -507,7 +592,7 @@ export function QuotaPage() {
 }
 
 /* =================== Alerts =================== */
-const ALERT_ICON: Record<AlertKind, string> = { moved: 'repeat', approved: 'repeat', declined: 'repeat', payment: 'receipt', added: 'calendar', welcome: 'sparkle', cancelled: 'calendar', reminder: 'receipt', proposal: 'repeat' };
+const ALERT_ICON: Record<AlertKind, string> = { moved: 'reschedule', approved: 'reschedule', declined: 'reschedule', payment: 'receipt', added: 'calendar', welcome: 'sparkle', cancelled: 'calendar', reminder: 'receipt', proposal: 'reschedule', report: 'calendar', homework: 'book' };
 export function Alerts() {
   const alerts = useAlerts();
   const { mutation, undo } = useMarkAllRead();
@@ -543,8 +628,23 @@ export function Profile() {
   const nav = useNavigate();
   const save = useUpdateProfile();
   const toast = useToast();
+  // ⋯ menu → 設定 lands here with #settings: scroll the 同意設定 card into view and move focus to it
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash !== '#settings') return;
+    // the card may render a moment later (lazy route + view transition), so retry for up to ~2 s
+    let tries = 0, t = 0;
+    const go = () => {
+      const el = document.getElementById('settings');
+      if (!el) { if (++tries < 20) t = window.setTimeout(go, 100); return; }
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.focus({ preventScroll: true });
+    };
+    t = window.setTimeout(go, 250);
+    return () => window.clearTimeout(t);
+  }, [hash]);
   const [f, setF] = useState({ name: me.name, phone: me.phone ?? '', email: me.email ?? '', lineId: me.lineId ?? '', voiceType: me.voiceType ?? '', goal: me.goal ?? '' });
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const flow = useSaveFlow();
   return (
     <>
       <PageHead title="個人資料" />
@@ -553,16 +653,16 @@ export function Profile() {
       <Link to="/app/quota" className="inner row between" style={{ textDecoration: 'none', color: 'inherit' }} viewTransition>
         <span className="stack g1"><span className="t">堂數與付款</span><span className="caption">剩餘 {me.credits} 堂 · 上傳匯款證明</span></span><Icon name="chev" />
       </Link>
-      <form className="card" onSubmit={(e) => { e.preventDefault(); save.mutate(f, { onSuccess: () => toast({ text: '已儲存' }), onError: (er) => toast({ text: (er as Error).message, kind: 'error' }) }); }}>
+      <form className="card" onSubmit={(e) => { e.preventDefault(); flow.run(() => save.mutateAsync(f), () => toast({ text: '已儲存' })).catch((er) => toast({ text: (er as Error).message, kind: 'error' })); }}>
         {/* #15: autocomplete lets the phone fill these in */}
-        <div className="field"><label htmlFor="p-name">姓名</label><input id="p-name" className="input" autoComplete="name" required value={f.name} onChange={set('name')} /></div>
-        <div className="field"><label htmlFor="p-tel">電話</label><input id="p-tel" className="input" type="tel" autoComplete="tel" inputMode="tel" value={f.phone} onChange={set('phone')} /></div>
-        <div className="field"><label htmlFor="p-mail">Email</label><input id="p-mail" className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} /></div>
-        <div className="field"><label htmlFor="p-line">LINE ID</label><input id="p-line" className="input" autoComplete="off" value={f.lineId} onChange={set('lineId')} /></div>
+        <div className="field"><label htmlFor="p-name">姓名</label><input id="p-name" placeholder="你的姓名" className="input" autoComplete="name" required value={f.name} onChange={set('name')} /></div>
+        <div className="field"><label htmlFor="p-tel">電話</label><input id="p-tel" placeholder="例如：0912 345 678" className="input" type="tel" autoComplete="tel" inputMode="tel" value={f.phone} onChange={set('phone')} /></div>
+        <div className="field"><label htmlFor="p-mail">Email</label><input id="p-mail" placeholder="name@example.com" className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} /></div>
+        <div className="field"><label htmlFor="p-line">LINE ID</label><input id="p-line" placeholder="你的 LINE ID" className="input" autoComplete="off" value={f.lineId} onChange={set('lineId')} /></div>
         <div className="field"><label htmlFor="p-voice">聲部</label>
           <select id="p-voice" className="input" value={f.voiceType} onChange={set('voiceType')}><option value="">還不確定</option>{['女高音', '女中音', '女低音', '男高音', '男中音', '男低音'].map((v) => <option key={v}>{v}</option>)}</select></div>
-        <div className="field"><label htmlFor="p-goal">學習目標</label><textarea id="p-goal" className="input" value={f.goal} onChange={set('goal')} maxLength={300} /></div>
-        <button className="btn primary block" disabled={save.isPending}>{save.isPending ? '儲存中…' : '儲存'}</button>
+        <div className="field"><label htmlFor="p-goal">學習目標</label><textarea id="p-goal" placeholder="例如：想把高音唱穩、準備婚禮獻唱" className="input" value={f.goal} onChange={set('goal')} maxLength={300} /></div>
+        <SaveButton state={flow.state} />
       </form>
       <ConsentSettings />
       <button className="btn ghost block mobile-only" onClick={() => { nav('/'); logout.mutate(); }}><Icon name="logout" size={18} />登出</button>
@@ -584,7 +684,7 @@ function ConsentSettings() {
   if (!q.data) return null;
   const d = q.data;
   const change = (k: 'media' | 'marketing', on: boolean) => {
-    if (on && d.minor && !guardianOk) { toast({ text: '未滿 18 歲，請先由法定代理人勾選確認。', kind: 'error' }); return; }
+    if (on && d.minor && !guardianOk) { toast({ text: '未滿 18 歲，請先由法定代理人勾選確認。', kind: 'warning' }); return; }
     save.mutateAsync({ version: CONSENT_VERSION, terms: true, media: k === 'media' ? on : d.media.granted, marketing: k === 'marketing' ? on : d.marketing.granted, minor: false,
       guardian: d.minor && on ? { name: d.guardianName ?? '', relation: '法定代理人', contact: '-', agreed: true } : null })
       .then(() => toast({ text: on ? '已同意，可隨時在這裡撤回' : k === 'media' ? '已撤回。IRIS 不會再使用你的照片、影片或聲音，已公開的內容會盡快移除。' : '已取消，不會再收到行銷訊息' }))
@@ -593,12 +693,12 @@ function ConsentSettings() {
   const row = (k: 'media' | 'marketing', title: string, text: string) => (
     <div className="cn-row">
       <div><p className="t" id={`cn-${k}`}>{title}</p><p className="caption" id={`cn-${k}-d`}>{text}</p>
-        <p className={`cn-state ${d[k].granted ? 'on' : ''}`}>{d[k].granted ? '● 已同意' : '○ 未同意'}{d[k].at ? ` · ${new Date(d[k].at!).toLocaleDateString('zh-TW')}` : ''}</p></div>
+        <p className={`cn-state ${d[k].granted ? 'on' : ''}`}>{d[k].granted ? '已同意' : '未同意'}{d[k].at ? ` · ${new Date(d[k].at!).toLocaleDateString('zh-TW')}` : ''}</p></div>
       <button className="switch" role="switch" aria-checked={d[k].granted} aria-labelledby={`cn-${k}`} aria-describedby={`cn-${k}-d`} disabled={save.isPending} onClick={() => change(k, !d[k].granted)} />
     </div>
   );
   return (
-    <section className="card cn-card" aria-labelledby="cn-h">
+    <section className="card cn-card" id="settings" aria-labelledby="cn-h" tabIndex={-1}>
       <h2 className="h3" id="cn-h">同意設定</h2>
       <p className="caption">以下都是選擇性同意，不同意也能正常上課。</p>
       {row('media', '肖像影音宣傳', CONSENT_TEXT.media)}

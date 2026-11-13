@@ -2,16 +2,25 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { Icon } from './Icon';
 
 /**
- * #5 Undo instead of "are you sure".
- * The action has already happened; the toast offers 復原 (undo) for 5 s.
- * The timer pauses while the toast is hovered or focused, so slow readers and keyboard users don't lose the chance.
+ * App-wide alert (toast). Three kinds, one motion:
+ *   success → green, white text, ✓      (default)
+ *   warning → yellow, black text, !
+ *   error   → red, white text, ✕
+ * It drops in from the top with a quick fade, stays 1.5 s, then rises back up and fades out quickly.
+ * A toast with 復原 (undo) stays 5 s instead — 1.5 s is too short to reach the button.
+ * The timer pauses while the toast is hovered or focused, so slow readers and keyboard users don't lose it.
  */
+type Kind = 'success' | 'warning' | 'error';
 interface ToastInput {
   text: string;
-  kind?: 'ok' | 'error';
+  /** 'ok' is the old name for success */
+  kind?: Kind | 'ok';
   undo?: () => void | Promise<void>;
 }
-interface ToastState extends ToastInput { id: number }
+interface ToastState { text: string; kind: Kind; undo?: ToastInput['undo']; id: number; leaving: boolean }
+
+const STAY_MS = 1500, UNDO_MS = 5000, OUT_MS = 200;
+const ICON: Record<Kind, string> = { success: 'check', warning: 'warning', error: 'x' };
 
 const Ctx = createContext<(t: ToastInput) => void>(() => {});
 export const useToast = () => useContext(Ctx);
@@ -19,10 +28,17 @@ export const useToast = () => useContext(Ctx);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const outTimer = useRef<number | undefined>(undefined);
   const paused = useRef(false);
   const seq = useRef(0);
 
-  const close = useCallback(() => setToast(null), []);
+  // leave = play the "rise + fade out" first, then remove it
+  const close = useCallback(() => {
+    window.clearTimeout(timer.current);
+    setToast((t) => (t ? { ...t, leaving: true } : t));
+    window.clearTimeout(outTimer.current);
+    outTimer.current = window.setTimeout(() => setToast(null), OUT_MS);
+  }, []);
   const arm = useCallback((ms: number) => {
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => { if (!paused.current) close(); }, ms);
@@ -30,14 +46,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((t: ToastInput) => {
     seq.current += 1;
-    setToast({ ...t, id: seq.current });
-    arm(t.undo ? 5000 : t.kind === 'error' ? 6000 : 3000);
+    paused.current = false; // a new toast starts its own timer, even if the pointer is still resting where the last one was
+    window.clearTimeout(outTimer.current);
+    const kind: Kind = t.kind === 'error' ? 'error' : t.kind === 'warning' ? 'warning' : 'success';
+    setToast({ text: t.text, kind, undo: t.undo, id: seq.current, leaving: false });
+    arm(t.undo ? UNDO_MS : STAY_MS);
   }, [arm]);
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => { window.clearTimeout(timer.current); window.clearTimeout(outTimer.current); }, []);
 
   const pause = () => { paused.current = true; window.clearTimeout(timer.current); };
-  const resume = () => { paused.current = false; arm(2000); };
+  const resume = () => { paused.current = false; arm(STAY_MS); };
 
   return (
     <Ctx.Provider value={show}>
@@ -46,11 +65,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toast && (
           <div
             key={toast.id}
-            className={`toast${toast.kind === 'error' ? ' error' : ''}`}
-            role={toast.kind === 'error' ? 'alert' : 'status'}
+            className={`toast is-${toast.kind}${toast.kind === 'error' ? ' error' : ''}${toast.leaving ? ' is-leaving' : ''}`}
+            role={toast.kind === 'success' ? 'status' : 'alert'}
             onMouseEnter={pause} onMouseLeave={resume} onFocus={pause} onBlur={resume}
           >
-            <span className="ti" aria-hidden="true"><Icon name={toast.kind === 'error' ? 'x' : 'check'} size={16} /></span>
+            <span className="ti" aria-hidden="true"><Icon name={ICON[toast.kind]} size={18} weight="bold" /></span>
             <span className="grow">{toast.text}</span>
             {toast.undo && (
               <button
@@ -62,9 +81,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   catch { show({ text: '復原失敗，可能已超過時間。', kind: 'error' }); }
                 }}
               >復原</button>
-            )}
-            {toast.kind === 'error' && (
-              <button className="icon-btn flat small" aria-label="關閉" onClick={close}><Icon name="x" size={16} /></button>
             )}
           </div>
         )}

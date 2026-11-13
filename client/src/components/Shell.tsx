@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from 'react';
+import { Logo } from './Logo';
+import { createContext, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { session, useLogout, useMe, useOverview } from '../lib/queries';
@@ -34,8 +35,8 @@ function useNavItems(role: Role, unread: number): NavItem[] {
     { to: '/app', label: '首頁', short: '首頁', icon: 'home', end: true },
     { to: '/app/book', label: '預約課程', short: '預約', icon: 'book' },
     { to: '/app/calendar', label: '行事曆', short: '行事曆', icon: 'calendar' },
-    { to: '/app/alerts', label: '通知', short: '通知', icon: 'bell', badge: unread, dot: true },
-    { to: '/app/profile', label: '個人資料', short: '我的', icon: 'user' },
+    { to: '/app/alerts', label: '通知', short: '通知', icon: 'bell', badge: unread, dot: true, sideOnly: true }, // bottom bar: the bell already sits top-right on 首頁
+    { to: '/app/profile', label: '個人資料', short: '我的', icon: 'user', sideOnly: true }, // phone bar: inside the ⋯ menu
   ];
   const c = ov.data?.counts;
   // 5 tabs (was 6): everything that waits for Iris's decision lives in one 收件匣 with ONE badge,
@@ -49,9 +50,9 @@ function useNavItems(role: Role, unread: number): NavItem[] {
   ];
 }
 
-/** items that need Iris to act: open 改時間 + new students + receipts to check + consults not contacted yet */
-export const inboxCount = (c?: { changes: number; applications: number; receipts: number; consults: number }) =>
-  c ? c.changes + c.applications + c.receipts + c.consults : 0;
+/** items that need Iris to act: open 改時間 + 回報 + new students + receipts to check + consults not contacted yet */
+export const inboxCount = (c?: { changes: number; reports?: number; applications: number; receipts: number; consults: number }) =>
+  c ? c.changes + (c.reports ?? 0) + c.applications + c.receipts + c.consults : 0;
 
 /** NavLink only knows its own path; grouped tabs (收件匣, 更多) are also "here" on their member pages */
 function NavItemLink({ i, size, children, ...rest }: { i: NavItem; size?: number; children: (active: boolean) => ReactNode } & Omit<ComponentProps<typeof Link>, 'to' | 'children'>) {
@@ -86,7 +87,7 @@ function Frame({ role, name, unread, children }: { role: Role; name: string; unr
   return (
     <div className="app">
       <aside className="side" aria-label="側邊選單">
-        <Link to={role === 'Teacher' ? '/teacher' : '/app'} className="logo"><b>IRIS</b><span className="overline">{role === 'Teacher' ? 'Studio' : '我的課程'}</span></Link>
+        <Link to={role === 'Teacher' ? '/teacher' : '/app'} className="logo" aria-label="Iris Vocal Studio"><Logo /><span className="overline">{role === 'Teacher' ? 'Studio' : '我的課程'}</span></Link>
         <button className="kbd-hint" onClick={() => setCmd(true)} aria-keyshortcuts="Meta+K Control+K">
           <span className="row g2"><Icon name="search" size={16} />快速搜尋</span><span><kbd>{modKey}</kbd><kbd>K</kbd></span>
         </button>
@@ -121,9 +122,40 @@ function Frame({ role, name, unread, children }: { role: Role; name: string; unr
             </>}
           </NavItemLink>
         ))}
+        {role === 'Student' && <MoreMenu onLogout={() => { nav('/'); logout.mutate(); }} />}
       </nav>
 
       <CommandMenu role={role} open={cmd} setOpen={setCmd} />
+    </div>
+  );
+}
+
+/** Phone bar ⋯ : a drop-up with 個人資料 / 設定 / 登出. Closes on outside tap, Esc, or picking an item. */
+function MoreMenu({ onLogout }: { onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const loc = useLocation();
+  useEffect(() => setOpen(false), [loc.pathname, loc.hash]);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); ref.current?.querySelector<HTMLButtonElement>('.bn-more-btn')?.focus(); } };
+    document.addEventListener('pointerdown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const active = loc.pathname.startsWith('/app/profile');
+  return (
+    <div className="bn-more" ref={ref}>
+      <button type="button" className={`bn-more-btn${active ? ' active' : ''}`} aria-haspopup="menu" aria-expanded={open} aria-controls="bn-more-menu" onClick={() => setOpen((o) => !o)}>
+        <Icon name="more" size={22} weight={open || active ? 'bold' : 'regular'} /><span>更多</span>
+      </button>
+      {open && (
+        <div className="bn-pop" id="bn-more-menu" role="menu" aria-label="更多">
+          <Link role="menuitem" to="/app/profile" viewTransition><Icon name="user" size={18} />個人資料</Link>
+          <Link role="menuitem" to="/app/profile#settings" viewTransition><Icon name="gear" size={18} />設定</Link>
+          <button role="menuitem" type="button" className="danger" onClick={onLogout}><Icon name="logout" size={18} />登出</button>
+        </div>
+      )}
     </div>
   );
 }

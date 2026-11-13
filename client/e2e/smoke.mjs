@@ -32,7 +32,7 @@ const axe = async (p, label) => {
 // 1. pre-render
 await check('#7 landing HTML is pre-rendered (text in the raw HTML)', async () => {
   const html = await (await fetch(BASE + '/')).text();
-  assert(html.includes('找到屬於你的聲音') && html.includes('免費諮詢'), 'headline missing from raw HTML');
+  assert(html.replace(/<[^>]+>/g, '').includes('找到屬於你的聲音') && html.includes('免費諮詢'), 'headline missing from raw HTML');
 });
 
 const s = await newPage();
@@ -52,7 +52,7 @@ await check('#14 bottom nav sits above the safe area (uses env())', async () => 
   const css = await s.evaluate(() => [...document.styleSheets].flatMap((ss) => { try { return [...ss.cssRules]; } catch { return []; } }).map((r) => r.cssText).join(' '));
   assert(css.includes('safe-area-inset-bottom'), 'no safe-area rule');
   assert(await s.isVisible('.bnav'), 'bnav hidden on phone');
-  assert((await s.locator('.bnav a').count()) === 5, 'student nav should have 5 items');
+  assert((await s.locator('.bnav a, .bnav .bn-more-btn').count()) === 4, 'student nav should have 4 items (通知 is the bell top-right)');
 });
 await check('#16 tabular numbers on body', async () => {
   assert((await s.evaluate(() => getComputedStyle(document.body).fontVariantNumeric)).includes('tabular-nums'), 'not tabular');
@@ -122,7 +122,7 @@ await check('#5 cancel → undo toast → credits restored', async () => {
 
 // 4. alerts: optimistic + undo
 await check('#2 #5 mark all read is instant, undo restores unread', async () => {
-  await s.click('.bnav >> text=通知'); await s.waitForSelector('text=付款已確認');
+  await s.click('.sh-bell'); await s.waitForSelector('text=付款已確認');
   const u0 = await s.locator('.dot-unread').count();
   await s.click('text=全部標為已讀');
   await s.waitForTimeout(100); // the mock server takes ≥200 ms, so this is before it answers
@@ -191,7 +191,7 @@ await check('teacher: 今日待辦 2×2 above 今天的課; 收件匣 = 申請 +
   assert(order, '今日待辦 is not above 今天的課');
   assert((await t.locator('.th-todo .kpi').count()) === 4, 'not 4 cards');
   const titles = await t.locator('.th-todo .kpi .kt').allTextContents();
-  assert(titles.join() === '改時間申請,待確認收據,新學生,諮詢', 'card order ' + titles);
+  assert(titles.join() === '學生申請,待確認收據,新學生,諮詢', 'card order ' + titles);
   assert((await t.locator('.side nav a').count()) === 5, 'sidebar should have 5 items');
   await t.click('.side nav >> text=收件匣'); await t.waitForSelector('.ibx-tabs');
   await t.click('.ibx-tabs >> text=付款'); await t.waitForURL('**/teacher/payments');
@@ -258,10 +258,11 @@ await check('8 Nov: lessons that ended are marked 已上課 automatically', asyn
   const stale = ls.filter((l) => l.status === 'Booked' && end(l) <= Date.now());
   assert(stale.length === 0, 'still Booked: ' + stale.map((l) => l.id).join());
 });
-await check('8 Nov: Iris books for a student from the student page (−1 堂)', async () => {
-  await t.goto(BASE + '/teacher/students/s2'); await t.waitForSelector('.sd-add');
+await check('8 Nov: Iris books for a student (幫學生預約 sheet, −1 堂)', async () => {
+  // 13 Nov: the lessons block left the 個人資料 page; the booking sheet still opens from its route
+  await t.goto(BASE + '/teacher/students/s2/book'); await t.waitForSelector('.sheet');
   const c0 = await t.evaluate(() => fetch('/api/teacher/students/s2').then((r) => r.json()).then((x) => x.credits));
-  await t.click('.sd-add'); await t.waitForSelector('.sheet .chip:not([disabled])');
+  await t.waitForSelector('.sheet .chip:not([disabled])');
   await t.locator('.sheet .chip:not([disabled])').first().click();
   await t.click('.sheet .btn.primary');
   await t.waitForSelector('.toast >> text=已幫');
@@ -269,14 +270,14 @@ await check('8 Nov: Iris books for a student from the student page (−1 堂)', 
   assert(c1 === c0 - 1, `credits ${c0} → ${c1}`);
 });
 await check('8 Nov: Iris proposes a new time; it waits for the student in 申請', async () => {
-  await t.goto(BASE + '/teacher/students/s1'); await t.waitForSelector('text=提議改時間');
-  await t.locator('.sd-lesson >> text=提議改時間').first().click();
+  await t.goto(BASE + '/teacher/students/s1'); await t.waitForSelector('.sp-stats');
+  const lid = await t.evaluate(() => fetch('/api/teacher/students/s1').then((r) => r.json()).then((x) => x.upcoming.find((l) => !l.change)?.id));
+  await t.goto(BASE + `/teacher/students/s1/propose/${lid}`);
   await t.waitForSelector('.sheet .chip:not([disabled])');
   await t.locator('.sheet .chip:not([disabled])').first().click();
   await t.fill('#pm', '那天我有研習');
   await t.click('.sheet .btn.primary');
   await t.waitForSelector('.toast >> text=等學生回覆');
-  await t.waitForSelector('.sd-lesson >> text=等待學生回覆');
   await t.goto(BASE + '/teacher/requests?tab=waiting'); await t.waitForSelector('.rq-props .rq-prow >> text=已傳送');
 });
 await check('教師個人資料: status saved → students get it; custom needs a label; email change needs the password', async () => {
@@ -297,9 +298,9 @@ await check('legal: footer links, consent required at sign-up, 個資申請 reac
   await a.goto(BASE + '/'); await a.waitForTimeout(1500);
   assert((await a.locator('.ft-cols a').count()) === 8, 'footer should have 8 links');
   await a.click('.ft-cols >> text=隱私權政策'); await a.waitForURL('**/legal/privacy'); await a.waitForSelector('.lg-draft');
-  const noConsent = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x@y.tw', password: '12345678', consents: { version: 'v', terms: false, media: false, marketing: false, minor: false, guardian: null } }) }).then((r) => r.status));
+  const noConsent = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x@y.tw', password: 'Sing2026', consents: { version: 'v', terms: false, media: false, marketing: false, minor: false, guardian: null } }) }).then((r) => r.status));
   assert(noConsent === 400, 'sign-up without terms consent: ' + noConsent);
-  const minorNoGuardian = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x2@y.tw', password: '12345678', consents: { version: 'v', terms: true, media: false, marketing: false, minor: true, guardian: null } }) }).then((r) => r.status));
+  const minorNoGuardian = await a.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'x2@y.tw', password: 'Sing2026', consents: { version: 'v', terms: true, media: false, marketing: false, minor: true, guardian: null } }) }).then((r) => r.status));
   assert(minorNoGuardian === 400, 'minor without guardian: ' + minorNoGuardian);
   await a.context().close();
   await t.evaluate(() => fetch('/api/public/privacy-requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '林小姐', contact: 'lin@x.tw', type: 'delete', detail: '請刪除照片' }) }));
@@ -307,6 +308,97 @@ await check('legal: footer links, consent required at sign-up, 個資申請 reac
   await t.click('.side nav >> text=更多'); await t.click('.mo-row >> text=個資權利申請'); await t.waitForSelector('.pr-card >> text=林小姐');
   assert((await t.locator('.pr-card .rq-status').first().textContent()).includes('前需回覆'), 'no due date');
   await t.goto(BASE + '/teacher/students/s2'); await t.waitForSelector('.sd-consent.warn >> text=已撤回');
+});
+await check('12 Nov 回報: Iris approves 張家豪\'s report in 收件匣 → +1 堂 and a NT$ 500 fee', async () => {
+  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpis >> text=學生申請');
+  assert((await t.locator('.kpis >> text=回報 1').count()) === 1, 'home tile does not show 回報 1');
+  await t.goto(BASE + '/teacher/requests?tab=reports'); await t.waitForSelector('.rq >> text=張家豪');
+  const c0 = await t.evaluate(() => fetch('/api/teacher/students/s4').then((r) => r.json()).then((x) => x.credits));
+  await t.click('.rq >> .rq-approve'); await t.waitForSelector('.toast >> text=退回 1 堂');
+  await t.waitForSelector('text=沒有待審核的回報');
+  const c1 = await t.evaluate(() => fetch('/api/teacher/students/s4').then((r) => r.json()).then((x) => x.credits));
+  assert(c1 === c0 + 1, `credits ${c0} → ${c1}`);
+});
+await check('12 Nov 回報: student 返回 sends nothing; 確定 → 待審核; fee lands on the next receipt', async () => {
+  const p = await newPage();
+  await p.goto(BASE + '/login'); await p.click('.au-demo >> text=學生 王小明'); await p.waitForURL('**/app');
+  await p.click('.bnav >> text=行事曆'); await p.click('.seg >> text=列表'); await p.click('.fchip >> text=過去');
+  const btn = p.locator('.li >> button:text-is("回報")');
+  assert((await btn.count()) === 1, 'expected exactly one 回報 button (only lessons inside 7 days): ' + await btn.count());
+  await btn.click(); await p.waitForSelector('dialog.rpt[open] >> text=要申請取消這堂課嗎？');
+  assert((await p.locator('dialog.rpt >> text=NT$').count()) >= 1, 'fee not stated before confirming');
+  await p.click('dialog.rpt >> button:text-is("返回")'); await p.waitForSelector('dialog.rpt', { state: 'detached' });
+  const none = await p.evaluate(() => fetch('/api/student/lessons?from=2000-01-01&to=2100-01-01').then((r) => r.json()).then((ls) => ls.filter((l) => l.report?.status === 'open').length));
+  assert(none === 0, '返回 still sent a report');
+  await btn.click(); await p.fill('#rpt-r', '那天生病'); await p.click('dialog.rpt >> button:text-is("確定")');
+  await p.waitForSelector('.toast >> text=已送出回報'); await p.waitForSelector('.li >> text=待審核');
+  // Iris approves (same in-memory data: sign in as her from this page), then the fee shows and goes on the next receipt
+  const res = await p.evaluate(async () => {
+    const j = (u, o) => fetch(u, o).then((r) => r.status === 204 ? null : r.json());
+    const post = (u, b) => j(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b ?? {}) });
+    await post('/api/auth/line/mock', { as: 't1' });
+    const rid = (await j('/api/teacher/requests')).reports.find((r) => r.studentName === '王小明').id;
+    await post(`/api/teacher/reports/${rid}/approve`, {});
+    await post('/api/auth/line/mock', { as: 's1' });
+    const fees = await j('/api/student/fees');
+    const fd = new FormData(); fd.set('packageSize', '4'); fd.set('receipt', new File([new Uint8Array(10)], 'r.png', { type: 'image/png' }));
+    const pay = await j('/api/student/payments', { method: 'POST', body: fd });
+    return { fees, pay, after: await j('/api/student/fees') };
+  });
+  assert(res.fees.length === 1 && res.fees[0].amount === 500 && res.fees[0].status === 'unpaid', 'fee: ' + JSON.stringify(res.fees));
+  assert(res.pay.amount === 3700 && res.pay.fees.length === 1, 'receipt amount should be 3200 + 500: ' + JSON.stringify(res.pay));
+  assert(res.after[0].status === 'billed', 'fee not billed on the receipt');
+  await p.context().close();
+});
+await check('12 Nov sign-up: email only, live password rules, confirm must match, weak password refused by the API', async () => {
+  const p = await newPage();
+  await p.goto(BASE + '/register'); await p.waitForSelector('#re');
+  assert((await p.locator('text=使用 LINE 註冊').count()) === 0, 'LINE sign-up button still there');
+  const order = await p.locator('.au-form label[for]').evaluateAll((ls) => ls.map((l) => l.getAttribute('for')).slice(0, 4));
+  assert(order.join() === 're,rn,rw,rw2', 'field order ' + order);
+  assert((await p.locator('.au-form label .au-req').count()) === 4, 'every field label needs a red *');
+  await p.click('.au-glow');
+  for (const m of ["Email 不能空白。", "姓名不能空白。", "密碼不能空白。", "確認密碼不能空白。"]) assert((await p.locator(`.au-err:text-is("${m}")`).count()) === 1, 'missing: ' + m);
+  assert(new URL(p.url()).pathname === '/register', 'empty form was sent');
+  await p.fill('#re', 'bad@'); await p.waitForSelector('#email-err');
+  await p.fill('#rw', 'sing2026');
+  assert((await p.locator('.au-rules li.ok').count()) === 3, 'checklist should show 3 of 4 rules met');
+  await p.fill('#rw', 'Sing2026'); assert((await p.locator('.au-rules li.ok').count()) === 4, 'all 4 rules should be met');
+  await p.fill('#rw2', 'Sing2025'); await p.locator('#rn').focus(); await p.waitForSelector('#confirm-err >> text=不一樣');
+  const weak = await p.evaluate(() => fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'x', email: 'weak@y.tw', password: 'abcdefgh', consents: { version: 'v', terms: true, media: false, marketing: false, minor: false, guardian: null } }) }).then((r) => r.status));
+  assert(weak === 400, 'weak password accepted: ' + weak);
+  await p.fill('#re', 'new.student@example.com'); await p.fill('#rn', '新同學'); await p.fill('#rw2', 'Sing2026');
+  await p.click('.au-consent .au-ck.req input'); await p.click('.au-glow'); await p.waitForURL('**/pending');
+  await p.context().close();
+});
+await check('12 Nov 忘記密碼: same answer for any email, link → new password, last 3 passwords refused, link single-use', async () => {
+  const p = await newPage();
+  await p.goto(BASE + '/login'); await p.click('text=忘記密碼？'); await p.waitForURL('**/forgot-password');
+  const unknown = await p.evaluate(() => fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'nobody@x.tw' }) }).then((r) => r.status));
+  assert(unknown === 200, 'unknown email should get the same 200: ' + unknown);
+  await p.fill('#fe', 'xiaoming@demo.local'); await p.click('.au-glow');
+  await p.waitForSelector('text=請到信箱收信'); await p.click('text=（示範）打開信中的連結');
+  await p.waitForSelector('text=設定新密碼');
+  await p.fill('#rp1', 'demo1234'); await p.fill('#rp2', 'demo1234'); await p.click('.au-confirm-row .au-btn');
+  await p.waitForSelector('#rp1-err'); // rule fails before any request
+  const url = new URL(p.url()); const token = url.searchParams.get('token');
+  const reuse = await p.evaluate((t) => fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t, password: 'demo1234' }) }).then((r) => r.status), token);
+  assert(reuse === 400, 'weak password should be 400: ' + reuse);
+  await p.fill('#rp1', 'Sing2026'); await p.fill('#rp2', 'Sing2026');
+  await p.click('.au-confirm-row .au-btn');
+  await p.waitForSelector('.au-confirm-row .au-btn:disabled >> text=處理中…', { timeout: 2000 });
+  await p.waitForURL('**/login'); await p.waitForSelector('text=密碼已更新');
+  const again = await p.evaluate((t) => fetch('/api/auth/reset-password/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t }) }).then((r) => r.json()), token);
+  assert(again.valid === false, 'link usable twice');
+  // ask again and try to reuse the password set a moment ago → refused
+  const res = await p.evaluate(async () => {
+    const j = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'xiaoming@demo.local' }) }).then((r) => r.json());
+    const t = new URL(j.demoLink, location.origin).searchParams.get('token');
+    return fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: t, password: 'Sing2026' }) }).then((r) => r.status);
+  });
+  assert(res === 409, 'recent password accepted: ' + res);
+  await p.fill('#em', 'xiaoming@demo.local'); await p.fill('#pw', 'Sing2026'); await p.click('.au-glow'); await p.waitForURL('**/app');
+  await p.context().close();
 });
 await check('#10 sheet closes by swiping down (phone)', async () => {
   await s.goto(BASE + '/app/book'); await s.waitForSelector('.chip:not([disabled])');

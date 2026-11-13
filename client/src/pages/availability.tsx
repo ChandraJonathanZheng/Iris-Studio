@@ -1,3 +1,5 @@
+import { DateField } from '../components/DateField';
+import { SaveButton, useSaveFlow } from '../components/SaveButton';
 import { useMemo, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
@@ -148,13 +150,14 @@ export function RangeSheet() {
   const problems = rangeProblems(nextRanges, lessonMinutes);
   const preview = startsInRange({ start, end }, lessonMinutes, gapMinutes);
 
+  const flow = useSaveFlow();
   const submit = () => {
     const prev = av.data!.weekly;
     const next = prev.map((d) => (d.weekday === w ? { ...d, enabled: true, ranges: nextRanges } : d));
-    save.mutateAsync(next)
-      .then(() => toast({ text: `${WEEKDAY_LABEL[w]} ${start} – ${end} 已${editing === null ? '新增' : '更新'}`, undo: () => save.mutateAsync(prev).then(() => undefined) }))
-      .catch(fail(toast));
-    nav(-1);
+    flow.run(() => save.mutateAsync(next), () => {
+      nav(-1);
+      toast({ text: `${WEEKDAY_LABEL[w]} ${start} – ${end} 已${editing === null ? '新增' : '更新'}`, undo: () => save.mutateAsync(prev).then(() => undefined) });
+    }).catch(fail(toast));
   };
 
   return (
@@ -163,8 +166,8 @@ export function RangeSheet() {
       {problems.length > 0
         ? <p className="av-warn" role="alert">{problems[0]}</p>
         : <p className="av-preview" aria-live="polite">這段可以排 {preview.length} 堂：{preview.join('、')}</p>}
-      <button className="btn primary block" disabled={problems.length > 0} onClick={submit}>{editing === null ? '新增' : '儲存'}</button>
-      <button className="btn secondary block" onClick={() => nav(-1)}>取消</button>
+      <SaveButton state={flow.state} type="button" label={editing === null ? '新增' : '儲存'} disabled={problems.length > 0} onClick={submit} />
+      <button className="btn secondary block" disabled={flow.busy} onClick={() => nav(-1)}>取消</button>
     </RouteSheet>
   );
 }
@@ -235,17 +238,17 @@ export function OverrideSheet() {
   const ready = !!date && date >= today && problems.length === 0;
   const setRange = (i: number, r: TimeRange) => setRanges(ranges.map((x, j) => (j === i ? r : x)));
 
+  const flow = useSaveFlow();
   const submit = () => {
     const o: DateOverride = { date, closed, ranges: closed ? [] : sortRanges(ranges), note: note.trim() };
-    save.mutateAsync(o).then(() => toast({ text: `${fmtDate(date)} 已設定為${closed ? '全天休息' : '自訂時段'}` })).catch(fail(toast));
-    nav(-1);
+    flow.run(() => save.mutateAsync(o), () => { nav(-1); toast({ text: `${fmtDate(date)} 已設定為${closed ? '全天休息' : '自訂時段'}` }); }).catch(fail(toast));
   };
 
   return (
     <RouteSheet title={existing ? `編輯 ${fmtDate(existing.date)}` : '新增特殊日期'}>
       {!existing && (
         <div className="field"><label htmlFor="ov-date">日期</label>
-          <input id="ov-date" className="input" type="date" min={today} max={undefined} value={date} onChange={(e) => setDate(e.target.value)} />
+          <DateField id="ov-date" min={today} value={date} onChange={setDate} />
           {date && weekly && <p className="av-hint">平常{WEEKDAY_LABEL[weekly.weekday]}：{weekly.enabled ? weekly.ranges.map(rangeText).join('、') : '不開放預約'}</p>}
           {replacing && <p className="av-hint">這天已經有特殊設定，儲存後會取代。</p>}
         </div>
@@ -277,8 +280,8 @@ export function OverrideSheet() {
           這天已有 {booked.length} 堂課（{booked.map((l) => `${l.time} ${l.studentName}`).join('、')}）。特殊日期只影響之後的預約，<b>不會自動取消這些課</b>，需要的話請到行事曆處理。
         </p>
       )}
-      <button className="btn primary block" disabled={!ready} onClick={submit}>儲存</button>
-      <button className="btn secondary block" onClick={() => nav(-1)}>取消</button>
+      <SaveButton state={flow.state} type="button" disabled={!ready} onClick={submit} />
+      <button className="btn secondary block" disabled={flow.busy} onClick={() => nav(-1)}>取消</button>
     </RouteSheet>
   );
 }

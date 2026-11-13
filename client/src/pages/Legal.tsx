@@ -1,3 +1,4 @@
+import { SaveButton, useSaveFlow } from '../components/SaveButton';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
 import { Icon } from '../components/Icon';
@@ -72,13 +73,14 @@ export function LegalPage() {
 function CookiePreferences() {
   const toast = useToast();
   const [prefs, setPrefs] = useState(() => readCookiePrefs());
+  const flow = useSaveFlow();
   const [analytics, setAnalytics] = useState(prefs?.analytics ?? false);
   return (
     <section className="lg-sec lg-cookie" aria-labelledby="ck-h">
       <h2 id="ck-h">你的 Cookie 設定</h2>
       <div className="lg-ck-row">
         <div><p className="lg-ck-t">必要 Cookie</p><p className="lg-ck-s">登入與安全所需，無法關閉。</p></div>
-        <span className="lg-ck-on">● 一律開啟</span>
+        <span className="lg-ck-on">一律開啟</span>
       </div>
       <div className="lg-ck-row">
         <div><p className="lg-ck-t" id="ck-an">分析 Cookie</p><p className="lg-ck-s" id="ck-an-d">目前沒有使用。開啟後，日後若加入流量分析才會啟用。</p></div>
@@ -86,7 +88,8 @@ function CookiePreferences() {
       </div>
       <div className="lg-ck-foot">
         <p className="lg-ck-s">{prefs ? `上次儲存：${new Date(prefs.savedAt).toLocaleString('zh-TW')}` : '尚未儲存，非必要 Cookie 維持關閉。'}</p>
-        <button className="btn primary" onClick={() => { setPrefs(saveCookiePrefs({ analytics })); toast({ text: '已儲存 Cookie 設定' }); }}>儲存設定</button>
+        <SaveButton state={flow.state} type="button" className="btn primary" label="儲存設定"
+          onClick={() => { flow.run(() => saveCookiePrefs({ analytics }), (p) => { setPrefs(p); toast({ text: '已儲存 Cookie 設定' }); }); }} />
       </div>
     </section>
   );
@@ -126,9 +129,9 @@ function PrivacyRequestForm() {
     <form className="lg-form" onSubmit={submit} noValidate aria-labelledby="pr-h">
       <h2 id="pr-h">提出申請</h2>
       <div className="field"><label htmlFor="pr-name">姓名</label>
-        <input id="pr-name" className="input" autoComplete="name" maxLength={80} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} aria-invalid={tried && !!errs.name} aria-describedby="pr-name-e" />{err('name')}</div>
+        <input id="pr-name" placeholder="你的姓名" className="input" autoComplete="name" maxLength={80} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} aria-invalid={tried && !!errs.name} aria-describedby="pr-name-e" />{err('name')}</div>
       <div className="field"><label htmlFor="pr-contact">聯絡方式（註冊用的 Email 或 LINE ID）</label>
-        <input id="pr-contact" className="input" maxLength={120} value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} aria-invalid={tried && !!errs.contact} aria-describedby="pr-contact-e" />{err('contact')}</div>
+        <input id="pr-contact" placeholder="例如：name@example.com 或你的 LINE ID" className="input" maxLength={120} value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} aria-invalid={tried && !!errs.contact} aria-describedby="pr-contact-e" />{err('contact')}</div>
       <fieldset className="lg-types" aria-describedby="pr-type-e">
         <legend>申請項目</legend>
         {REQ_TYPES.map((t) => (

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { Drawer } from 'vaul';
 import { Icon } from './Icon';
@@ -15,6 +15,18 @@ export function RouteSheet({ title, children, dismissible = true, onClose }: {
   const nav = useNavigate();
   const [open, setOpen] = useState(true);
   const close = () => { if (onClose) onClose(); else nav(-1); };
+  // Everything fits → no scrollbar and no scrolling (class "fits"). Re-checked whenever the sheet or its content changes size.
+  const [fits, setFits] = useState(true);
+  const ro = useRef<ResizeObserver | null>(null);
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!el) return;
+    const check = () => setFits(el.scrollHeight <= el.clientHeight + 1);
+    ro.current = new ResizeObserver(check);
+    ro.current.observe(el);
+    for (const c of Array.from(el.children)) ro.current.observe(c);
+    check();
+  }, []);
   return (
     <Drawer.Root
       open={open}
@@ -23,7 +35,7 @@ export function RouteSheet({ title, children, dismissible = true, onClose }: {
     >
       <Drawer.Portal>
         <Drawer.Overlay className="sheet-overlay" />
-        <Drawer.Content className="sheet" aria-describedby={undefined}>
+        <Drawer.Content ref={measure} className={`sheet${fits ? ' fits' : ''}`} aria-describedby={undefined}>
           <div className="grab" aria-hidden="true" />
           <div className="row between">
             <Drawer.Title className="h2">{title}</Drawer.Title>

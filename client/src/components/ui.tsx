@@ -39,17 +39,21 @@ export function DateBox({ date }: { date: string }) {
   );
 }
 
-export function Quota({ attended, booked, free }: { attended: number; booked: number; free: number }) {
+export function Quota({ attended, booked, free, cancelled = 0, reported = 0, plain }: { attended: number; booked: number; free: number; cancelled?: number; reported?: number; plain?: boolean }) {
+  // plain = colour blocks only (student home); the 已取消 block keeps its ✕ so it isn't mistaken for 已上課
   return (
-    <div className="quota" role="img" aria-label={`已上 ${attended} 堂、已預約 ${booked} 堂、可預約 ${free} 堂`}>
-      {Array.from({ length: attended }, (_, i) => <span key={`a${i}`} className="q a"><Icon name="check" size={18} weight="bold" /></span>)}
-      {Array.from({ length: booked }, (_, i) => <span key={`b${i}`} className="q b" aria-hidden="true">●</span>)}
-      {Array.from({ length: free }, (_, i) => <span key={`f${i}`} className="q f" aria-hidden="true">○</span>)}
+    <div className={`quota${plain ? ' plain' : ''}`} role="img" aria-label={`已上 ${attended} 堂、${cancelled ? `逾時取消 ${cancelled} 堂、` : ''}${reported ? `已取消 ${reported} 堂、` : ''}已預約 ${booked} 堂、可預約 ${free} 堂`}>
+      {Array.from({ length: attended }, (_, i) => <span key={`a${i}`} className="q a">{!plain && <Icon name="check" size={18} weight="bold" />}</span>)}
+      {Array.from({ length: cancelled }, (_, i) => <span key={`x${i}`} className="q x"><Icon name="x" size={16} weight="bold" /></span>)}
+      {/* 已取消 = reported + approved by Iris (credit returned): solid red, after the used ones */}
+      {Array.from({ length: reported }, (_, i) => <span key={`r${i}`} className="q r" aria-hidden="true" />)}
+      {Array.from({ length: booked }, (_, i) => <span key={`b${i}`} className="q b" aria-hidden="true">{!plain && '●'}</span>)}
+      {Array.from({ length: free }, (_, i) => <span key={`f${i}`} className="q f" aria-hidden="true">{!plain && '○'}</span>)}
     </div>
   );
 }
 
-export function PageHead({ title, over, back, right }: { title: string; over?: ReactNode; back?: boolean; right?: ReactNode }) {
+export function PageHead({ title, over, under, back, right }: { title: string; over?: ReactNode; under?: ReactNode; back?: boolean; right?: ReactNode }) {
   const nav = useNavigate();
   return (
     <div className="row between">
@@ -57,6 +61,7 @@ export function PageHead({ title, over, back, right }: { title: string; over?: R
       <div className="grow stack g1">
         {over && <p className="overline">{over}</p>}
         <h1 className="h1">{title}</h1>
+        {under && <p className="ph-under">{under}</p>}
       </div>
       {right}
     </div>
@@ -77,17 +82,22 @@ export function ErrorCard({ error, retry }: { error: unknown; retry?: () => void
 }
 
 /* ---------- #8 blurred placeholder while the image loads ---------- */
-export function BlurImage({ src, lqip, alt, className, style }: { src: string; lqip?: string | null; alt: string; className?: string; style?: React.CSSProperties }) {
+/** `mobile`: optional portrait source for narrow screens (≤899px) — art direction via <picture>, so phones never download the wide image. */
+export function BlurImage({ src, mobile, lqip, alt, className, style, eager }: { src: string; mobile?: string; lqip?: string | null; alt: string; className?: string; style?: React.CSSProperties; eager?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   return (
     <div className={`blur-img ${className ?? ''}`} style={{ backgroundImage: lqip ? `url(${lqip})` : undefined, backgroundColor: 'var(--mist)', ...style }}>
-      <img src={src} alt={alt} loading="lazy" decoding="async" className={loaded ? 'loaded' : ''} onLoad={() => setLoaded(true)} />
+      <picture>
+        {mobile && <source media="(max-width: 899px)" srcSet={mobile} />}
+        <img src={src} alt={alt} loading={eager ? 'eager' : 'lazy'} decoding="async" {...(eager ? { fetchPriority: 'high' as const } : {})} className={loaded ? 'loaded' : ''} onLoad={() => setLoaded(true)} />
+      </picture>
     </div>
   );
 }
 
-/** Photo slot that stays a labelled placeholder until Iris provides a real photo. */
-export function Photo({ caption, src, lqip, style }: { caption: string; src?: string; lqip?: string; style?: React.CSSProperties }) {
-  if (src) return <BlurImage src={src} lqip={lqip} alt={caption} className="photo" style={style} />;
+/** Photo slot that stays a labelled placeholder until Iris provides a real photo.
+ *  `eager` = above-the-fold image (the hero): load it right away instead of lazily, because it is the first thing visitors see. */
+export function Photo({ caption, src, mobile, lqip, style, eager }: { caption: string; src?: string; mobile?: string; lqip?: string; style?: React.CSSProperties; eager?: boolean }) {
+  if (src) return <BlurImage src={src} mobile={mobile} lqip={lqip} alt={caption} className="photo" style={style} eager={eager} />;
   return <div className="photo" style={style} aria-hidden="true"><Icon name="image" size={40} /><span className="cap-tag">[{caption}]</span></div>;
 }

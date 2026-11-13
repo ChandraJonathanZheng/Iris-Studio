@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Slot } from '../lib/types';
 import { addDays, dayNum, monthNum, studioToday, wd } from '../lib/date';
 import { useDays, useSlots } from '../lib/queries';
 import { Sk } from './ui';
@@ -22,10 +23,19 @@ export function SlotPicker({ date, time, onDate, onTime, onlyFree, setOnlyFree, 
   const days = useDays(from);
   const slots = useSlots(date);
   const strip = useRef<HTMLDivElement>(null);
+  // Date change → the chips "spin" (drum roll): old text fades out fast, the blocks roll over a few times and slow down,
+  // and on the last turn the new day's times drop in with a small bounce. While the new day loads we keep showing the
+  // previous chips (so the roll has something to roll) instead of flashing a skeleton.
+  const last = useRef<Slot[] | undefined>(undefined);
+  if (slots.data) last.current = slots.data;
+  const shown = slots.data ?? (date ? last.current : undefined);
+  const [spin, setSpin] = useState(0);
+  const prevDate = useRef(date);
+  useEffect(() => { if (prevDate.current && date && prevDate.current !== date) setSpin((n) => n + 1); prevDate.current = date; }, [date]);
 
   // keep the selected date visible when the screen opens
   useEffect(() => {
-    strip.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    strip.current?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView({ inline: 'start', block: 'nearest' });
   }, [days.data]);
 
   // if the chosen time became unavailable (refetch, toggle), clear it
@@ -63,19 +73,21 @@ export function SlotPicker({ date, time, onDate, onTime, onlyFree, setOnlyFree, 
           <button type="button" className="switch" role="switch" aria-checked={onlyFree} onClick={() => setOnlyFree(!onlyFree)} />
         </label>
       </div>
+      {/* fixed-height area: the sheet must not grow/shrink (and make the date row jump) when the number of times changes */}
+      <div className="slot-area">
       {!date ? <p className="caption">請先選擇日期。</p>
-        : slots.isPending ? <div className="chips">{Array.from({ length: 8 }, (_, i) => <Sk key={i} h={52} />)}</div>
+        : !shown ? <div className="chips">{Array.from({ length: 8 }, (_, i) => <Sk key={i} h={52} />)}</div>
         : (() => {
-            const list = (slots.data ?? []).filter((s) => !onlyFree || s.state === 'free');
+            const list = shown.filter((s) => !onlyFree || s.state === 'free');
             if (list.length === 0) return <p className="caption">這天沒有空的時段，請選其他日期。</p>;
             return (
-              <div className="chips" role="group" aria-label="時段">
-                {list.map((s) => {
+              <div key={spin} className={`chips${spin ? ' spin' : ''}`} role="group" aria-label="時段" aria-busy={slots.isFetching}>
+                {list.map((s, i) => {
                   const mine = exclude && exclude.date === date && exclude.time === s.time;
                   const disabled = s.state !== 'free' || !!mine;
                   const sub = mine ? '目前' : s.state === 'full' ? '額滿' : s.state === 'past' ? '不可預約' : '';
                   return (
-                    <button key={s.time} className="chip" disabled={disabled} aria-pressed={time === s.time}
+                    <button key={s.time} className="chip" style={{ '--i': i } as React.CSSProperties} disabled={disabled || !slots.data} aria-pressed={time === s.time}
                       aria-label={`${s.time} ${sub || '可預約'}`} onClick={() => onTime(s.time)}>
                       <b>{s.time}</b>{sub && <small>{sub}</small>}
                     </button>
@@ -84,6 +96,7 @@ export function SlotPicker({ date, time, onDate, onTime, onlyFree, setOnlyFree, 
               </div>
             );
           })()}
+      </div>
     </>
   );
 }
