@@ -15,11 +15,11 @@ public static class PublicAuthEndpoints
     {
         var pub = app.MapGroup("/api/public");
 
-        pub.MapGet("/studio", async (IOptions<StudioOptions> o, AvailabilityService availability, AppDbContext db, CancellationToken ct) =>
+        pub.MapGet("/studio", async (IOptions<StudioOptions> o, AvailabilityService availability, PackageService packages, AppDbContext db, CancellationToken ct) =>
         {
             var t = await db.Users.AsNoTracking().FirstAsync(u => u.Role == Role.Teacher, ct);
             var teacher = new TeacherPublicDto(t.Name, t.AvatarUrl, t.TeacherStatus.Camel(), t.StatusLabel, t.StatusMessage, t.LineIdPublic ? t.LineId : null);
-            return TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.Packages, o.Value.Bank, teacher));
+            return TypedResults.Ok(new StudioDto((await availability.GetAsync(ct)).Settings.LessonMinutes, o.Value.CancelHours, o.Value.MoveHours, o.Value.ReportDays, o.Value.CancelFee, await packages.GetAsync(ct), o.Value.Bank, teacher));
         });
         // avatars are public on purpose (students and the website show them); file names are random
         pub.MapGet("/avatars/{name}", (string name, IOptions<StudioOptions> o, IWebHostEnvironment env, HttpContext http) =>
@@ -64,12 +64,17 @@ public static class PublicAuthEndpoints
             if (u is null || u.Declined) { await http.SignOutAsync(Claims.Scheme); return Results.Json<MeDto?>(null); }
             var booked = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Booked, ct);
             var attended = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Attended, ct);
+            // 已取消 on the quota card: cancelled too late, so the credit was used (not refunded, not Iris's cancellation)
+            var cancelled = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Cancelled && !l.Refunded && !l.CancelledByTeacher, ct);
+            // 取消 on the quota card: a past class the student reported and Iris approved (credit was given back)
+            var reported = await db.Lessons.CountAsync(l => l.StudentId == id && l.Status == LessonStatus.Cancelled && l.CancelledByReport, ct);
             var unread = await db.Alerts.CountAsync(a => a.UserId == id && !a.Read && a.SendAfterUtc <= clock.UtcNow, ct);
-            var trialAvailable = u.ClassType == LessonType.Trial
+            // 單堂課: only after Iris marks the consultation/interview done, and only once
+            var trialAvailable = u.ConsultationCompleted
                 && !await db.Payments.AnyAsync(p => p.StudentId == id && p.IsTrial && p.Status != PaymentStatus.Rejected, ct);
             return Results.Json<MeDto?>(new MeDto(u.Id, u.Name, u.Role.ToString(), u.Status.ToString(), u.Email, u.Phone, u.LineId, u.LineUserId != null,
                 u.VoiceType, u.Goal, u.Grade, u.AvatarUrl, u.Credits, booked, attended, u.PackageSize, unread,
-                u.ClassType.Camel(), trialAvailable));
+                u.ClassType.Camel(), trialAvailable, cancelled, reported));
         });
 
         auth.MapPost("/auth/login", async (LoginRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, CancellationToken ct) =>
@@ -85,21 +90,37 @@ public static class PublicAuthEndpoints
 
         // PRD AUTH-1: create an account. It starts as Pending; the student is signed in at once and sees /pending
         // until Iris approves (student endpoints check Status from the DB on every call).
-        auth.MapPost("/auth/register", async (RegisterRequest r, HttpContext http, AppDbContext db, PasswordHasher<User> hasher, ConsentService consents, CancellationToken ct) =>
+        auth.MapPost("/auth/register", async (RegisterRequest r, HttpContext http, AppDbContext db, PasswordService passwords, ConsentService consents, CancellationToken ct) =>
         {
             if (await consents.ValidateAsync(null, r.Consents, ct) is { } bad) return Problems.Of(400, "consent_required", bad);
             var name = (r.Name ?? "").Trim();
             var email = (r.Email ?? "").Trim().ToLowerInvariant();
             if (name.Length is 0 or > 80 || !System.Net.Mail.MailAddress.TryCreate(email, out _)) return Problems.Of(400, "validation", "請填寫姓名和正確的 Email。");
-            if ((r.Password ?? "").Length < 8) return Problems.Of(400, "validation", "密碼至少 8 個字元。");
+            // same rule as the sign-up form: ≥ 8 characters with an upper-case letter, a lower-case letter and a number
+            if (PasswordService.RuleProblem(r.Password) is { } weak) return Problems.Of(400, "validation", weak);
             if (await db.Users.AnyAsync(u => u.Email == email, ct)) return Problems.Of(409, "email_taken", "這個 Email 已經註冊過了，請直接登入。");
             var u = new User { Name = name, Email = email, Phone = string.IsNullOrWhiteSpace(r.Phone) ? null : r.Phone.Trim() };
-            u.PasswordHash = hasher.HashPassword(u, r.Password!);
             db.Users.Add(u);
+            await passwords.SetPasswordAsync(u, r.Password!, ct); // also starts the password history
             await consents.RecordAsync(u.Id, r.Consents!, ct); // one SaveChanges = one transaction: no account without its consent record
             await db.SaveChangesAsync(ct);
             await http.SignInAsync(Claims.Scheme, Claims.For(u));
             return Results.Created("/api/me", new { u.Id, u.Name, Status = u.Status.ToString() });
+        }).RequireRateLimiting("login");
+
+        // 忘記密碼: always the same answer, so nobody can find out which emails have an account here
+        auth.MapPost("/auth/forgot-password", async (ForgotPasswordRequest r, PasswordService passwords, CancellationToken ct) =>
+        {
+            await passwords.RequestResetAsync(r.Email, ct);
+            return Results.Ok(new { ok = true });
+        }).RequireRateLimiting("login");
+        // the reset page asks first, so an old link shows "已失效" right away instead of after typing a password
+        auth.MapPost("/auth/reset-password/check", async (ResetCheckRequest r, PasswordService passwords, CancellationToken ct) =>
+            Results.Ok(new { valid = await passwords.IsValidAsync(r.Token, ct) })).RequireRateLimiting("login");
+        auth.MapPost("/auth/reset-password", async (ResetPasswordRequest r, PasswordService passwords, CancellationToken ct) =>
+        {
+            await passwords.ResetAsync(r.Token, r.Password, ct);
+            return Results.NoContent();
         }).RequireRateLimiting("login");
 
         auth.MapPost("/auth/logout", async (HttpContext http) => { await http.SignOutAsync(Claims.Scheme); return Results.NoContent(); });

@@ -36,6 +36,7 @@ public class RetentionService(IServiceScopeFactory scopes, IOptions<RetentionOpt
                 var n = await db.IdempotencyRecords.Where(x => x.CreatedAtUtc < now.AddHours(-r.IdempotencyHours)).ExecuteDeleteAsync(stop)
                       + await db.Consults.Where(x => x.CreatedAtUtc < now.AddMonths(-r.ConsultMonths)).ExecuteDeleteAsync(stop)
                       + await db.Alerts.Where(x => x.Read && x.CreatedAtUtc < now.AddMonths(-r.AlertMonths)).ExecuteDeleteAsync(stop)
+                      + await db.PasswordResetTokens.Where(x => x.ExpiresAtUtc < now.AddDays(-1)).ExecuteDeleteAsync(stop)
                       + await db.PrivacyRequests.Where(x => x.Done && x.HandledAtUtc < now.AddYears(-r.PrivacyRequestYears)).ExecuteDeleteAsync(stop);
                 if (n > 0) log.LogInformation("Retention: deleted {Count} expired rows", n);
             }

@@ -20,10 +20,13 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<StudioClock>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<AvailabilityService>();
+builder.Services.AddScoped<PackageService>();
 builder.Services.AddScoped<ConsentService>();
 builder.Services.Configure<RetentionOptions>(cfg.GetSection("Studio:Retention"));
 builder.Services.AddHostedService<RetentionService>();
 builder.Services.AddScoped<BookingService>();
+builder.Services.AddScoped<PasswordService>();
+builder.Services.AddSingleton<IEmailSender, LogEmailSender>(); // swap for a Resend sender once the account exists
 builder.Services.AddSingleton<PasswordHasher<User>>();
 builder.Services.AddSingleton<IAlertChannel, InAppOnlyChannel>(); // swap for a LINE push channel later
 builder.Services.AddHostedService<AlertDispatcher>();
@@ -115,6 +118,7 @@ app.MapPublicAndAuth();
 app.MapSlotsAndStudent();
 app.MapTeacher();
 app.MapTeacherProfile();
+app.MapReels();
 app.MapPrivacy();
 
 // Unknown /api paths are real 404s; everything else is a React route.

@@ -71,6 +71,9 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
     public Task<Lesson> BookAsync(Guid studentId, DateOnly date, TimeOnly time, bool byTeacher, CancellationToken ct) => InTx(async () =>
     {
         await EnsureValidSlotAsync(date, time, ct);
+        // 停用 students keep their lessons but can't book new ones (Iris can still book for them)
+        if (!byTeacher && await db.Users.AnyAsync(u => u.Id == studentId && u.DisabledAtUtc != null, ct))
+            throw new BizException(403, "disabled", "帳號已停用，無法預約新的課。請聯絡老師。");
         if (await IsTakenAsync(date, time, null, ct)) throw new BizException(409, "slot_taken", "這個時段剛被別人預約了。沒有扣堂數，請選其他時段。");
 
         // Atomic "take one credit if there is one": two devices booking at once can't both succeed.
@@ -291,6 +294,8 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
             p.Student.Credits += p.PackageSize;
             p.Student.PackageSize = p.PackageSize;
             db.CreditLogs.Add(new CreditLog { StudentId = p.StudentId, Delta = p.PackageSize, Reason = $"payment:{p.Id}", ByUserId = byUserId });
+            // the 取消費 on this receipt are paid now
+            await db.CancellationFees.Where(f => f.PaymentId == p.Id).ExecuteUpdateAsync(x => x.SetProperty(f => f.Status, FeeStatus.Paid), ct);
             alerts.Add(p.StudentId, AlertKind.Payment, "付款已確認", $"{p.PackageSize} 堂已加入，現在剩餘 {p.Student.Credits} 堂。", $"pay:{p.Id}");
         }
         else
@@ -298,6 +303,9 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
             if (string.IsNullOrWhiteSpace(reason)) throw new BizException(400, "validation", "請填寫退回原因。");
             p.Status = PaymentStatus.Rejected;
             p.RejectReason = reason.Trim();
+            // not paid after all: the fees go back to Unpaid and will be added to the next receipt
+            await db.CancellationFees.Where(f => f.PaymentId == p.Id).ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.Status, FeeStatus.Unpaid).SetProperty(f => f.LastPaymentId, p.Id).SetProperty(f => f.PaymentId, (Guid?)null), ct);
             alerts.Add(p.StudentId, AlertKind.Payment, "收據被退回", p.RejectReason, $"pay:{p.Id}");
         }
         p.DecidedAtUtc = clock.UtcNow;
@@ -316,6 +324,13 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
             if (p.Student.Credits < p.PackageSize) throw new BizException(409, "credits_used", "學生已經用了部分堂數，無法復原。");
             p.Student.Credits -= p.PackageSize;
             db.CreditLogs.Add(new CreditLog { StudentId = p.StudentId, Delta = -p.PackageSize, Reason = $"undo-payment:{p.Id}", ByUserId = byUserId });
+            await db.CancellationFees.Where(f => f.PaymentId == p.Id).ExecuteUpdateAsync(x => x.SetProperty(f => f.Status, FeeStatus.Billed), ct);
+        }
+        else if (p.Status == PaymentStatus.Rejected)
+        {
+            // put back the fees this receipt carried, unless they have been billed on a newer receipt meanwhile
+            await db.CancellationFees.Where(f => f.LastPaymentId == p.Id && f.Status == FeeStatus.Unpaid).ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.Status, FeeStatus.Billed).SetProperty(f => f.PaymentId, (Guid?)p.Id), ct);
         }
         p.Status = PaymentStatus.Pending;
         p.RejectReason = null;
@@ -324,6 +339,117 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         await db.SaveChangesAsync(ct);
         return true;
     }, ct);
+
+    // ---------- 回報 (report a past lesson) ----------
+    /// <summary>
+    /// The student asks Iris to cancel a lesson that already passed. Only Attended lessons, inside ReportDays after
+    /// the lesson ended, one report per lesson (a unique index backs this up). Nothing changes until Iris decides.
+    /// </summary>
+    public Task<LessonReport> ReportAsync(Guid studentId, Guid lessonId, string? reason, CancellationToken ct) => InTx(async () =>
+    {
+        var l = await db.Lessons.FirstOrDefaultAsync(x => x.Id == lessonId && x.StudentId == studentId, ct)
+            ?? throw new BizException(404, "not_found", "找不到這堂課。");
+        if (l.Status != LessonStatus.Attended) throw new BizException(409, "not_attended", "只有已上課的課可以回報。");
+        if (await db.LessonReports.AnyAsync(r => r.LessonId == l.Id && r.Status != ReportStatus.Withdrawn, ct))
+            throw new BizException(409, "already_reported", "這堂課已經回報過了。");
+        if (ReportView.ReportDeadline(clock, l, _o.ReportDays) <= clock.UtcNow)
+            throw new BizException(409, "report_window_closed", $"只能回報 {_o.ReportDays} 天內上過的課。");
+        var note = reason?.Trim();
+        var r = new LessonReport { LessonId = l.Id, StudentId = studentId, Reason = string.IsNullOrEmpty(note) ? null : note[..Math.Min(200, note.Length)] };
+        db.LessonReports.Add(r);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "UX_LessonReport_Lesson" })
+        {
+            throw new BizException(409, "already_reported", "這堂課已經回報過了。");
+        }
+        return r;
+    }, ct);
+
+    public async Task WithdrawReportAsync(Guid studentId, Guid reportId, CancellationToken ct)
+    {
+        var r = await db.LessonReports.FirstOrDefaultAsync(x => x.Id == reportId && x.StudentId == studentId, ct)
+            ?? throw new BizException(404, "not_found", "找不到回報。");
+        if (r.Status != ReportStatus.Open) throw new BizException(409, "already_handled", "老師已經處理過這個回報了。");
+        r.Status = ReportStatus.Withdrawn;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Iris decides a 回報. Approve (one transaction): lesson Attended → Cancelled, +1 credit (CreditLog report:{id}),
+    /// and a 取消費 (Studio:CancelFee) that goes on the next receipt — unless she waives it. Decline needs a reason.
+    /// </summary>
+    public Task<bool> DecideReportAsync(Guid reportId, bool approve, string? message, bool waiveFee, Guid byUserId, CancellationToken ct) => InTx(async () =>
+    {
+        var r = await db.LessonReports.Include(x => x.Lesson).ThenInclude(l => l.Student).FirstOrDefaultAsync(x => x.Id == reportId, ct)
+            ?? throw new BizException(404, "not_found", "找不到回報。");
+        if (r.Status != ReportStatus.Open) throw new BizException(409, "already_handled", "這個回報已經處理過了。");
+        var l = r.Lesson;
+        if (approve)
+        {
+            if (l.Status != LessonStatus.Attended) throw new BizException(409, "not_attended", "這堂課的狀態已經改變了。");
+            l.Status = LessonStatus.Cancelled;
+            l.CancelledByReport = true;
+            l.CancelledAtUtc = clock.UtcNow;
+            l.Refunded = true;
+            l.Student.Credits += 1;
+            db.CreditLogs.Add(new CreditLog { StudentId = l.StudentId, Delta = 1, Reason = $"report:{r.Id}", ByUserId = byUserId });
+            r.Status = ReportStatus.Approved;
+            r.FeeWaived = waiveFee;
+            if (!waiveFee) db.CancellationFees.Add(new CancellationFee { StudentId = l.StudentId, LessonId = l.Id, ReportId = r.Id, Amount = _o.CancelFee });
+            alerts.Add(l.StudentId, AlertKind.Report, "老師同意取消這堂課", waiveFee
+                ? $"{Fmt(l.Date, l.Time)} 的課已取消，退回 1 堂，這次不收取消費。"
+                : $"{Fmt(l.Date, l.Time)} 的課已取消，退回 1 堂。取消費 NT$ {_o.CancelFee} 會加在下次繳費。", $"report:{r.Id}");
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(message)) throw new BizException(400, "validation", "請填寫婉拒原因。");
+            r.Status = ReportStatus.Declined;
+            r.TeacherMessage = message.Trim()[..Math.Min(300, message.Trim().Length)];
+            alerts.Add(l.StudentId, AlertKind.Report, "老師無法取消這堂課", $"{Fmt(l.Date, l.Time)}：{r.TeacherMessage}", $"report:{r.Id}");
+        }
+        r.DecidedAtUtc = clock.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }, ct);
+
+    /// <summary>Undo within the window. An approval can only be undone while its fee isn't on a receipt yet and the credit wasn't used.</summary>
+    public Task<bool> UndoReportAsync(Guid reportId, Guid byUserId, CancellationToken ct) => InTx(async () =>
+    {
+        var r = await db.LessonReports.Include(x => x.Lesson).ThenInclude(l => l.Student).FirstOrDefaultAsync(x => x.Id == reportId, ct)
+            ?? throw new BizException(404, "not_found", "找不到回報。");
+        if (r.DecidedAtUtc is null || clock.UtcNow - r.DecidedAtUtc > _o.UndoWindow || r.Status is ReportStatus.Open or ReportStatus.Withdrawn)
+            throw new BizException(409, "undo_expired", "已超過可以復原的時間。");
+        if (r.Status == ReportStatus.Approved)
+        {
+            var fee = await db.CancellationFees.FirstOrDefaultAsync(f => f.ReportId == r.Id, ct);
+            if (fee is not null && fee.Status != FeeStatus.Unpaid) throw new BizException(409, "fee_billed", "取消費已經加到收據上，無法復原。");
+            if (r.Lesson.Student.Credits < 1) throw new BizException(409, "credits_used", "學生已經用掉退回的堂數，無法復原。");
+            r.Lesson.Student.Credits -= 1;
+            db.CreditLogs.Add(new CreditLog { StudentId = r.Lesson.StudentId, Delta = -1, Reason = $"undo-report:{r.Id}", ByUserId = byUserId });
+            r.Lesson.Status = LessonStatus.Attended;
+            r.Lesson.CancelledByReport = false;
+            r.Lesson.CancelledAtUtc = null;
+            r.Lesson.Refunded = false;
+            if (fee is not null) db.CancellationFees.Remove(fee);
+        }
+        r.Status = ReportStatus.Open;
+        r.TeacherMessage = null;
+        r.FeeWaived = false;
+        r.DecidedAtUtc = null;
+        await alerts.DropQueuedAsync($"report:{r.Id}", ct);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }, ct);
+
+    /// <summary>"取消費 on the next payment": attach every Unpaid fee to this new receipt and return their total.</summary>
+    public async Task<List<CancellationFee>> BillFeesAsync(Guid studentId, Payment p, CancellationToken ct)
+    {
+        var fees = await db.CancellationFees.Include(f => f.Lesson).Where(f => f.StudentId == studentId && f.Status == FeeStatus.Unpaid).ToListAsync(ct);
+        foreach (var f in fees) { f.Status = FeeStatus.Billed; f.PaymentId = p.Id; f.LastPaymentId = p.Id; }
+        p.Amount += fees.Sum(f => f.Amount);
+        p.Fees.AddRange(fees);
+        return fees;
+    }
 
     // ---------- manual credit adjustment ----------
     public Task<int> AdjustCreditsAsync(Guid studentId, int delta, string? reason, Guid byUserId, CancellationToken ct) => InTx(async () =>

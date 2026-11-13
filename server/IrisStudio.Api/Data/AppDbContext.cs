@@ -11,12 +11,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<Consult> Consults => Set<Consult>();
     public DbSet<BookingSettings> BookingSettings => Set<BookingSettings>();
+    public DbSet<PricePackage> PricePackages => Set<PricePackage>();
+    public DbSet<InstagramReel> InstagramReels => Set<InstagramReel>();
     public DbSet<WeeklyAvailability> WeeklyAvailability => Set<WeeklyAvailability>();
     public DbSet<DateOverride> DateOverrides => Set<DateOverride>();
     public DbSet<CreditLog> CreditLogs => Set<CreditLog>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
     public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
+    public DbSet<LessonReport> LessonReports => Set<LessonReport>();
+    public DbSet<CancellationFee> CancellationFees => Set<CancellationFee>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
+    public DbSet<StudentNote> StudentNotes => Set<StudentNote>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -33,6 +40,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Properties<ConsentKind>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<ConsentSource>().HaveConversion<string>().HaveMaxLength(16);
         b.Properties<PrivacyRequestType>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<ReportStatus>().HaveConversion<string>().HaveMaxLength(16);
+        b.Properties<FeeStatus>().HaveConversion<string>().HaveMaxLength(16);
     }
 
     protected override void OnModelCreating(ModelBuilder m)
@@ -64,6 +73,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.StatusMessage).HasMaxLength(60);
             e.HasIndex(x => x.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
             e.HasIndex(x => x.LineUserId).IsUnique().HasFilter("\"LineUserId\" IS NOT NULL");
+            e.HasIndex(x => x.StudentNo).IsUnique().HasFilter("\"StudentNo\" IS NOT NULL");
+            e.Property(x => x.Gender).HasConversion<string>().HasMaxLength(8);
             e.ToTable(t => t.HasCheckConstraint("CK_User_Credits", "\"Credits\" >= 0"));
         });
 
@@ -76,6 +87,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
 
         m.Entity<BookingSettings>(e => { e.HasKey(x => x.Id); e.Property(x => x.Id).ValueGeneratedNever(); });
+        m.Entity<StudentNote>(e =>
+        {
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.Text).HasMaxLength(1000);
+            e.HasIndex(x => new { x.StudentId, x.CreatedAtUtc });
+            e.ToTable(t => t.HasCheckConstraint("CK_StudentNotes_Text", "char_length(\"Text\") BETWEEN 1 AND 1000"));
+        });
+        m.Entity<InstagramReel>(e => { e.Property(x => x.Title).HasMaxLength(60); e.Property(x => x.Url).HasMaxLength(300); e.HasQueryFilter(x => x.DeletedAt == null); e.HasIndex(x => x.SortOrder); });
+        // one row per package size; at most one 單堂課 (partial unique index)
+        m.Entity<PricePackage>(e => { e.HasIndex(x => x.Size).IsUnique(); e.HasIndex(x => x.IsTrial).IsUnique().HasFilter("\"IsTrial\""); });
         m.Entity<WeeklyAvailability>(e => { e.HasKey(x => x.Weekday); e.Property(x => x.Weekday).ValueGeneratedNever(); e.Property(x => x.Ranges).HasMaxLength(200); });
         m.Entity<DateOverride>(e => { e.HasKey(x => x.Date); e.Property(x => x.Ranges).HasMaxLength(200); e.Property(x => x.Note).HasMaxLength(60); });
         m.Entity<Consult>(e =>
@@ -92,6 +113,39 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // one open request per lesson
             e.HasIndex(x => x.LessonId).IsUnique().HasFilter("\"Status\" = 'Open'");
             e.HasOne(x => x.Lesson).WithMany().HasForeignKey(x => x.LessonId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        m.Entity<PasswordResetToken>(e =>
+        {
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        m.Entity<PasswordHistory>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.CreatedAtUtc });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        m.Entity<LessonReport>(e =>
+        {
+            e.Property(x => x.Reason).HasMaxLength(200);
+            e.Property(x => x.TeacherMessage).HasMaxLength(300);
+            // one report per lesson (a withdrawn one doesn't count, so the student can report again)
+            e.HasIndex(x => x.LessonId).IsUnique().HasFilter("\"Status\" <> 'Withdrawn'").HasDatabaseName("UX_LessonReport_Lesson");
+            e.HasIndex(x => new { x.Status, x.CreatedAtUtc });
+            e.HasOne(x => x.Lesson).WithMany().HasForeignKey(x => x.LessonId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Restrict);
+        });
+        m.Entity<CancellationFee>(e =>
+        {
+            e.HasIndex(x => x.ReportId).IsUnique();
+            e.HasIndex(x => new { x.StudentId, x.Status });
+            e.HasOne(x => x.Lesson).WithMany().HasForeignKey(x => x.LessonId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<LessonReport>().WithMany().HasForeignKey(x => x.ReportId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.StudentId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Payment>().WithMany(p => p.Fees).HasForeignKey(x => x.PaymentId).OnDelete(DeleteBehavior.SetNull);
+            e.ToTable(t => t.HasCheckConstraint("CK_Fee_Amount", "\"Amount\" > 0"));
         });
 
         m.Entity<Payment>(e =>

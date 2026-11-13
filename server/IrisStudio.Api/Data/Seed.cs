@@ -34,20 +34,32 @@ public static class Seed
             await db.SaveChangesAsync();
         }
 
+        // 精彩片段: Iris's 8 Reels (titles are placeholders; she renames them and uploads covers in 更多 › IG Reels)
+        if (!await db.InstagramReels.IgnoreQueryFilters().AnyAsync())
+        {
+            string[] codes = ["Dc_LQRduKf0", "DZXNjLMRvry", "DQ6667yk1NP", "DNDn0AkxO9b", "DEVDWcaSplt", "C9mI7YjxZ4a", "C5fhPr9RICt", "DXbgjVJyTd8"];
+            for (var i = 0; i < codes.Length; i++)
+                db.InstagramReels.Add(new InstagramReel { SortOrder = i + 1, Title = $"精彩片段 {i + 1}", Url = $"https://www.instagram.com/reel/{codes[i]}/" });
+            await db.SaveChangesAsync();
+        }
+
         if (demo && !await db.Users.AnyAsync(u => u.Role == Role.Student))
         {
-            (string name, string mail, int credits, int pkg, string voice)[] people =
+            // gender + months since they started (上課資年) for the 學生列表 demo
+            (string name, string mail, int credits, int pkg, string voice, Gender g, int months)[] people =
             [
-                ("王小明", "xiaoming", 2, 4, "男高音"), ("林佳穎", "jiaying", 3, 4, "女高音"), ("陳雅婷", "yating", 1, 4, "女中音"),
-                ("張家豪", "jiahao", 5, 8, "男中音"), ("李思涵", "sihan", 0, 4, "女高音"),
+                ("王小明", "xiaoming", 2, 4, "男高音", Gender.Male, 14), ("林佳穎", "jiaying", 3, 4, "女高音", Gender.Female, 9), ("陳雅婷", "yating", 1, 4, "女中音", Gender.Female, 22),
+                ("張家豪", "jiahao", 5, 8, "男中音", Gender.Male, 5), ("李思涵", "sihan", 0, 4, "女高音", Gender.Female, 3),
             ];
+            var no = 1000;
             var students = people.Select(p =>
             {
-                var u = new User { Name = p.name, Email = $"{p.mail}@demo.local", Status = UserStatus.Active, ClassType = p.mail == "yating" ? LessonType.Group : LessonType.Private, Credits = p.credits, PackageSize = p.pkg, VoiceType = p.voice, LineId = p.mail, Grade = "Grade 2" };
+                var u = new User { Name = p.name, Email = $"{p.mail}@demo.local", Status = UserStatus.Active, ClassType = p.mail == "yating" ? LessonType.Group : LessonType.Private, Credits = p.credits, PackageSize = p.pkg, VoiceType = p.voice, LineId = p.mail, Grade = "Grade 2",
+                    StudentNo = ++no, Gender = p.g, JoinedOn = clock.Today.AddMonths(-p.months) };
                 u.PasswordHash = hasher.HashPassword(u, "demo1234");
                 return u;
             }).ToList();
-            var pending = new User { Name = "吳詠晴", Email = "yongqing@demo.local" };
+            var pending = new User { Name = "吳詠晴", Email = "yongqing@demo.local", Gender = Gender.Female };
             pending.PasswordHash = hasher.HashPassword(pending, "demo1234");
             db.Users.AddRange(students);
             db.Users.Add(pending);

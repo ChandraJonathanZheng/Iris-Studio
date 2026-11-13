@@ -55,7 +55,7 @@ public static class StudentEndpoints
         // ---------- student ----------
         var s = app.MapGroup("/api/student").RequireAuthorization("Student").AddEndpointFilter<ActiveStudentFilter>();
 
-        s.MapGet("/lessons", async (string from, string to, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, CancellationToken ct) =>
+        s.MapGet("/lessons", async (string from, string to, HttpContext http, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
         {
             var id = http.User.UserId();
             if (!DateOnly.TryParse(from, out var f) || !DateOnly.TryParse(to, out var t)) return Problems.Of(400, "validation", "日期格式不正確。");
@@ -63,7 +63,31 @@ public static class StudentEndpoints
                 .OrderBy(l => l.Date).ThenBy(l => l.Time).ToListAsync(ct);
             var ids = lessons.Select(l => l.Id).ToList();
             var open = await db.ChangeRequests.AsNoTracking().Where(c => ids.Contains(c.LessonId) && c.Status == ChangeStatus.Open).ToListAsync(ct);
-            return TypedResults.Ok(lessons.Select(l => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id))).ToArray());
+            var reports = await ReportView.LoadAsync(db, ids, clock, o.Value, ct);
+            return TypedResults.Ok(lessons.Select(l => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id), reports)).ToArray());
+        });
+
+        // 回報: ask Iris to cancel a lesson that already passed (BookingService.ReportAsync has the rules)
+        s.MapPost("/lessons/{id:guid}/reports", async (Guid id, ReportRequest r, HttpContext http, BookingService booking, AppDbContext db, StudioClock clock, IOptions<StudioOptions> o, CancellationToken ct) =>
+        {
+            var report = await booking.ReportAsync(http.User.UserId(), id, r.Reason, ct);
+            var l = await db.Lessons.AsNoTracking().Include(x => x.Student).FirstAsync(x => x.Id == id, ct);
+            var view = await ReportView.LoadAsync(db, [id], clock, o.Value, ct);
+            return Results.Created($"/api/student/reports/{report.Id}", Map.Lesson(l, o.Value.Room, null, view));
+        }).AddEndpointFilter<IdempotencyFilter>();
+
+        s.MapPost("/reports/{id:guid}/withdraw", async (Guid id, HttpContext http, BookingService booking, CancellationToken ct) =>
+        {
+            await booking.WithdrawReportAsync(http.User.UserId(), id, ct);
+            return Results.NoContent();
+        });
+
+        // 取消費: unpaid ones are added to the next receipt; billed / paid ones show where they went
+        s.MapGet("/fees", async (HttpContext http, AppDbContext db, CancellationToken ct) =>
+        {
+            var me = http.User.UserId();
+            var list = await db.CancellationFees.AsNoTracking().Include(f => f.Lesson).Where(f => f.StudentId == me).OrderByDescending(f => f.CreatedAtUtc).ToListAsync(ct);
+            return TypedResults.Ok(list.Select(Map.Fee).ToArray());
         });
 
         s.MapPost("/lessons", async (BookRequest r, HttpContext http, BookingService booking, AppDbContext db, IOptions<StudioOptions> o, CancellationToken ct) =>
@@ -139,20 +163,21 @@ public static class StudentEndpoints
         s.MapGet("/payments", async (HttpContext http, AppDbContext db, CancellationToken ct) =>
         {
             var me = http.User.UserId();
-            var list = await db.Payments.AsNoTracking().Include(p => p.Student).Where(p => p.StudentId == me).OrderByDescending(p => p.UploadedAtUtc).ToListAsync(ct);
+            var list = await db.Payments.AsNoTracking().Include(p => p.Student).Include(p => p.Fees).ThenInclude(f => f.Lesson)
+                .Where(p => p.StudentId == me).OrderByDescending(p => p.UploadedAtUtc).ToListAsync(ct);
             return TypedResults.Ok(list.Select(Map.Payment).ToArray());
         });
 
-        s.MapPost("/payments", async (IFormCollection form, HttpContext http, AppDbContext db, IOptions<StudioOptions> o, IWebHostEnvironment env, CancellationToken ct) =>
+        s.MapPost("/payments", async (IFormCollection form, HttpContext http, AppDbContext db, BookingService booking, PackageService packages, IOptions<StudioOptions> o, IWebHostEnvironment env, CancellationToken ct) =>
         {
             var me = http.User.UserId();
             var u = await db.Users.FirstAsync(x => x.Id == me, ct);
             // Buy any time (decided 8 Nov): credits are simply added on confirmation.
             // Still one receipt waiting at a time, so a double upload can't make the student pay twice.
             if (await db.Payments.AnyAsync(p => p.StudentId == me && p.Status == PaymentStatus.Pending, ct)) return Problems.Of(409, "pending_exists", "已經有一張收據在等老師確認。");
-            if (!int.TryParse(form["packageSize"], out var size) || o.Value.Packages.FirstOrDefault(p => p.Size == size) is not { } pkg) return Problems.Of(400, "validation", "請選擇方案。");
-            if (pkg.Trial && (u.ClassType != LessonType.Trial || await db.Payments.AnyAsync(p => p.StudentId == me && p.IsTrial && p.Status != PaymentStatus.Rejected, ct)))
-                return Problems.Of(409, "trial_not_available", "體驗課只限第一次上課的學生購買一次。");
+            if (!int.TryParse(form["packageSize"], out var size) || (await packages.GetAsync(ct)).FirstOrDefault(p => p.Size == size) is not { } pkg) return Problems.Of(400, "validation", "請選擇方案。");
+            if (pkg.Trial && (!u.ConsultationCompleted || await db.Payments.AnyAsync(p => p.StudentId == me && p.IsTrial && p.Status != PaymentStatus.Rejected, ct)))
+                return Problems.Of(409, "trial_not_available", "單堂課只限完成諮詢的學生購買一次。");
             var file = form.Files["receipt"];
             if (file is null || file.Length == 0) return Problems.Of(400, "validation", "請上傳收據圖片。");
             if (file.Length > ImageService.MaxBytes) return Problems.Of(400, "too_large", "圖片不能超過 5 MB。");
@@ -171,6 +196,8 @@ public static class StudentEndpoints
             var note = form["note"].ToString().Trim();
             var p = new Payment { StudentId = me, PackageSize = pkg.Size, Amount = pkg.Price, IsTrial = pkg.Trial, ReceiptPath = name, ContentType = type, Lqip = lqip, Note = note.Length == 0 ? null : note[..Math.Min(200, note.Length)] };
             db.Payments.Add(p);
+            // 取消費 go on the next payment: every unpaid fee is added to this receipt (amount = package + fees)
+            await booking.BillFeesAsync(me, p, ct);
             await db.SaveChangesAsync(ct);
             p.Student = u;
             return Results.Created($"/api/receipts/{p.Id}", Map.Payment(p));

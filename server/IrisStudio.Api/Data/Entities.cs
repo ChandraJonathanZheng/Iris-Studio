@@ -8,7 +8,14 @@ public enum LessonType { Private, Group, Trial }
 public enum ChangeStatus { Open, Approved, Declined, Withdrawn }
 public enum PaymentStatus { Pending, Confirmed, Rejected }
 /// <summary>Stored as text (see AppDbContext.ConfigureConventions). Reminder = Iris's manual 通知學生繳學費.</summary>
-public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal }
+public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal, Report, Homework }
+public enum Gender { Male, Female }
+/// <summary>給筆記 (only Iris sees it) or 給作業 (the student is notified and sees it).</summary>
+public enum StudentNoteKind { Note, Homework }
+/// <summary>回報 of a past lesson. Declined is final; Withdrawn lets the student report again.</summary>
+public enum ReportStatus { Open, Approved, Declined, Withdrawn }
+/// <summary>取消費: Unpaid → Billed (on the next receipt) → Paid (receipt confirmed).</summary>
+public enum FeeStatus { Unpaid, Billed, Paid }
 /// <summary>Who asked for the time change: the student (Iris approves) or Iris (the student accepts).</summary>
 public enum ChangeBy { Student, Teacher }
 
@@ -34,8 +41,19 @@ public class User
     public int PackageSize { get; set; }
     /// <summary>Student class type set by Iris: Private = 一對一, Group = 團體課, Trial = 體驗課 (same labels as lessons). New sign-ups start as Trial.</summary>
     public LessonType ClassType { get; set; } = LessonType.Trial;
+    /// <summary>Iris ticked 已完成諮詢／面談 — unlocks one 單堂課 purchase.</summary>
+    public bool ConsultationCompleted { get; set; }
     public bool Declined { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    // ---- 學生列表 columns ----
+    /// <summary>學號 shown as ID in the 學生列表 (1001, 1002 …). Assigned when Iris approves the application. Unique.</summary>
+    public int? StudentNo { get; set; }
+    public Gender? Gender { get; set; }
+    /// <summary>When the student started lessons (上課資年). Set on approval; Iris can correct it for students who joined before the app.</summary>
+    public DateOnly? JoinedOn { get; set; }
+    /// <summary>停用: kept with all history, but can't book new lessons. Null = active.</summary>
+    public DateTime? DisabledAtUtc { get; set; }
     /// <summary>When Iris approved/declined the application (for the undo window).</summary>
     public DateTime? DecidedAtUtc { get; set; }
 
@@ -67,6 +85,47 @@ public class Lesson
     public DateTime? CancelledAtUtc { get; set; }
     public bool Refunded { get; set; }
     public bool CancelledByTeacher { get; set; }
+    /// <summary>Cancelled afterwards because Iris approved the student's 回報 (the lesson had already passed).</summary>
+    public bool CancelledByReport { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// 回報: the student asks Iris to cancel a lesson that already passed (attendance is automatic, so a lesson they
+/// missed still used a credit). Approved → lesson Cancelled, +1 credit, and a <see cref="CancellationFee"/> (unless waived).
+/// </summary>
+public class LessonReport
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid LessonId { get; set; }
+    public Lesson Lesson { get; set; } = null!;
+    public Guid StudentId { get; set; }
+    public string? Reason { get; set; }
+    public ReportStatus Status { get; set; } = ReportStatus.Open;
+    /// <summary>Iris's reason when she declines (the student sees it).</summary>
+    public string? TeacherMessage { get; set; }
+    public bool FeeWaived { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? DecidedAtUtc { get; set; }
+}
+
+/// <summary>
+/// 取消費 from an approved 回報. There is no payment gateway, so it is "charged" by adding it to the amount of the
+/// student's next receipt (<see cref="PaymentId"/>), and paid when Iris confirms that receipt.
+/// </summary>
+public class CancellationFee
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudentId { get; set; }
+    public Guid LessonId { get; set; }
+    public Lesson Lesson { get; set; } = null!;
+    public Guid ReportId { get; set; }
+    public int Amount { get; set; }
+    public FeeStatus Status { get; set; } = FeeStatus.Unpaid;
+    /// <summary>The receipt this fee is billed on (null while Unpaid).</summary>
+    public Guid? PaymentId { get; set; }
+    /// <summary>Last receipt it was on — lets "undo reject" put it back on that receipt.</summary>
+    public Guid? LastPaymentId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -107,6 +166,8 @@ public class Payment
     public string? RejectReason { get; set; }
     public DateTime UploadedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? DecidedAtUtc { get; set; }
+    /// <summary>取消費 billed on this receipt. <see cref="Amount"/> already includes them.</summary>
+    public List<CancellationFee> Fees { get; set; } = [];
 }
 
 /// <summary>
@@ -169,6 +230,30 @@ public class IdempotencyRecord
 }
 
 /// <summary>Iris's 預約設定 — a single row (Id = 1).</summary>
+/// <summary>Instagram Reel shown on the website (精彩片段). Iris manages them in 更多 › IG Reels; max 8 live.
+/// Soft delete: DeletedAt set → hidden everywhere, row kept (undo / audit).</summary>
+public class InstagramReel
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public int SortOrder { get; set; }
+    public required string Title { get; set; }
+    public required string Url { get; set; }
+    public string? CoverPath { get; set; }
+    public string? CoverLqip { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? DeletedAt { get; set; }
+}
+
+/// <summary>課程方案 row. Iris edits these on 更多 › 課程方案; the first time, rows are seeded from appsettings Studio:Packages.</summary>
+public class PricePackage
+{
+    public int Id { get; set; }
+    public int Size { get; set; }
+    public int Price { get; set; }
+    public bool IsTrial { get; set; }
+    public int SortOrder { get; set; }
+}
+
 public class BookingSettings
 {
     public int Id { get; set; } = 1;
@@ -235,4 +320,40 @@ public class PrivacyRequest
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? HandledAtUtc { get; set; }
     public static int DaysFor(PrivacyRequestType t) => t is PrivacyRequestType.Access or PrivacyRequestType.Copy ? 15 : 30;
+}
+
+/// <summary>
+/// One 忘記密碼 link. Only the SHA-256 of the token is stored, so a database leak can't be turned into working links.
+/// Valid for 30 minutes, once; asking again replaces older links.
+/// </summary>
+public class PasswordResetToken
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public required string TokenHash { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? UsedAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>The user's last 3 password hashes (current one included): a new password may not be any of them.</summary>
+public class PasswordHistory
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid UserId { get; set; }
+    public required string PasswordHash { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>給筆記 / 給作業 for one student (學生列表 ⋯ menu).</summary>
+public class StudentNote
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudentId { get; set; }
+    public User Student { get; set; } = null!;
+    public StudentNoteKind Kind { get; set; }
+    /// <summary>1–1000 characters.</summary>
+    public required string Text { get; set; }
+    public Guid ByUserId { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

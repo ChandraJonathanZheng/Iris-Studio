@@ -8,6 +8,10 @@ public class StudioOptions
     public int CancelHours { get; set; } = 24;
     /// <summary>改時間 is only possible this many hours (or more) before the lesson starts.</summary>
     public int MoveHours { get; set; } = 12;
+    /// <summary>回報 is possible until this many days after the lesson ended.</summary>
+    public int ReportDays { get; set; } = 7;
+    /// <summary>取消費 (NT$) for an approved 回報, added to the next payment.</summary>
+    public int CancelFee { get; set; } = 500;
     public int UndoSeconds { get; set; } = 30;
     public int AlertDelaySeconds { get; set; } = 10;
     public PackageOption[] Packages { get; set; } = [];
@@ -17,6 +21,11 @@ public class StudioOptions
     public string TeacherPassword { get; set; } = "";
     public string ReceiptsFolder { get; set; } = "App_Data/receipts";
     public string AvatarsFolder { get; set; } = "App_Data/avatars";
+    public string ReelCoversFolder { get; set; } = "App_Data/reel-covers";
+    /// <summary>The site's own address, used to build links in emails (never taken from the request's Host header).</summary>
+    public string PublicUrl { get; set; } = "http://localhost:5000";
+    /// <summary>忘記密碼 links are valid this long.</summary>
+    public int ResetLinkMinutes { get; set; } = 30;
 
     public TimeSpan UndoWindow => TimeSpan.FromSeconds(UndoSeconds);
 }
