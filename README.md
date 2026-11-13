@@ -21,8 +21,10 @@ iris-studio/
    ├─ Services/                  BookingService (all lesson/quota rules), AlertService + outbox, StudioClock, ImageService
    ├─ Infrastructure/            IdempotencyFilter, problem responses, ActiveStudentFilter
    ├─ Contracts/                 DTOs = JSON shapes
-   └─ Endpoints/                 Public/Auth, Slots/Student, Teacher
+   └─ Endpoints/                 Public/Auth, Slots/Student, Teacher, Reels, Privacy, TeacherProfile
 ```
+
+Docs: `docs/PRD.md` (requirements) · `docs/API.md` (HTTP API) · `docs/SCHEMA.md` (database) · `docs/FEATURES.md` · `docs/FLOW.md` · `docs/DESIGN-SYSTEM.md` · `docs/LEGAL.md`
 
 ## Run it
 

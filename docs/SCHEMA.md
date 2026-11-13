@@ -1,13 +1,13 @@
 # Iris Studio — Database Schema
 
 PostgreSQL · EF Core 10 (code-first) · source of truth: `server/IrisStudio.Api/Data/Entities.cs` + `AppDbContext.cs`.
-Version 8 Nov 2026 v2.1 (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
+Version **13 Nov 2026 v2.4** (adds `PricePackages`, `InstagramReels`, `StudentNotes`, `Users.ConsultationCompleted/StudentNo/Gender/JoinedOn/DisabledAtUtc`, AlertKind `Homework` — §11). 12 Nov 2026 v2.3 (adds `PasswordResetTokens` + `PasswordHistories` — §10; and `LessonReports` + `CancellationFees` for 回報, `Lessons.CancelledByReport`, AlertKind `Report` — §9). v2.1 8 Nov (adds availability tables, consult contact type / time window, payment reminders; then `ChangeRequests.ProposedBy`, `Payments.IsTrial`, AlertKind `Proposal`).
 
 **Conventions**
 - Primary keys are `uuid` (generated in .NET) except the three availability tables (natural keys).
 - Every enum is stored as **text** (`"Booked"`, not `0`), max 16 chars — readable in SQL, safe to extend.
 - Times: `date` + `time` columns are **studio local time** (Asia/Taipei). `…Utc` columns are `timestamp` in UTC.
-- No soft delete: lessons are cancelled (status), never deleted; history stays.
+- No soft delete for lessons: they are cancelled (status), never deleted; history stays. Exception: `InstagramReels` (soft delete). Students are 停用 (`DisabledAtUtc`), not deleted.
 - First migration not created yet: `dotnet ef migrations add Initial && dotnet ef database update`.
 
 ---
@@ -21,6 +21,9 @@ erDiagram
   USERS ||--o{ ALERTS : "receives"
   USERS ||--o{ CREDIT_LOGS : "credit history"
   LESSONS ||--o{ CHANGE_REQUESTS : "move requests"
+  LESSONS ||--o{ LESSON_REPORTS : "回報"
+  LESSON_REPORTS ||--o| CANCELLATION_FEES : "取消費"
+  PAYMENTS ||--o{ CANCELLATION_FEES : "billed on"
   USERS ||--o{ IDEMPOTENCY_RECORDS : "retries"
   BOOKING_SETTINGS ||--|| WEEKLY_AVAILABILITY : "generates slots with"
   WEEKLY_AVAILABILITY }o--o{ DATE_OVERRIDES : "overridden by"
@@ -29,6 +32,8 @@ erDiagram
   LESSONS { uuid Id PK  uuid StudentId FK  date Date  time Time  text Status  text Type  int DurationMinutes }
   CHANGE_REQUESTS { uuid Id PK  uuid LessonId FK  date ToDate  time ToTime  text ProposedBy  text Status }
   PAYMENTS { uuid Id PK  uuid StudentId FK  int PackageSize  int Amount  bool IsTrial  text Status  text ReceiptPath }
+  LESSON_REPORTS { uuid Id PK  uuid LessonId FK  uuid StudentId FK  text Status  bool FeeWaived }
+  CANCELLATION_FEES { uuid Id PK  uuid ReportId FK  uuid LessonId FK  int Amount  text Status  uuid PaymentId FK }
   ALERTS { uuid Id PK  uuid UserId  text Kind  timestamp SendAfterUtc  text Source }
   CONSULTS { uuid Id PK  text ContactType  text Contact  text PreferredTime }
   CREDIT_LOGS { uuid Id PK  uuid StudentId  int Delta  text Reason }
@@ -51,7 +56,9 @@ erDiagram
 | `ChangeStatus` | Open, Approved, Declined, Withdrawn | |
 | `ChangeBy` | Student, Teacher | who asked: Student = 學生申請 (Iris decides), Teacher = 老師提議 (the student decides) |
 | `PaymentStatus` | Pending, Confirmed, Rejected | |
-| `AlertKind` | Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal | Reminder = 通知學生繳學費 (manual or automatic) · Proposal = 老師想調整上課時間 |
+| `ReportStatus` | Open, Approved, Declined, Withdrawn | 回報 of a past lesson; Declined is final, Withdrawn lets the student report again |
+| `FeeStatus` | Unpaid, Billed, Paid | 取消費: Billed = added to the student's next receipt |
+| `AlertKind` | Moved, Approved, Declined, Payment, Added, Welcome, Cancelled, Reminder, Proposal, Report, **Homework** | Homework = 老師給你新的作業 (13 Nov) · Report = 回報 decided ·  Reminder = 通知學生繳學費 (manual or automatic) · Proposal = 老師想調整上課時間 |
 
 ---
 
@@ -74,8 +81,13 @@ erDiagram
 | PackageSize | int | | size of the last package (for the quota boxes) |
 | ClassType | text(16) | | Private / Group / Trial — new sign-ups = Trial |
 | Declined | bool | | application declined |
+| ConsultationCompleted | bool | | Iris ticked 已完成諮詢／面談 → may buy one 單堂課 |
 | CreatedAtUtc | timestamp | | |
 | DecidedAtUtc | timestamp | ✓ | approval/decline time (undo window) |
+| StudentNo | int | ✓ | 學號 shown as ID in 學生列表; **unique** where not null; max + 1 (from 1001) on approval |
+| Gender | text(8) | ✓ | Male / Female |
+| JoinedOn | date | ✓ | start of lessons (上課資年); set on approval, editable |
+| DisabledAtUtc | timestamp | ✓ | 停用 time; null = active. Disabled students can't book |
 
 ### `Lessons`
 | Column | Type | Null | Notes |
@@ -90,6 +102,7 @@ erDiagram
 | CancelledAtUtc | timestamp | ✓ | |
 | Refunded | bool | | credit returned on cancel |
 | CancelledByTeacher | bool | | |
+| CancelledByReport | bool | | cancelled afterwards because Iris approved a 回報 (Status Attended → Cancelled, Refunded = true) |
 | CreatedAtUtc | timestamp | | |
 
 Indexes: **`UX_Lesson_Slot_Booked` unique (Date, Time) where Status = 'Booked'** (same-start double booking) · (StudentId, Date).
@@ -251,7 +264,7 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Group classes with capacity | **pending decision** — would replace `UX_Lesson_Slot_Booked` with a per-slot capacity |
 | Re-apply after decline | **pending decision** — today `Users.Declined` blocks it |
 | New columns since the first draft | `ChangeRequests.ProposedBy`, `Payments.IsTrial` — included in the Initial migration (none exists yet) |
-| Phase 2 | `Homework`, `HomeworkSubmissions`, `Events`, `EventInvites` |
+| Phase 2 | `HomeworkSubmissions` (student hands in 作業), `Events`, `EventInvites` |
 
 ## 8. Added 8 Nov (later): teacher profile, consents, privacy requests
 
@@ -263,3 +276,109 @@ SELECT "CreatedAtUtc", "Delta", "Reason" FROM "CreditLogs" WHERE "StudentId" = @
 | Enum conversions added | `ChangeBy`, `TeacherStatus`, `ConsentKind`, `ConsentSource`, `PrivacyRequestType` stored as text |
 
 Retention job (`RetentionService`, every 6 h, `Studio:Retention`): idempotency 24 h · consults 12 mo · read alerts 12 mo · handled privacy requests 3 y. See `LEGAL.md`.
+
+## 9. Added 12 Nov: 回報 (report a past lesson) and 取消費
+
+Attendance is automatic, so a lesson the student missed still used a credit. 回報 lets the student ask Iris to cancel it afterwards.
+
+### `LessonReports` (回報)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| LessonId | uuid | | FK → Lessons (restrict) — **unique where Status ≠ 'Withdrawn'** (`UX_LessonReport_Lesson`): one report per lesson |
+| StudentId | uuid | | FK → Users (restrict) |
+| Reason | varchar(200) | ✓ | student's optional reason |
+| Status | text(16) | | Open / Approved / Declined / Withdrawn |
+| TeacherMessage | varchar(300) | ✓ | required when Iris declines (the student sees it) |
+| FeeWaived | bool | | Iris ticked 免收取消費 when approving |
+| CreatedAtUtc / DecidedAtUtc | timestamp | / ✓ | DecidedAtUtc = undo window |
+
+Index: (Status, CreatedAtUtc). Rules in code (`BookingService.ReportAsync`): lesson must be Attended and within `Studio:ReportDays` (7) days after it ended.
+
+### `CancellationFees` (取消費)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| StudentId | uuid | | FK → Users (restrict) |
+| LessonId | uuid | | FK → Lessons (restrict) |
+| ReportId | uuid | | FK → LessonReports, **unique** (one fee per approved report) |
+| Amount | int | | NT$ (`Studio:CancelFee`, 500) — check `Amount > 0` |
+| Status | text(16) | | Unpaid → Billed → Paid |
+| PaymentId | uuid | ✓ | FK → Payments (set null): the receipt it is billed on |
+| LastPaymentId | uuid | ✓ | last receipt it was on, so 復原 of a rejected receipt can put it back |
+| CreatedAtUtc | timestamp | | |
+
+Index: (StudentId, Status). Flow: approve → Unpaid · student uploads a receipt → every Unpaid fee becomes Billed on it and `Payments.Amount` = package price + fees · receipt confirmed → Paid · rejected → Unpaid again (next receipt). `CreditLogs` gets `report:{id}` (+1) and `undo-report:{id}` (−1).
+
+Migration: `dotnet ef migrations add LessonReports` (or include it in `Initial` if that hasn't been created yet).
+
+## 10. Added 12 Nov: 忘記密碼
+
+### `PasswordResetTokens`
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| UserId | uuid | | FK → Users (cascade) |
+| TokenHash | varchar(64) | | SHA-256 (hex) of the token in the email — **unique**. The token itself is never stored |
+| ExpiresAtUtc | timestamp | | created + `Studio:ResetLinkMinutes` (30) |
+| UsedAtUtc | timestamp | ✓ | set when used, or when a newer link is requested |
+| CreatedAtUtc | timestamp | | 1 link / minute / account |
+
+Index: (UserId, CreatedAtUtc). `RetentionService` deletes rows 1 day after they expire.
+
+### `PasswordHistories`
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| UserId | uuid | | FK → Users (cascade) |
+| PasswordHash | text | | same PBKDF2 format as `Users.PasswordHash` |
+| CreatedAtUtc | timestamp | | |
+
+Holds the newest 3 passwords (current included), written by `PasswordService.SetPasswordAsync` at sign-up and on every reset. A new password that matches any of them → 409 `password_reused`.
+
+Migration: `dotnet ef migrations add PasswordReset` (or part of `Initial`).
+
+## 11. Added 12–13 Nov: 課程方案, IG Reels, student list, notes
+
+### `PricePackages` (課程方案)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | int | | PK (identity) |
+| Size | int | | lessons in the package — **unique** |
+| Price | int | | NT$ |
+| IsTrial | bool | | the 單堂課 row — at most one (**unique** filtered `"IsTrial"`) |
+| SortOrder | int | | display order |
+
+Seeded from `Studio:Packages` the first time; Iris edits them (`PUT /api/teacher/packages`). Receipts keep the amount they were uploaded with.
+
+### `InstagramReels` (精彩片段)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| SortOrder | int | | 1…8, renumbered after delete / reorder — index |
+| Title | varchar(60) | | IG 自訂標題 |
+| Url | varchar(300) | | `https://www.instagram.com/reel/{code}/` (checked by regex) |
+| CoverPath | text | ✓ | uploaded cover (9:16, recommended 1080 × 1920) in `Studio:ReelCoversFolder` |
+| CoverLqip | text | ✓ | tiny blurred preview |
+| CreatedAt | timestamp | | |
+| DeletedAt | timestamp | ✓ | **soft delete** — global query filter `DeletedAt IS NULL` |
+
+### `StudentNotes` (給筆記 / 給作業)
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| StudentId | uuid | | FK → Users |
+| Kind | text(10) | | Note (only Iris sees it) / Homework (student is alerted) |
+| Text | varchar(1000) | | **check** `char_length("Text") BETWEEN 1 AND 1000` |
+| ByUserId | uuid | | who wrote it (Iris) |
+| CreatedAtUtc | timestamp | | index (StudentId, CreatedAtUtc) |
+
+### Derived for the 學生列表 / 個人資料 (not stored)
+| Value | Rule |
+|---|---|
+| `segment` | `StudentSegments.Classify`: active (credits > 0) → noTrial (no confirmed payment ever) → lapsed (credits 0, last lesson < 91 days or a lesson still booked) → cold (credits 0, no purchase and no lesson > 91 days). Pending / declined / disabled = null |
+| 最初上課 | earliest non-cancelled lesson date (or `JoinedOn` if earlier) |
+| 首次購買課程 / 購買總額 | first / sum of **Confirmed** payments |
+| 登入方式 | `LineUserId` set → LINE, else EMAIL |
+
+Migration: none exists yet — all of this goes into the `Initial` migration (`dotnet ef migrations add Initial`).
