@@ -184,19 +184,19 @@ const t = await newPage({ width: 1280, height: 900 });
 await t.goto(BASE + '/login');
 await t.click('.au-demo >> text=老師 Iris');
 await t.waitForURL('**/teacher');
-await t.waitForSelector('.kpi');
+await t.waitForSelector('.kpi2');
 await check('teacher home: no serious axe violations (desktop)', () => axe(t, 'teacher home'));
 await check('teacher: 今日待辦 2×2 above 今天的課; 收件匣 = 申請 + 付款 + 諮詢 with one badge', async () => {
-  const order = await t.evaluate(() => { const a = document.querySelector('.th-todo'), b = document.querySelector('.th-today'); return a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) > 0; });
+  const order = await t.evaluate(() => { const a = document.querySelector('.th-todo2'), b = document.querySelector('.th-today'); return a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) > 0; });
   assert(order, '今日待辦 is not above 今天的課');
-  assert((await t.locator('.th-todo .kpi').count()) === 4, 'not 4 cards');
-  const titles = await t.locator('.th-todo .kpi .kt').allTextContents();
+  assert((await t.locator('.th-todo2 .kpi2').count()) === 4, 'not 4 cards');
+  const titles = await t.locator('.th-todo2 .kpi2 .kpi2-t').allTextContents();
   assert(titles.join() === '學生申請,待確認收據,新學生,諮詢', 'card order ' + titles);
   assert((await t.locator('.side nav a').count()) === 5, 'sidebar should have 5 items');
   await t.click('.side nav >> text=收件匣'); await t.waitForSelector('.ibx-tabs');
   await t.click('.ibx-tabs >> text=付款'); await t.waitForURL('**/teacher/payments');
   assert(await t.locator('.side nav a[aria-current="page"]').textContent().then((x) => x.startsWith('收件匣')), '收件匣 not active on 付款');
-  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpi');
+  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpi2');
 });
 await check('#3 #4 ⌘K opens the command menu and navigates; hint shown in sidebar', async () => {
   assert(await t.isVisible('.kbd-hint kbd'), 'no shortcut hint');
@@ -206,30 +206,63 @@ await check('#3 #4 ⌘K opens the command menu and navigates; hint shown in side
   await t.keyboard.press('Enter');
   await t.waitForURL('**/teacher/payments');
 });
-await check('#5 approve change → undo within 5 s → request back, student got no alert', async () => {
+await check('課堂筆記: icon only on classes that started · text saved · local delete keeps the server copy', async () => {
+  await t.goto(BASE + '/teacher'); await t.waitForSelector('.tl-row');
+  const started = await t.locator('.tl-row:not(.is-todo)').count();
+  assert((await t.locator('.tl-note').count()) === started, 'icon on a class that has not started');
+  await t.locator('.tl-note').first().click(); await t.waitForSelector('.ln-area');
+  assert(await t.locator('.ln-opt.is-on >> text=輸入文字').count() === 1, 'default is not 輸入文字');
+  await t.click('.ln-area'); await t.keyboard.type('換聲區還不穩');
+  await t.click('.ln-box .st-btn.dark'); await t.waitForSelector('.toast >> text=課堂筆記');
+  await t.waitForSelector('.tl-note.has-note');
+  await t.locator('.tl-note.has-note').first().click(); await t.waitForSelector('.ln-rich >> text=換聲區還不穩');
+  await t.click('.ln-del'); await t.waitForSelector('.ln-hint');
+  await t.click('.ln-x');
+  await t.locator('.tl-note.has-note').first().click(); await t.waitForSelector('.ln-rich >> text=換聲區還不穩'); // still there
+  await t.click('.ln-x');
+});
+await check('課堂筆記 in 行事曆: past classes have the icon, upcoming ones do not', async () => {
+  await t.goto(BASE + '/teacher/calendar'); await t.waitForSelector('.tc-list');
+  const done = await t.locator('.tc-row.is-done').count(), icons = await t.locator('.tc-note').count();
+  assert(icons === done, `icons ${icons} ≠ done rows ${done}`);
+  assert((await t.locator('.tc-row.is-up .tc-note').count()) === 0, 'icon on an upcoming class');
+});
+await check('#5 approve change → card stays as 已同意 (no buttons) → undo → request back, student got no alert', async () => {
   await t.goto(BASE + '/teacher/requests');
-  await t.waitForSelector('.rq');
-  const n0 = await t.locator('.rq').count();
-  await t.locator('.rq-approve:not([disabled])', { hasText: '同意' }).first().click();
+  await t.waitForSelector('.rs');
+  const open = '.rs.is-available, .rs.is-conflict';
+  const n0 = await t.locator(open).count();
+  await t.locator('.rs.is-available .rs-approve', { hasText: '同意改期' }).first().click();
   await t.waitForSelector('.toast .undo');
-  assert((await t.locator('.rq').count()) === n0 - 1, 'not removed optimistically');
+  await t.waitForSelector('.rs.is-approved >> text=已同意');
+  assert((await t.locator('.rs.is-approved .rs-btn').count()) === 0, 'decided card still has buttons');
+  assert((await t.locator(open).count()) === n0 - 1, 'not decided optimistically');
   await t.click('.toast .undo');
   await t.waitForSelector('.toast >> text=已復原');
-  await t.waitForFunction((n) => document.querySelectorAll('.rq').length === n, n0);
+  await t.waitForFunction((n) => document.querySelectorAll('.rs.is-available, .rs.is-conflict').length === n && !document.querySelector('.rs.is-approved'), n0);
+});
+await check('B1: 時段衝突 card hides 同意改期 and asks the student to pick again', async () => {
+  const c = t.locator('.rs.is-conflict').first();
+  await c.waitFor();
+  assert((await c.locator('.rs-approve').count()) === 0, 'approve shown on a conflict');
+  assert((await c.locator('.rs-tip').textContent()).includes('請學生重新選擇時段'), 'no hint');
+  assert(!(await c.locator('.rs-tip').isVisible()), 'tooltip open before asked');
+  await c.locator('.rs-pill.is-btn').click(); await c.locator('.rs-tip.is-open').waitFor();
+  await t.keyboard.press('Escape'); await t.waitForFunction(() => !document.querySelector('.rs-tip.is-open'));
 });
 await check('#2 server failure → optimistic change rolls back + error toast', async () => {
   await t.evaluate(() => sessionStorage.setItem('iris-mock-fail', '/change-requests/.+/approve$'));
-  const n0 = await t.locator('.rq').count();
-  await t.locator('.rq-approve:not([disabled])', { hasText: '同意' }).first().click();
+  const n0 = await t.locator('.rs.is-available').count();
+  await t.locator('.rs.is-available .rs-approve').first().click();
   await t.waitForSelector('.toast.error');
-  await t.waitForFunction((n) => document.querySelectorAll('.rq').length === n, n0);
+  await t.waitForFunction((n) => document.querySelectorAll('.rs.is-available').length === n && !document.querySelector('.rs.is-approved'), n0);
   await t.evaluate(() => sessionStorage.removeItem('iris-mock-fail'));
 });
 await check('#19 confirming the same receipt twice adds the package once', async () => {
   await t.goto(BASE + '/teacher/payments');
-  await t.waitForSelector('text=查看收據並確認');
+  await t.waitForSelector('.pc-review');
   const before = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
-  await t.locator('.rq-approve', { hasText: '查看收據並確認' }).first().click();
+  await t.locator('.pc-review', { hasText: '審核收據' }).first().click();
   const b = t.locator('.rcpt .rq-approve');
   assert(await b.isDisabled(), 'confirm must wait for the review check box');
   await t.check('.rcpt-check input');
@@ -237,6 +270,27 @@ await check('#19 confirming the same receipt twice adds the package once', async
   await t.waitForTimeout(1200);
   const after = await t.evaluate(() => fetch('/api/teacher/students/s5').then((r) => r.json()).then((x) => x.credits));
   assert(after - before === 8, `credits ${before} → ${after}`);
+});
+await check('收據審核 B: 購買課堂 / 付款金額 panels, yyyy-MM-dd HH:mm 上傳, 待審核 badge, no bottom status', async () => {
+  await t.goto(BASE + '/teacher/payments'); await t.waitForSelector('.pc');
+  const c = t.locator('.pc.is-pending').first();
+  assert((await c.locator('.pc-panel dt').allTextContents()).join('|') === '購買課堂|付款金額', 'panel labels');
+  assert(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} 上傳$/.test((await c.locator('.pc-time').textContent()).trim()), 'timestamp format');
+  assert((await c.locator('.pc-badge').textContent()).includes('待審核'), 'badge');
+  assert((await t.locator('.pc >> text=等待核對').count()) === 0, 'redundant status still shown');
+  await axe(t, '收據審核');
+  await t.click('.rq-seg >> text=已確認'); await t.waitForSelector('.pc.is-ok');
+  assert((await t.locator('.pc.is-ok .pc-review').count()) === 0, 'confirmed receipt still has 審核收據');
+  await t.click('.rq-seg >> text=待審核');
+});
+await check('modal close motion: swell → shrink + fade, then really closed', async () => {
+  await t.goto(BASE + '/teacher/payments'); await t.waitForSelector('.pc-review');
+  await t.locator('.pc-review').first().click(); await t.waitForSelector('dialog.rcpt[open]'); await t.waitForTimeout(600);
+  await t.click('.rcpt-x');
+  await t.waitForTimeout(220);
+  const mid = await t.evaluate(() => { const e = document.querySelector('.rcpt-box'); const m = new DOMMatrix(getComputedStyle(e).transform); return { s: m.a, o: +getComputedStyle(e).opacity, open: document.querySelector('dialog.rcpt')?.open }; });
+  assert(mid.open && mid.s < 1 && mid.o < 1, 'not animating: ' + JSON.stringify(mid));
+  await t.waitForFunction(() => !document.querySelector('dialog.rcpt[open]'), null, { timeout: 2000 });
 });
 await check('可預約時段: turning Sunday on generates bookable slots from the range', async () => {
   await t.goto(BASE + '/teacher/availability');
@@ -258,16 +312,11 @@ await check('8 Nov: lessons that ended are marked 已上課 automatically', asyn
   const stale = ls.filter((l) => l.status === 'Booked' && end(l) <= Date.now());
   assert(stale.length === 0, 'still Booked: ' + stale.map((l) => l.id).join());
 });
-await check('8 Nov: Iris books for a student (幫學生預約 sheet, −1 堂)', async () => {
-  // 13 Nov: the lessons block left the 個人資料 page; the booking sheet still opens from its route
-  await t.goto(BASE + '/teacher/students/s2/book'); await t.waitForSelector('.sheet');
-  const c0 = await t.evaluate(() => fetch('/api/teacher/students/s2').then((r) => r.json()).then((x) => x.credits));
-  await t.waitForSelector('.sheet .chip:not([disabled])');
-  await t.locator('.sheet .chip:not([disabled])').first().click();
-  await t.click('.sheet .btn.primary');
-  await t.waitForSelector('.toast >> text=已幫');
-  const c1 = await t.evaluate(() => fetch('/api/teacher/students/s2').then((r) => r.json()).then((x) => x.credits));
-  assert(c1 === c0 - 1, `credits ${c0} → ${c1}`);
+await check('13 Nov: Iris cannot book for a student (no button, no endpoint)', async () => {
+  await t.goto(BASE + '/teacher/students/s2/lessons'); await t.waitForSelector('.lc-center');
+  assert(!(await t.$('text=預約課程')), 'a 預約課程 link is still on the 課程 page');
+  const st = await t.evaluate(() => fetch('/api/teacher/lessons?studentId=s2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.status));
+  assert(st === 404 || st === 405, `POST /api/teacher/lessons answered ${st}`);
 });
 await check('8 Nov: Iris proposes a new time; it waits for the student in 申請', async () => {
   await t.goto(BASE + '/teacher/students/s1'); await t.waitForSelector('.sp-stats');
@@ -278,7 +327,7 @@ await check('8 Nov: Iris proposes a new time; it waits for the student in 申請
   await t.fill('#pm', '那天我有研習');
   await t.click('.sheet .btn.primary');
   await t.waitForSelector('.toast >> text=等學生回覆');
-  await t.goto(BASE + '/teacher/requests?tab=waiting'); await t.waitForSelector('.rq-props .rq-prow >> text=已傳送');
+  await t.goto(BASE + '/teacher/requests?tab=waiting'); await t.waitForSelector('.rq-props .rs.is-pending >> text=等待回覆');
 });
 await check('教師個人資料: status saved → students get it; custom needs a label; email change needs the password', async () => {
   await t.goto(BASE + '/teacher/profile'); await t.waitForSelector('.tp-form');
@@ -310,8 +359,8 @@ await check('legal: footer links, consent required at sign-up, 個資申請 reac
   await t.goto(BASE + '/teacher/students/s2'); await t.waitForSelector('.sd-consent.warn >> text=已撤回');
 });
 await check('12 Nov 回報: Iris approves 張家豪\'s report in 收件匣 → +1 堂 and a NT$ 500 fee', async () => {
-  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpis >> text=學生申請');
-  assert((await t.locator('.kpis >> text=回報 1').count()) === 1, 'home tile does not show 回報 1');
+  await t.goto(BASE + '/teacher'); await t.waitForSelector('.kpis2 >> text=學生申請');
+  assert((await t.locator('.kpis2 >> text=回報 1').count()) === 1, 'home tile does not show 回報 1');
   await t.goto(BASE + '/teacher/requests?tab=reports'); await t.waitForSelector('.rq >> text=張家豪');
   const c0 = await t.evaluate(() => fetch('/api/teacher/students/s4').then((r) => r.json()).then((x) => x.credits));
   await t.click('.rq >> .rq-approve'); await t.waitForSelector('.toast >> text=退回 1 堂');

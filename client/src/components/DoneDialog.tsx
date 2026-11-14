@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Icon } from './Icon';
+import { closeModal, openModal } from '../lib/modalMotion';
 
 /**
  * Big centred "it's done" window for destructive actions (取消課程), red so it reads as "something important happened".
@@ -38,7 +39,7 @@ function DoneDialog({ d }: { d: DoneInput }) {
   const reduce = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(() => {
-    ref.current?.showModal();
+    openModal(ref.current);
     if (!reduce()) {
       box.current?.animate([{ transform: 'scale(.86)', opacity: 0 }, { transform: 'scale(1.02)', opacity: 1, offset: .7 }, { transform: 'none', opacity: 1 }],
         { duration: 380, easing: 'cubic-bezier(.3,.7,.2,1)' });
@@ -48,14 +49,10 @@ function DoneDialog({ d }: { d: DoneInput }) {
     return () => window.clearInterval(t);
   }, []);
 
-  /** shrink to the centre + fade, clear the blur at the same time, then remove */
+  /** shared close motion (lib/modalMotion), then remove */
   const leave = (after?: () => void) => {
     if (leaving.current) return; leaving.current = true;
-    const done = () => { ref.current?.close(); hide(); after?.(); };
-    if (reduce() || !box.current) return done();
-    const ms = 300;
-    box.current.animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.6)', opacity: 0 }], { duration: ms, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
-    shade.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms + 60, easing: 'ease-in', fill: 'forwards' }).finished.then(done);
+    closeModal(ref.current, { box: box.current, shade: shade.current }).then(() => { hide(); after?.(); });
   };
 
   const canUndo = !!d.undo && left > 0;

@@ -25,6 +25,7 @@ import ev4 from '../assets/events/ev4.webp';
 import ev5 from '../assets/events/ev5.webp';
 import ev6 from '../assets/events/ev6.webp';
 import ev7 from '../assets/events/ev7.webp';
+import { closeModal, openModal } from '../lib/modalMotion';
 
 // Tiny blurred preview shown while the hero photo loads (24×18 px, ~0.3 KB).
 const STUDIO_LQIP = 'data:image/webp;base64,UklGRsQAAABXRUJQVlA4ILgAAABwBACdASoYABAAPu1iqU2ppaOiMAgBMB2JQBOmXkS2Qy3CQb74XvwJGrEfAAD7tQI/AWOuShYAXK/VhwI5fLNM9hQoFtFczcS4piqaJeprJ2zoySS/+TjtJU7Xl/BwW2zU+EcnNWfR7IA/S2Q9Kyfu/14q8Y5bEI56tDKGN5D2MjzHMfnwzvh7xC3EJtOTx3dRRvwaZW1PpcMaIAYU0SpZ/YqhqrBycU3E3adhLKo01EdPxUbiSuAA';
@@ -135,7 +136,7 @@ export function Landing() {
         <div className="lp-about-text">
           <h3 className="lp-h2">你好，我是 Iris Chen 陳文媛</h3>
           <p className="lp-p lp-role">全職音樂工作者／敬拜主領／歌唱教練，目前為全職歌唱教練。</p>
-          <p className="lp-p">從小接受古典音樂訓練並於國立東華大學音樂學系主修鋼琴副修聲樂畢業後，現為歌唱教練及音樂工作者。曾在廣告錄音公司工作期間接觸音樂音效製作與配樂編曲，並為 HTC、ASUS、1028、NIKON、Cannon、TOYOTA、MAZDA、KOSE、中國信託、uni water、寶礦力水得⋯等廣告製作配樂編曲、音效設計、配音及配唱。</p>
+          <p className="lp-p">從小接受古典音樂訓練並於國立東華大學音樂學系主修鋼琴副修聲樂畢業後，現為歌唱教練及音樂工作者。曾在廣告錄音公司工作期間接觸音樂音效製作與配樂編曲，並為 HTC、ASUS、1028、NIKON、CANON、TOYOTA、MAZDA、KOSE、中國信託、uni water、寶礦力水得⋯等廣告製作配樂編曲、音效設計、配音及配唱。</p>
           <p className="lp-p">自 2014 年開始至今更多投入演唱及教學工作，曾參與矽谷生命河靈糧堂、以斯拉敬拜、歡讚音樂、Arise &amp; Shine⋯等福音音樂機構專輯錄音，並至台灣各地、中國大陸、馬來西亞、新加坡等世界各地演出。</p>
           <p className="lp-p">目前致力於歌唱訓練及教會敬拜歌手／合唱團培訓，曾輔導學生考取國立台灣師範大學表演藝術研究所、Bethel Conservatory of the Arts、AMPA - Academy of Music and Performing Arts、The Australian Institute of Music 等國內外大專院校。</p>
         </div>
@@ -665,7 +666,7 @@ function ReelDialog({ code, n, from, onClose }: { code: string; n: number; from:
   };
   useEffect(() => {
     const d = ref.current; if (!d) return;
-    d.showModal();
+    openModal(d);
     document.documentElement.classList.add('modal-open');
     const t = fromTransform();
     if (t && !reduce()) {
@@ -684,24 +685,10 @@ function ReelDialog({ code, n, from, onClose }: { code: string; n: number; from:
     }
     return () => document.documentElement.classList.remove('modal-open');
   }, []);
+  // shared close motion (lib/modalMotion): swell → shrink back into the Reel tile it came from, fading out
   const close = () => {
     if (closing.current) return; closing.current = true;
-    const t = fromTransform(); const d = ref.current;
-    if (!t || reduce() || !box.current) { d?.close(); return; }
-    const ms = 460;
-    // 1) swell a little (a "breath in"), 2) shrink fast back into its tile
-    box.current.animate([
-      { transform: 'none', opacity: 1 },
-      { transform: 'scale(1.04)', offset: 0.22, easing: 'cubic-bezier(.5,0,.75,0)' },
-      { transform: `translate(${t.dx}px,${t.dy}px) scale(${t.sx},${t.sy})`, opacity: 0.85, borderRadius: '16px' },
-    ], { duration: ms, fill: 'forwards' }).finished.then(() => d?.close());
-    // the backdrop runs the same clock: dark → blurred → clear page
-    shade.current?.animate([
-      { backgroundColor: 'rgba(0,0,0,.86)', backdropFilter: 'blur(14px)' },
-      { backgroundColor: 'rgba(0,0,0,.78)', backdropFilter: 'blur(14px)', offset: 0.3 },
-      { backgroundColor: 'rgba(0,0,0,.25)', backdropFilter: 'blur(8px)', offset: 0.75 },
-      { backgroundColor: 'rgba(0,0,0,0)', backdropFilter: 'blur(0px)' },
-    ], { duration: ms, easing: 'ease-in', fill: 'forwards' });
+    closeModal(ref.current, { box: box.current, shade: shade.current, from });
   };
   const url = `https://www.instagram.com/reel/${code}/`;
   return (
@@ -723,7 +710,8 @@ function ReelDialog({ code, n, from, onClose }: { code: string; n: number; from:
 function LineIdHelp() {
   const ref = useRef<HTMLDialogElement>(null);
   const timer = useRef<number | undefined>(undefined);
-  const open = () => { window.clearTimeout(timer.current); if (!ref.current?.open) ref.current?.showModal(); };
+  const open = () => { window.clearTimeout(timer.current); if (!ref.current?.open) openModal(ref.current); };
+  const close = () => closeModal(ref.current, { box: ref.current }); // the dialog itself is the panel
   const cancel = () => window.clearTimeout(timer.current);
   useEffect(() => cancel, []);
   return (
@@ -732,11 +720,11 @@ function LineIdHelp() {
         onClick={open} onMouseEnter={() => { cancel(); timer.current = window.setTimeout(open, 3000); }} onMouseLeave={cancel}>
         <Icon name="info" size={16} /><span>怎麼找 LINE ID？</span>
       </button>
-      <dialog ref={ref} className="cs-help" aria-labelledby="lid-t" onClick={(e) => { if (e.target === e.currentTarget) ref.current?.close(); }}>
+      <dialog ref={ref} className="cs-help" aria-labelledby="lid-t" onCancel={(e) => { e.preventDefault(); close(); }} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
         <h2 id="lid-t">怎麼找到 LINE ID？</h2>
         <p>LINE ID 在 LINE App 裡：</p>
         <ol><li>打開 LINE，進入首頁（Home）</li><li>點右上角的齒輪 ⚙︎</li><li>選有大頭貼的「個人檔案」（Profile）</li><li>找到「ID」欄位，就是你的 LINE ID</li></ol>
-        <button type="button" className="btn primary lp-btn" onClick={() => ref.current?.close()}>知道了</button>
+        <button type="button" className="btn primary lp-btn" onClick={close}>知道了</button>
       </dialog>
     </>
   );

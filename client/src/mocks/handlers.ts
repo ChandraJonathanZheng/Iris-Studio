@@ -1,7 +1,8 @@
 import type { MConsent, MPrivacyRequest, MReel } from './db';
 import { delay, http, HttpResponse } from 'msw';
 import { PW_RULES } from '../lib/password';
-import { addDays, compareSlot, fmtSlot, studioToday } from '../lib/date';
+import { addDays, compareSlot, fmtSlot, studioNowTime, studioToday } from '../lib/date';
+import { cleanNoteHtml, noteHtmlText } from '../lib/noteHtml';
 import { rangeProblems, slotTimesFor, toMin } from '../lib/availability';
 import type { Availability, Me, Overview, StudentDetail, StudentSummary } from '../lib/types';
 import {
@@ -435,7 +436,9 @@ export const handlers = [
     const b = (await request.json()) as { date: string; time: string; reason: string };
     const bad = validSlot(b.date, b.time); if (bad) return problem(400, bad);
     if (isTaken(b.date, b.time)) return problem(409, '這個時段已經有人了。', 'slot_taken');
-    db.changes.push({ id: newId(), lessonId: l.id, toDate: b.date, toTime: b.time, reason: b.reason ?? '', status: 'Open' });
+    const cid = newId();
+    db.changes.push({ id: cid, lessonId: l.id, toDate: b.date, toTime: b.time, reason: b.reason ?? '', status: 'Open' });
+    addAlert('t1', 'moved', '學生申請改期', `${r.u.name}：${fmtSlot(l.date, l.time)} → ${fmtSlot(b.date, b.time)}`, `change:${cid}`); // mirrors NotifyTeacherAsync
     return HttpResponse.json({ ok: true }, { status: 201 });
   }),
   http.post('/api/student/change-requests/:id/withdraw', async ({ params }) => {
@@ -491,6 +494,7 @@ export const handlers = [
       c.prev = { date: l.date, time: l.time }; l.date = c.toDate; l.time = c.toTime; c.status = 'Approved';
     } else c.status = 'Declined';
     c.decidedAt = Date.now();
+    addAlert('t1', 'moved', c.status === 'Approved' ? '學生已同意改期' : '學生不方便改期', `${r.u.name}：${fmtSlot(c.toDate, c.toTime)}`, `change:${c.id}`);
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/student/alerts', async () => {
@@ -541,13 +545,66 @@ export const handlers = [
   }),
 
   // ---------- teacher ----------
+  // 個人資料 photo / banner — mirrors StudentMediaEndpoints.cs
+  http.post('/api/teacher/students/:id/:kind', async ({ params, request }) => {
+    if (params.kind !== 'avatar' && params.kind !== 'cover') return undefined;
+    await delay(500);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const u = userById(String(params.id)); if (!u || u.role !== 'Student') return problem(404, '找不到這位學生。');
+    const f = (await request.formData()).get('file');
+    if (!(f instanceof File) || !f.size) return problem(400, '請選擇圖片。');
+    if (f.size > 5 * 1024 * 1024) return problem(400, '圖片不能超過 5 MB。', 'too_large');
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) return problem(400, '只接受 JPG、PNG 或 WEBP 圖片。', 'bad_image');
+    const { url } = await toWebp(f, params.kind === 'cover' ? 1800 : 512);
+    const key = params.kind === 'cover' ? 'coverUrl' : 'avatarUrl';
+    const old = u[key]; if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+    u[key] = url;
+    return HttpResponse.json({ url });
+  }),
+  // 課堂筆記 — mirrors LessonNoteEndpoints.cs. The browser does the WebP conversion the server does with ImageSharp.
+  http.get('/api/teacher/lessons/:id/note', async ({ params }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const n = db.lessonNotes.find((x) => x.lessonId === params.id);
+    return n ? HttpResponse.json(n) : problem(404, '這堂課還沒有筆記。', 'no_note');
+  }),
+  http.put('/api/teacher/lessons/:id/note', async ({ params, request }) => {
+    await delay(600);
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const l = db.lessons.find((x) => x.id === params.id); if (!l) return problem(404, '找不到這堂課。');
+    if (l.status === 'Cancelled') return problem(409, '這堂課已取消，不能加筆記。', 'cancelled');
+    if (l.date > studioToday() || (l.date === studioToday() && l.time > studioNowTime())) return problem(409, '課程開始後才能加筆記。', 'not_started');
+    const form = await request.formData();
+    const old = db.lessonNotes.find((x) => x.lessonId === l.id);
+    const base = { lessonId: l.id, studentId: l.studentId, updatedAt: new Date().toISOString() };
+    let next: (typeof db.lessonNotes)[number];
+    if (form.get('kind') === 'text') {
+      const html = cleanNoteHtml(String(form.get('html') ?? ''));
+      if (!noteHtmlText(html)) return problem(400, '請輸入筆記內容。');
+      if (html.length > 5000) return problem(400, '筆記太長了，請精簡一點。', 'too_long');
+      next = { ...base, kind: 'text', html, imageUrl: null, fileName: null, lqip: null, width: null, height: null };
+    } else if (form.get('kind') === 'image') {
+      const f = form.get('file');
+      if (!(f instanceof File) || !f.size) return problem(400, '請選擇一張截圖。');
+      if (f.size > 5 * 1024 * 1024) return problem(400, '圖片不能超過 5 MB。', 'too_large');
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) return problem(400, '只接受 JPG、PNG 或 WEBP 圖片。', 'bad_image');
+      const webp = await toWebp(f); // the original File is never kept
+      const who = (userById(l.studentId)?.name ?? 'student').replace(/[\\/:*?"<>|\s]/g, '_');
+      let fileName = `${l.date.replace(/-/g, '')}_${who}_Class_Notes.webp`;
+      if (db.lessonNotes.some((n) => n.fileName === fileName && n.lessonId !== l.id)) fileName = fileName.replace('.webp', `_${l.time.replace(':', '')}.webp`);
+      next = { ...base, kind: 'image', html: null, imageUrl: webp.url, fileName, lqip: null, width: webp.w, height: webp.h };
+    } else return problem(400, '請選擇筆記類型。');
+    if (old?.imageUrl && old.imageUrl !== next.imageUrl) URL.revokeObjectURL(old.imageUrl); // replaced → free the old file
+    db.lessonNotes = db.lessonNotes.filter((x) => x.lessonId !== l.id).concat(next);
+    return HttpResponse.json(next);
+  }),
   http.get('/api/teacher/overview', async () => {
     await lag();
     const r = requireUser('Teacher'); if (r.err) return r.err;
     const t = studioToday();
     const pend = db.payments.filter((p) => p.status === 'Pending');
     const o: Overview = {
-      today: db.lessons.filter((l) => l.date === t && l.status !== 'Cancelled').sort(compareSlot).map(lessonDto),
+      today: db.lessons.filter((l) => l.date === t && l.status !== 'Cancelled').sort(compareSlot).map((l) => ({ ...lessonDto(l), noteKind: db.lessonNotes.find((n) => n.lessonId === l.id)?.kind ?? null })),
       counts: {
         receipts: pend.length, receiptsAmount: pend.reduce((s, p) => s + p.amount, 0),
         changes: db.changes.filter((c) => c.status === 'Open' && (c.by ?? 'student') === 'student').length,
@@ -610,7 +667,7 @@ export const handlers = [
     await lag();
     const r = requireUser('Teacher'); if (r.err) return r.err;
     const url = new URL(request.url); const from = url.searchParams.get('from')!; const to = url.searchParams.get('to')!;
-    return HttpResponse.json(db.lessons.filter((l) => l.date >= from && l.date <= to).sort(compareSlot).map(lessonDto));
+    return HttpResponse.json(db.lessons.filter((l) => l.date >= from && l.date <= to).sort(compareSlot).map((l) => ({ ...lessonDto(l), noteKind: db.lessonNotes.find((n) => n.lessonId === l.id)?.kind ?? null })));
   }),
   http.post('/api/teacher/lessons/:id/cancel', async ({ params }) => {
     await lag();
@@ -634,6 +691,39 @@ export const handlers = [
     await lag();
     const r = requireUser('Teacher'); if (r.err) return r.err;
     return HttpResponse.json(db.users.filter((u) => u.role === 'Student' && !u.declined).map(summary));
+  }),
+  // 技能徽章 (skill badges) — the whole list is replaced (server: PUT /api/teacher/students/{id}/skills)
+  http.put('/api/teacher/students/:id/skills', async ({ params, request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const u = userById(params.id as string); if (!u || u.role !== 'Student') return problem(404, '找不到學生。');
+    const b = await request.json() as { skills: string[] };
+    const list = [...new Set((b.skills ?? []).map((x) => x.trim()).filter(Boolean))];
+    if (list.length > 12) return problem(400, '最多 12 個徽章。');
+    if (list.some((x) => x.length > 20)) return problem(400, '每個徽章最多 20 個字。');
+    u.skills = list;
+    return HttpResponse.json(list);
+  }),
+  // 成長等級 0–10 (server: PATCH /api/teacher/students/{id}/growth)
+  http.patch('/api/teacher/students/:id/growth', async ({ params, request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const u = userById(params.id as string); if (!u || u.role !== 'Student') return problem(404, '找不到學生。');
+    const b = await request.json() as { level: number };
+    if (!Number.isInteger(b.level) || b.level < 0 || b.level > 10) return problem(400, '等級需要是 0–10。');
+    u.growthLevel = b.level;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  // 聲部 + 程度 — only Iris sets them (server: PATCH /api/teacher/students/{id}/basics)
+  http.patch('/api/teacher/students/:id/basics', async ({ params, request }) => {
+    await lag();
+    const r = requireUser('Teacher'); if (r.err) return r.err;
+    const u = userById(params.id as string); if (!u || u.role !== 'Student') return problem(404, '找不到學生。');
+    const b = await request.json() as { voiceType: string | null; grade: string | null };
+    const voice = (b.voiceType ?? '').trim(), grade = (b.grade ?? '').trim();
+    if (voice.length > 20 || grade.length > 20) return problem(400, '最多 20 個字。');
+    u.voiceType = voice || null; u.grade = grade || null;
+    return new HttpResponse(null, { status: 204 });
   }),
   // 停用 / 啟用: a disabled student keeps all history but can't book (server: PATCH /api/teacher/students/{id}/status)
   http.patch('/api/teacher/students/:id/status', async ({ params, request }) => {
@@ -677,6 +767,11 @@ export const handlers = [
       firstPurchaseAt: [...db.payments.filter((p) => p.studentId === u.id && p.status === 'Confirmed').map((p) => p.uploadedAt), ...(u.joinedAt && mine.length ? [new Date(Date.parse(u.joinedAt) - 2 * 864e5).toISOString()] : [])].sort()[0] ?? null,
       totalPaid: db.payments.filter((p) => p.studentId === u.id && p.status === 'Confirmed').reduce((a, p) => a + p.amount, 0),
       loginMethod: u.lineLinked ? 'line' : 'email',
+      skills: u.skills ?? [], growthLevel: u.growthLevel ?? 0,
+      missed: mine.filter((l) => l.status === 'Cancelled' && (l.cancelReason === 'reported' || l.refunded === false)).length,
+      totalLessons: mine.filter((l) => l.status !== 'Cancelled').length,
+      movedLessonIds: db.changes.filter((c) => c.status === 'Approved' && mine.some((l) => l.id === c.lessonId)).map((c) => c.lessonId),
+      coverUrl: u.coverUrl ?? null,
     };
     return HttpResponse.json(d);
   }),
@@ -830,23 +925,6 @@ export const handlers = [
     c.status = 'Withdrawn'; c.decidedAt = Date.now(); dropQueuedAlerts(`change:${c.id}`);
     return new HttpResponse(null, { status: 204 });
   }),
-  // Iris books for a student (uses one of the student's 堂數, the student gets an alert)
-  http.post('/api/teacher/lessons', async ({ request }) => {
-    const r = requireUser('Teacher'); if (r.err) return r.err;
-    return idempotent(request, r.u.id, async () => {
-      await delay(600);
-      const s = userById(new URL(request.url).searchParams.get('studentId') ?? ''); if (!s) return problem(404, '找不到學生。');
-      const b = (await request.clone().json()) as { date: string; time: string };
-      const bad = validSlot(b.date, b.time); if (bad) return problem(400, bad, 'invalid_slot');
-      if (s.credits <= 0) return problem(409, '堂數已用完，請先購買新方案。', 'no_credits');
-      if (isTaken(b.date, b.time)) return problem(409, '這個時段剛被別人預約了。沒有扣堂數，請選其他時段。', 'slot_taken');
-      const l = { id: newId(), studentId: s.id, date: b.date, time: b.time, status: 'Booked' as const, type: s.classType ?? 'private', minutes: availability.settings.lessonMinutes };
-      db.lessons.push(l); s.credits -= 1;
-      addAlert(s.id, 'added', '老師新增了一堂課', `${fmtSlot(b.date, b.time)} · A 教室`, `add:${l.id}`);
-      autoRemind(s, l.id);
-      return HttpResponse.json({ id: l.id }, { status: 201 });
-    });
-  }),
   http.post('/api/teacher/change-requests/:id/:action', async ({ params, request }) => {
     await lag();
     const r = requireUser('Teacher'); if (r.err) return r.err;
@@ -864,9 +942,11 @@ export const handlers = [
       if (isTaken(c.toDate, c.toTime, l.id)) return problem(409, '新時段已被預約，只能婉拒。', 'slot_taken');
       c.prev = { date: l.date, time: l.time }; l.date = c.toDate; l.time = c.toTime; c.status = 'Approved';
       addAlert(s.id, 'approved', '老師同意改時間', `${fmtSlot(c.prev.date, c.prev.time)} 改到 ${fmtSlot(c.toDate, c.toTime)}。`, `change:${c.id}`);
+      addAlert('t1', 'moved', '已同意改期', `${s.name}：改到 ${fmtSlot(c.toDate, c.toTime)}，已通知學生。`, `change:${c.id}`);
     } else {
       c.status = 'Declined';
       addAlert(s.id, 'declined', '老師無法改到這個時間', message?.trim() ? message : `${fmtSlot(l.date, l.time)} 的課維持不變。`, `change:${c.id}`);
+      addAlert('t1', 'moved', '已婉拒改期', `${s.name}：${fmtSlot(l.date, l.time)} 的課維持不變，已通知學生。`, `change:${c.id}`);
     }
     c.decidedAt = Date.now();
     return new HttpResponse(null, { status: 204 });
@@ -1002,4 +1082,15 @@ function coverOf(fd: FormData): string | null | Response {
   if (f.size > 5 * 1024 * 1024) return problem(400, '封面圖不能超過 5 MB。', 'too_large');
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) return problem(400, '只接受 JPG、PNG 或 WEBP 圖片。', 'bad_image');
   return URL.createObjectURL(f);
+}
+
+/** JPG/PNG/WEBP → WebP, ≤ 2000 px on the long side (same as ImageService.ToWebpAsync) */
+async function toWebp(f: File, maxSide = 2000): Promise<{ url: string; w: number; h: number }> {
+  const bmp = await createImageBitmap(f);
+  const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d')!.drawImage(bmp, 0, 0, w, h); bmp.close();
+  const blob = await new Promise<Blob>((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('轉檔失敗'))), 'image/webp', 0.8));
+  return { url: URL.createObjectURL(blob), w, h };
 }

@@ -63,6 +63,16 @@ export interface Lesson {
   report: LessonReportInfo | null;
   /** set while the student may still 回報 this lesson (Attended, inside Studio:ReportDays, no report yet) */
   reportUntil: string | null;
+  /** teacher 今天的課 only: which 課堂筆記 this lesson has (null = none yet) */
+  noteKind?: LessonNoteKind | null;
+}
+
+export type LessonNoteKind = 'text' | 'image';
+/** 課堂筆記: rich text OR one screenshot (stored as WebP, named yyyyMMdd_學生_Class_Notes.webp) */
+export interface LessonNote {
+  lessonId: string; studentId: string; kind: LessonNoteKind;
+  html: string | null; imageUrl: string | null; fileName: string | null; lqip: string | null;
+  width: number | null; height: number | null; updatedAt: string;
 }
 
 /** 回報 = the student asks Iris to cancel a lesson that already passed (e.g. they didn't come). */
@@ -171,6 +181,18 @@ export interface StudentDetail extends StudentSummary {
   totalPaid: number;
   /** how the student signs in: LINE or email + password */
   loginMethod: 'line' | 'email';
+  /** 課程 page: skill badges Iris gives (e.g. 呼吸, Belting) */
+  skills: string[];
+  /** 成長等級 0–10, set by Iris */
+  growthLevel: number;
+  /** 缺課: lessons cancelled late (no refund) or cancelled through 回報 */
+  missed: number;
+  /** 總堂數: lessons taken + booked (not cancelled) */
+  totalLessons: number;
+  /** past lessons that were moved once (改時間 approved) → ↻ in the history */
+  movedLessonIds: string[];
+  /** 個人資料 banner set by Iris (null = default sage gradient) */
+  coverUrl?: string | null;
   /** what Iris may do with this student's photos / videos / voice, and marketing — latest consent record */
   consent: StudentConsentSummary;
 }

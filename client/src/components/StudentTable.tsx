@@ -7,6 +7,7 @@ import { useToast } from './Toast';
 import { useAddStudentNote, useSetStudentDisabled, useStudents } from '../lib/queries';
 import { initialOf } from '../lib/date';
 import type { StudentSummary } from '../lib/types';
+import { closeModal, openModal } from '../lib/modalMotion';
 
 /**
  * 學生列表 (teacher): a real table like an admin panel —
@@ -82,11 +83,11 @@ export function StudentsTable() {
               <tbody>
                 {rows.map((s) => (
                   <tr key={s.id} className={s.disabled ? 'is-off' : undefined}>
-                    <td className="c-id">{s.studentNo || "—"}</td>
+                    <td className="c-id">{s.studentNo || "—"}{s.status === 'Pending' && !s.disabled && <span className="st-n" title="新學生"><svg className="st-n-rays" viewBox="0 0 40 40" aria-hidden="true"><line x1="30.4" y1="21.5" x2="35.3" y2="22.2" /><line x1="28.3" y1="28.0" x2="30.4" y2="30.1" /><line x1="21.8" y1="30.3" x2="22.7" y2="35.3" /><line x1="15.0" y1="30.3" x2="13.6" y2="33.0" /><line x1="10.7" y1="24.9" x2="6.3" y2="27.3" /><line x1="8.6" y1="18.4" x2="5.6" y2="18.0" /><line x1="12.4" y1="12.7" x2="8.9" y2="9.2" /><line x1="18.0" y1="8.7" x2="17.5" y2="5.7" /><line x1="24.6" y1="10.6" x2="26.8" y2="6.1" /><line x1="30.2" y1="14.6" x2="32.8" y2="13.2" /></svg><span className="st-n-l" aria-hidden="true">N</span><span className="sr-only">新學生</span></span>}</td>
                     <th scope="row" className="c-who">
                       <span className="st-who">
                         <span className="st-av" style={{ background: tone(s.id) }} aria-hidden="true">{s.avatarUrl ? <img src={s.avatarUrl} alt="" /> : initialOf(s.name)}</span>
-                        <span className="st-name">{s.name}{s.disabled && <span className="st-off">已停用</span>}{s.status === 'Pending' && !s.disabled && <span className="st-new">新學生</span>}</span>
+                        <span className="st-name">{s.name}{s.disabled && <span className="st-off">已停用</span>}</span>
                       </span>
                     </th>
                     <td>{s.gender ? GENDER[s.gender] : '—'}</td>
@@ -96,9 +97,7 @@ export function StudentsTable() {
                     <td className="c-act">
                       <span className="st-acts">
                         <Link to={`/teacher/students/${s.id}`} className="st-ic" viewTransition aria-label={`${s.name} 的學生資料`} title="學生資料"><Icon name="profile" size={20} /></Link>
-                        {s.lineId
-                          ? <a href={`https://line.me/ti/p/~${encodeURIComponent(s.lineId)}`} target="_blank" rel="noreferrer" className="st-ic line" aria-label={`用 LINE 聯絡 ${s.name}（另開新視窗）`} title="LINE 聯絡"><Icon name="line" size={20} /></a>
-                          : <span className="st-ic" aria-disabled="true" title="沒有 LINE"><Icon name="line" size={20} /></span>}
+                        <Link to={`/teacher/students/${s.id}/lessons`} className="st-ic" viewTransition aria-label={`${s.name} 的課程`} title="課程"><Icon name="lessons" size={20} /></Link>
                         <RowMenu s={s} onPick={(k) => {
                           if (k === 'enable') enable.mutate({ id: s.id, disabled: false }, { onSuccess: () => toast({ text: `已重新啟用 ${s.name}` }) });
                           else setDlg({ kind: k, s });
@@ -191,17 +190,22 @@ function RowMenu({ s, onPick }: { s: StudentSummary; onPick: (k: Pick) => void }
 }
 
 /* ---------- small centred dialogs ---------- */
-function useModal(onClose: () => void) {
+export function useModal(onClose: () => void) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { ref.current?.showModal(); }, []);
+  useEffect(() => { openModal(ref.current); }, []);
+  // every way out (取消 / ✕ / Esc / backdrop / after saving) runs the shared close motion; the native "close" event
+  // that fires when it ends is what finally calls onClose (the parent unmounts us then)
+  const close = () => closeModal(ref.current);
   const props = {
-    ref, onCancel: (e: React.SyntheticEvent) => { e.preventDefault(); onClose(); },
-    onClick: (e: React.MouseEvent) => { if (e.target === e.currentTarget) onClose(); },
+    ref, onClose,
+    onCancel: (e: React.SyntheticEvent) => { e.preventDefault(); close(); },
+    onClick: (e: React.MouseEvent) => { if (e.target === e.currentTarget) close(); },
   };
-  return props;
+  // not enumerable → `{...m}` on <dialog> doesn't pass it down as an attribute
+  return Object.defineProperty(props, 'close', { value: close, enumerable: false }) as typeof props & { readonly close: () => Promise<void> };
 }
 
-function NoteDialog({ s, kind, onClose }: { s: StudentSummary; kind: 'note' | 'homework'; onClose: () => void }) {
+export function NoteDialog({ s, kind, onClose }: { s: StudentSummary; kind: 'note' | 'homework'; onClose: () => void }) {
   const m = useModal(onClose);
   const [text, setText] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -212,7 +216,7 @@ function NoteDialog({ s, kind, onClose }: { s: StudentSummary; kind: 'note' | 'h
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) { setErr('請輸入內容。'); return; }
-    flow.run(() => save.mutateAsync({ id: s.id, kind, text }), () => { onClose(); toast({ text: kind === 'note' ? `已為 ${s.name} 新增筆記` : `已把作業傳給 ${s.name}` }); })
+    flow.run(() => save.mutateAsync({ id: s.id, kind, text }), () => { m.close(); toast({ text: kind === 'note' ? `已為 ${s.name} 新增筆記` : `已把作業傳給 ${s.name}` }); })
       .catch((x) => setErr(x instanceof Error ? x.message : '儲存失敗，請再試一次。'));
   };
   return (
@@ -227,7 +231,7 @@ function NoteDialog({ s, kind, onClose }: { s: StudentSummary; kind: 'note' | 'h
           aria-invalid={!!err || undefined} aria-describedby="st-dlg-hint" />
         <p id="st-dlg-hint" className={err ? 'st-dlg-err' : 'st-dlg-count'}>{err ?? `${text.length} / 1000`}</p>
         <div className="st-dlg-acts">
-          <button type="button" className="st-btn ghost" disabled={flow.busy} onClick={onClose}>取消</button>
+          <button type="button" className="st-btn ghost" disabled={flow.busy} onClick={m.close}>取消</button>
           <SaveButton state={flow.state} className="st-btn dark" label={kind === 'note' ? '儲存筆記' : '傳送作業'} />
         </div>
       </form>
@@ -246,9 +250,9 @@ function DisableDialog({ s, onClose }: { s: StudentSummary; onClose: () => void 
         <h2 id="st-off-t" className="st-dlg-t">停用 {s.name}？</h2>
         <p id="st-off-d" className="st-dlg-sub">停用後學生不能再預約新的課。已預約的課、堂數和所有紀錄都會保留，之後可以隨時重新啟用。</p>
         <div className="st-dlg-acts">
-          <button type="button" className="st-btn ghost" autoFocus onClick={onClose}>返回</button>
+          <button type="button" className="st-btn ghost" autoFocus onClick={m.close}>返回</button>
           <button type="button" className="st-btn red" disabled={off.isPending}
-            onClick={() => off.mutate({ id: s.id, disabled: true }, { onSuccess: () => { toast({ text: `已停用 ${s.name}` }); onClose(); } })}>
+            onClick={() => off.mutate({ id: s.id, disabled: true }, { onSuccess: () => { toast({ text: `已停用 ${s.name}` }); m.close(); } })}>
             {off.isPending ? '停用中…' : '停用'}</button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { busy } from '../components/Busy';
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from './api';
-import type { Reel,
+import { api, ApiError } from './api';
+import type { LessonNote, Reel,
   AlertItem, Availability, BookingSettings, BookResult, DateOverride, CancelResult, ClassType, Consult, ConsultContactType, ConsultTime, Day, Lesson, Me, Overview, Payment, PaymentStatus,
   CancellationFee, Requests, Slot, StudentDetail, StudentSummary, StudioInfo, TeacherProfile, ConsentInput, MyConsents, PrivacyRequest, PrivacyRequestType,
 } from './types';
@@ -264,16 +264,23 @@ export function useDecideApplication() {
 
 export function useDecidePayment() {
   const qc = useQueryClient();
+  const drop = (id: string) => {
+    qc.setQueriesData<Payment[]>({ queryKey: ['payments'] }, (list) => list?.filter((p) => !(p.id === id && p.status === 'Pending')));
+    bumpCount(qc, 'receipts', -1);
+  };
   const m = useMutation({
     mutationFn: (v: { id: string; confirm: boolean; reason?: string; key: string }) =>
       api.post(`/api/teacher/payments/${v.id}/${v.confirm ? 'confirm' : 'reject'}`, { reason: v.reason ?? null }, { idempotencyKey: v.key }),
+    // 退回 is optimistic (the sheet closes at once). 確認 is NOT: it adds credits, so the receipt stays open with a
+    // spinner until the server has really confirmed it — Iris never sees "done" for money that wasn't booked.
     onMutate: async (v) => {
+      if (v.confirm) return { snap: undefined };
       const snap = await snapshot(qc, ['payments'], qk.overview);
-      qc.setQueriesData<Payment[]>({ queryKey: ['payments'] }, (list) => list?.filter((p) => !(p.id === v.id && p.status === 'Pending')));
-      bumpCount(qc, 'receipts', -1);
+      drop(v.id);
       return { snap };
     },
-    onError: (_e, _v, ctx) => restore(qc, ctx?.snap),
+    onSuccess: (_r, v) => { if (v.confirm) drop(v.id); },
+    onError: (_e, _v, ctx) => { if (ctx?.snap) restore(qc, ctx.snap); },
     onSettled: () => { qc.invalidateQueries({ queryKey: ['payments'] }); qc.invalidateQueries({ queryKey: qk.overview }); qc.invalidateQueries({ queryKey: qk.students }); },
   });
   const undo = async (id: string) => {
@@ -397,22 +404,6 @@ export function useSendReminder(studentId: string) {
   return { mutation, undo };
 }
 
-/** Iris books a lesson for a student. Idempotent (double tap = one lesson), uses one of the student's 堂數. */
-export function useTeacherBook(studentId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (v: { date: string; time: string; key: string }) =>
-      api.post<{ id: string }>(`/api/teacher/lessons?studentId=${encodeURIComponent(studentId)}`, { date: v.date, time: v.time }, { idempotencyKey: v.key }),
-    onSettled: (_d, _e, v) => {
-      qc.invalidateQueries({ queryKey: qk.student(studentId) });
-      qc.invalidateQueries({ queryKey: qk.students });
-      qc.invalidateQueries({ queryKey: qk.overview });
-      qc.invalidateQueries({ queryKey: ['lessons'] });
-      qc.invalidateQueries({ queryKey: qk.slots(v.date) });
-      qc.invalidateQueries({ queryKey: ['days'] });
-    },
-  });
-}
 
 /** 老師提議改時間 + 收回. Nothing moves until the student accepts, so no optimistic update is needed. */
 export function useProposals() {
@@ -547,5 +538,85 @@ export function useSetStudentDisabled() {
 export function useAddStudentNote() {
   return useMutation({
     mutationFn: (v: { id: string; kind: 'note' | 'homework'; text: string }) => api.post(`/api/teacher/students/${v.id}/notes`, { kind: v.kind, text: v.text }),
+  });
+}
+
+/** 聲部 + 程度 are set by Iris (PATCH /api/teacher/students/{id}/basics) */
+export function useSaveStudentBasics(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { voiceType: string | null; grade: string | null }) => api.patch(`/api/teacher/students/${id}/basics`, v),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: qk.student(id) }); qc.invalidateQueries({ queryKey: qk.students }); },
+  });
+}
+
+/** 課程 page: 技能徽章 (whole list) and 成長等級 */
+export function useSaveSkills(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (skills: string[]) => api.put<string[]>(`/api/teacher/students/${id}/skills`, { skills }),
+    // optimistic: the badge appears / disappears at once, rolled back if the server says no
+    onMutate: async (skills) => {
+      await qc.cancelQueries({ queryKey: qk.student(id) });
+      const prev = qc.getQueryData<StudentDetail>(qk.student(id));
+      if (prev) qc.setQueryData<StudentDetail>(qk.student(id), { ...prev, skills });
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(qk.student(id), ctx.prev); },
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.student(id) }),
+  });
+}
+export function useSaveGrowth(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (level: number) => api.patch(`/api/teacher/students/${id}/growth`, { level }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.student(id) }),
+  });
+}
+
+/** 個人資料 photo / banner, uploaded by Iris. The server converts to WebP and deletes the old file. */
+export function useUploadStudentMedia(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { kind: 'avatar' | 'cover'; file: File }) => {
+      const fd = new FormData(); fd.append('file', v.file);
+      return api.post<{ url: string }>(`/api/teacher/students/${id}/${v.kind}`, fd);
+    },
+    onSuccess: (r, v) => {
+      qc.setQueryData<StudentDetail>(qk.student(id), (d) => (d ? { ...d, [v.kind === 'avatar' ? 'avatarUrl' : 'coverUrl']: r.url } : d));
+      if (v.kind === 'avatar') qc.invalidateQueries({ queryKey: qk.students }); // the list shows the photo too
+    },
+  });
+}
+
+/* ---------- 課堂筆記 (teacher) ---------- */
+export const lessonNoteKey = (lessonId: string) => ['lesson-note', lessonId] as const;
+/** 404 no_note = "no note yet" → null, not an error */
+export function useLessonNote(lessonId: string, enabled = true) {
+  return useQuery({
+    queryKey: lessonNoteKey(lessonId), enabled,
+    queryFn: async ({ signal }) => {
+      try { return await api.get<LessonNote>(`/api/teacher/lessons/${lessonId}/note`, signal); }
+      catch (e) { if (e instanceof ApiError && e.code === 'no_note') return null; throw e; }
+    },
+  });
+}
+/** Replaces the lesson's note (text or image). The server converts the image to WebP and deletes the old file. */
+export function useSaveLessonNote(lessonId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { kind: 'text'; html: string } | { kind: 'image'; file: File }) => {
+      const fd = new FormData();
+      fd.append('kind', v.kind);
+      if (v.kind === 'text') fd.append('html', v.html); else fd.append('file', v.file);
+      return api.put<LessonNote>(`/api/teacher/lessons/${lessonId}/note`, fd);
+    },
+    onSuccess: (n) => {
+      qc.setQueryData(lessonNoteKey(lessonId), n);
+      // the 今天的課 icon turns "filled" without waiting for a refetch
+      qc.setQueryData<Overview>(qk.overview, (o) => (o ? { ...o, today: o.today.map((l) => (l.id === lessonId ? { ...l, noteKind: n.kind } : l)) } : o));
+      // …and in 行事曆 (any month that holds this lesson)
+      qc.setQueriesData<Lesson[]>({ queryKey: ['lessons', 'teacher'] }, (ls) => ls?.map((l) => (l.id === lessonId ? { ...l, noteKind: n.kind } : l)));
+    },
   });
 }

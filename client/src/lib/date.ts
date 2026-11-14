@@ -46,6 +46,13 @@ export function fmtDate(iso: string): string {
 /** 11-03(二) 19:00 — a space keeps the time from gluing onto the ")" */
 export function fmtSlot(iso: string, time: string): string { return `${fmtDate(iso)} ${time}`; }
 
+/** 2026-11-13 22:40 — an instant (ISO, UTC) shown in studio time (Asia/Taipei), whatever the browser's zone is */
+export function fmtStampMin(isoDateTime: string): string {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(isoDateTime));
+  const v = (t: string) => p.find((x) => x.type === t)?.value ?? '';
+  return `${v('year')}-${v('month')}-${v('day')} ${String(Number(v('hour')) % 24).padStart(2, '0')}:${v('minute')}`;
+}
+
 export function fmtMoney(n: number): string { return `NT$ ${n.toLocaleString('en-US')}`; }
 
 export function fmtRelative(isoDateTime: string, now = new Date()): string {

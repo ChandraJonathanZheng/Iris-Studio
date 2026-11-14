@@ -3,7 +3,7 @@
 // so the UI can be built and tested before the backend runs.
 import { addDays, studioNowTime, studioToday, weekday } from '../lib/date';
 import { overlaps, rangesFor, slotTimesFor } from '../lib/availability';
-import type { AlertItem, AlertKind, Availability, Lesson, Payment, StudioInfo } from '../lib/types';
+import type { AlertItem, AlertKind, Availability, Lesson, LessonNote, Payment, StudioInfo } from '../lib/types';
 
 /** Iris's availability (可預約時段). Default: Mon–Sat 09:30–12:30 + 14:00–20:30, Sunday off. */
 const weekdayRanges = [{ start: '09:30', end: '12:30' }, { start: '14:00', end: '20:30' }];
@@ -33,12 +33,13 @@ export interface MUser {
   voiceType: string | null; goal: string | null; grade: string | null;
   credits: number; packageSize: number; createdAt: string; declined?: boolean; classType?: 'private' | 'group' | 'trial'; consultationCompleted?: boolean;
   // teacher profile (教師個人資料)
-  avatarUrl?: string | null; emailVerified?: boolean; lineIdPublic?: boolean;
+  avatarUrl?: string | null; coverUrl?: string | null; emailVerified?: boolean; lineIdPublic?: boolean;
   teacherStatus?: 'normal' | 'vacation' | 'noNewStudents' | 'custom'; statusLabel?: string | null; statusMessage?: string | null;
   /** last 3 passwords (current first) — a new one may not repeat them */
   passwordHistory?: string[];
   // 學生列表 columns
   studentNo?: number; gender?: 'M' | 'F' | null; joinedAt?: string; disabled?: boolean;
+  skills?: string[]; growthLevel?: number;
 }
 /** 忘記密碼 link (the server stores only a hash of the token; the mock keeps it plain) */
 export interface MResetToken { token: string; userId: string; expiresAt: number; used: boolean; createdAt: number }
@@ -70,7 +71,7 @@ function seed() {
   const users: MUser[] = [
     { id: 't1', name: 'Iris Chen', role: 'Teacher', status: 'Active', email: 'iris@studio.local', password: 'change-me-now', phone: null, lineId: 'iris.voice', lineLinked: false, voiceType: null, goal: null, grade: null, credits: 0, packageSize: 0, createdAt: nowIso(),
       emailVerified: true, lineIdPublic: true, teacherStatus: 'normal', statusLabel: null, statusMessage: null, avatarUrl: null },
-    { id: 's1', studentNo: 1001, gender: 'M', joinedAt: monthsAgo(14), name: '王小明', role: 'Student', status: 'Active', email: 'xiaoming@demo.local', password: 'demo1234', phone: '0912-345-678', lineId: 'xiaoming_w', lineLinked: true, voiceType: '男高音', goal: '想在年底婚禮上唱一首歌，高音更穩定。', grade: 'Grade 4', credits: 5, packageSize: 8, createdAt: nowIso() },
+    { id: 's1', skills: ['呼吸', 'Riffing', 'Belting', 'Chest voice', 'Mix', 'Airy'], growthLevel: 3, studentNo: 1001, gender: 'M', joinedAt: monthsAgo(14), name: '王小明', role: 'Student', status: 'Active', email: 'xiaoming@demo.local', password: 'demo1234', phone: '0912-345-678', lineId: 'xiaoming_w', lineLinked: true, voiceType: '男高音', goal: '想在年底婚禮上唱一首歌，高音更穩定。', grade: 'Grade 4', credits: 5, packageSize: 8, createdAt: nowIso() },
     { id: 's2', studentNo: 1002, gender: 'F', joinedAt: monthsAgo(9), name: '林佳穎', role: 'Student', status: 'Active', email: 'jiaying@demo.local', password: 'demo1234', phone: null, lineId: 'jiaying', lineLinked: true, voiceType: '女高音', goal: null, grade: 'Grade 2', credits: 3, packageSize: 4, createdAt: nowIso() },
     { id: 's3', studentNo: 1003, gender: 'F', joinedAt: monthsAgo(22), classType: 'group', name: '陳雅婷', role: 'Student', status: 'Active', email: 'yating@demo.local', password: 'demo1234', phone: null, lineId: 'yating', lineLinked: true, voiceType: '女中音', goal: null, grade: 'Grade 3', credits: 1, packageSize: 4, createdAt: nowIso() },
     { id: 's4', studentNo: 1004, gender: 'M', joinedAt: monthsAgo(5), name: '張家豪', role: 'Student', status: 'Active', email: 'jiahao@demo.local', password: 'demo1234', phone: null, lineId: 'jiahao', lineLinked: true, voiceType: '男中音', goal: null, grade: 'Grade 5', credits: 5, packageSize: 8, createdAt: nowIso() },
@@ -112,6 +113,7 @@ function seed() {
   const changes: MChange[] = [
     { id: 'c1', lessonId: 'l3', toDate: nextOpen(8), toTime: '18:30', reason: '那天公司臨時要加班，抱歉！', status: 'Open' },
     { id: 'c2', lessonId: 'l7', toDate: nextOpen(1), toTime: '14:00', reason: '想換到下午。', status: 'Open' },
+    { id: 'c9', lessonId: 'l12', toDate: iso(-9), toTime: '17:00', reason: '原本那天要出差。', status: 'Approved', decidedAt: Date.now() - 12 * 864e5, prev: { date: iso(-10), time: '14:00' } }, // a past lesson that was moved → ↻
     { id: 'c3', lessonId: 'l10', toDate: nextOpen(11), toTime: '14:00', reason: '那天早上我要參加研習，下午可以嗎？', status: 'Open', by: 'teacher', createdAt: Date.now() - 36e5 },
   ];
   const alerts: MAlert[] = [
@@ -146,7 +148,8 @@ function seed() {
     .map((code, i) => ({ id: `rl${i + 1}`, sortOrder: i + 1, title: ['發聲暖身', '高音練習', '學生成果', '換聲區小技巧', '敬拜團培訓', '工作室日常', '合唱練習', '演出花絮'][i], url: `https://www.instagram.com/reel/${code}/`, coverUrl: null, deletedAt: null }));
   const resetTokens: MResetToken[] = [];
   const notes: MNote[] = [];
-  return { notes, users, lessons, changes, alerts, payments, consults, consents, privacyRequests, reports, fees, resetTokens, reels };
+  const lessonNotes: LessonNote[] = [];
+  return { notes, lessonNotes, users, lessons, changes, alerts, payments, consults, consents, privacyRequests, reports, fees, resetTokens, reels };
 }
 
 export const db = seed();

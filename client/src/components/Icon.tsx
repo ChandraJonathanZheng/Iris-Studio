@@ -5,7 +5,7 @@
 import {
   ArrowCounterClockwise, ArrowRight, Bell, CalendarBlank, CalendarPlus, CaretDown, CaretLeft, CaretRight, ChatCircleDots, Check, Clock, DotsThree, EnvelopeSimple,
   Eye, EyeSlash, GearSix, House, Image, InstagramLogo, Info, Warning, MagnifyingGlass, Microphone, Minus, MusicNotes, Package, Pause, Play, SkipBack, SkipForward,
-  Plus, Receipt, Repeat, PencilSimple, NotePencil, ClipboardText, Prohibit, UserCircle, CaretDoubleLeft, CaretDoubleRight, ArrowArcLeft, SignOut, Sparkle, Star, Trash, Tray, UploadSimple, User, Users, X,
+  Plus, Receipt, Repeat, BookOpen, ShieldCheck, PlayCircle, PencilSimple, NotePencil, ClipboardText, Prohibit, UserCircle, IdentificationCard, Notebook, ListBullets, Camera, CaretDoubleLeft, CaretDoubleRight, ArrowArcLeft, SignOut, Sparkle, Star, Trash, Tray, UploadSimple, User, Users, X,
   type Icon as PhosphorIcon, type IconWeight,
 } from '@phosphor-icons/react';
 
@@ -13,7 +13,7 @@ const ICONS = {
   home: House, book: CalendarPlus, calendar: CalendarBlank, bell: Bell, user: User, users: Users, inbox: Tray,
   receipt: Receipt, msg: ChatCircleDots, chev: CaretRight, chevDown: CaretDown, back: CaretLeft, more: DotsThree, repeat: Repeat,
   check: Check, x: X, upload: UploadSimple, search: MagnifyingGlass, arrow: ArrowRight, info: Info, warning: Warning, image: Image, instagram: InstagramLogo,
-  edit: PencilSimple, note: NotePencil, homework: ClipboardText, ban: Prohibit, profile: UserCircle, first: CaretDoubleLeft, last: CaretDoubleRight, restore: ArrowArcLeft,
+  shield: ShieldCheck, reel: PlayCircle, lessons: BookOpen, edit: PencilSimple, note: NotePencil, homework: ClipboardText, ban: Prohibit, profile: UserCircle, idCard: IdentificationCard, notebook: Notebook, list: ListBullets, camera: Camera, first: CaretDoubleLeft, last: CaretDoubleRight, restore: ArrowArcLeft,
   undo: ArrowCounterClockwise, minus: Minus, plus: Plus, trash: Trash, gear: GearSix, mail: EnvelopeSimple, clock: Clock, mic: Microphone, music: MusicNotes,
   star: Star, eye: Eye, eyeOff: EyeSlash, logout: SignOut, play: Play, pause: Pause, skipBack: SkipBack, skipFwd: SkipForward, sparkle: Sparkle, pkg: Package,
 } satisfies Record<string, PhosphorIcon>;
@@ -43,7 +43,21 @@ function LineMark({ size = 20, ...rest }: { size?: number; weight?: IconWeight }
     </svg>
   );
 }
-const CUSTOM = { reschedule: Reschedule, line: LineMark } as const;
+/**
+ * → with a longer tail: Phosphor's ArrowRight geometry (256 grid, stroke 16, round caps), shaft drawn from x=14.4
+ * instead of 40. At the 20 px size that is 25.6 units ≈ 2 px more tail; the head is untouched.
+ */
+function ArrowLong({ size = 20, weight = 'regular', ...rest }: { size?: number; weight?: IconWeight } & Record<string, unknown>) {
+  const sw = weight === 'bold' ? 24 : weight === 'light' ? 12 : 16;
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 256 256" fill="none" stroke="currentColor"
+      strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" {...rest}>
+      <line x1="14.4" y1="128" x2="216" y2="128" />
+      <polyline points="144 56 216 128 144 200" />
+    </svg>
+  );
+}
+const CUSTOM = { reschedule: Reschedule, line: LineMark, arrowLong: ArrowLong } as const;
 
 export type IconName = keyof typeof ICONS | keyof typeof CUSTOM;
 

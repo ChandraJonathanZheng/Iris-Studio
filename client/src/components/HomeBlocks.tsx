@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Icon } from './Icon';
 import { BlurImage } from './ui';
+import { LessonNoteDialog } from './LessonNoteDialog';
 import { CLASS_TYPE_LABEL, fmtDuration, initialOf, LESSON_TYPE_LABEL } from '../lib/date';
 import type { Lesson, Payment, StudentSummary } from '../lib/types';
+import { closeModal, openModal } from '../lib/modalMotion';
 
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const toMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
@@ -25,6 +27,7 @@ export function TodayTimeline({ lessons }: { lessons: Lesson[] }) {
   const [now, setNow] = useState(taipeiNowMin);
   useEffect(() => { const t = window.setInterval(() => setNow(taipeiNowMin()), 20_000); return () => window.clearInterval(t); }, []);
   const olRef = useRef<HTMLDivElement>(null);
+  const [noteFor, setNoteFor] = useState<Lesson | null>(null);
   const [nowY, setNowY] = useState<number | null>(null);
 
   const start = (l: Lesson) => toMin(l.time), end = (l: Lesson) => toMin(l.time) + l.minutes;
@@ -74,11 +77,20 @@ export function TodayTimeline({ lessons }: { lessons: Lesson[] }) {
               <p className="tl-name">{l.studentName}</p>
               <p className="tl-meta">{fmtDuration(l.minutes)} · {LESSON_TYPE_LABEL[l.type]}</p>
             </div>
+            {/* 課堂筆記: appears once the now-dot reaches this class (and stays — Iris can add or redo it any time) */}
+            {s !== 'todo' || l.noteKind ? (
+              <button type="button" className={`tl-note${l.noteKind ? ' has-note' : ''}`} onClick={() => setNoteFor(l)}
+                aria-label={`${l.studentName} ${l.time} 的課堂筆記${l.noteKind ? '（已有筆記）' : ''}`}>
+                <Icon name="notebook" size={20} weight={l.noteKind ? 'fill' : 'regular'} />
+                {l.noteKind && <span className="tl-note-dot" aria-hidden="true" />}
+              </button>
+            ) : <span className="tl-note-ph" aria-hidden="true" />}
             <span className="tl-state">{running(l) && l.status !== 'Attended' ? '上課中' : s === 'done' ? '已上過' : isNext ? '下一堂' : l.change ? '改時間中' : '已預約'}</span>
           </li>
         );
       })}
       </ol>
+      {noteFor && <LessonNoteDialog lesson={noteFor} onClose={() => setNoteFor(null)} />}
     </div>
   );
 }
@@ -131,22 +143,19 @@ function ReceiptPop({ p, from, onClosed }: { p: Payment; from: HTMLElement; onCl
     return `translate(${a.left + a.width / 2 - (b.left + b.width / 2)}px,${a.top + a.height / 2 - (b.top + b.height / 2)}px) scale(${Math.max(.04, a.width / b.width)},${Math.max(.02, a.height / b.height)})`;
   };
   useEffect(() => {
-    dlg.current?.showModal();
+    openModal(dlg.current);
     if (reduceMotion()) return;
     const t = delta();
     box.current!.animate([{ transform: t, opacity: .2, borderRadius: '40px' }, { transform: 'scale(1.03)', opacity: 1, offset: .75 }, { transform: 'none', opacity: 1, borderRadius: '22px' }],
       { duration: 520, easing: 'cubic-bezier(.3,.7,.2,1)' });
     shade.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, easing: 'ease-out' });
   }, []);
+  // shared close motion (lib/modalMotion): swell → shrink back into the 查看收據 text, fading out; then the text fades back in
   const close = () => {
     if (closing.current) return; closing.current = true;
-    const done = () => { dlg.current?.close(); onClosed(); };
-    if (reduceMotion() || !box.current) return done();
-    const t = delta();
-    box.current.animate([{ transform: 'none', opacity: 1 }, { transform: t, opacity: 0 }], { duration: 380, easing: 'cubic-bezier(.5,0,.75,0)', fill: 'forwards' });
-    shade.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 380, easing: 'ease-in', fill: 'forwards' }).finished.then(() => {
-      done();
-      from.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' }); // the text comes back
+    closeModal(dlg.current, { box: box.current, shade: shade.current, from }).then(() => {
+      onClosed();
+      if (!reduceMotion()) from.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' });
     });
   };
   return (

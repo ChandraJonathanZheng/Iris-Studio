@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { ErrorCard, ListSkeleton, PageHead } from '../components/ui';
 import { REEL_MAX, useDeleteReel, useReorderReels, useSaveReel, useTeacherReels } from '../lib/queries';
 import type { Reel } from '../lib/types';
+import { closeModal, openModal } from '../lib/modalMotion';
 
 /** Same rules as the server (ReelEndpoints.UrlProblem): https, instagram.com/reel|reels|p/<code>, no CJK characters. */
 const IG_REEL_RE = /^https:\/\/(www\.)?instagram\.com\/(reel|reels|p)\/[A-Za-z0-9_-]+\/?(\?[\x21-\x7E]*)?$/;
@@ -111,12 +112,13 @@ export function ReelsAdmin() {
 
 function DeleteReelDialog({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { ref.current?.showModal(); }, []);
+  useEffect(() => { openModal(ref.current); }, []);
+  const close = () => closeModal(ref.current, { box: ref.current }); // the dialog itself is the panel
   return (
-    <dialog ref={ref} className="rv-dlg" aria-labelledby="rv-dlg-t" onClose={onCancel} onClick={(e) => { if (e.target === e.currentTarget) ref.current?.close(); }}>
+    <dialog ref={ref} className="rv-dlg" aria-labelledby="rv-dlg-t" onClose={onCancel} onCancel={(e) => { e.preventDefault(); close(); }} onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
       <p id="rv-dlg-t">你確定要刪除這一則？</p>
       <div className="rv-dlg-acts">
-        <button type="button" className="rv-cap ghost" onClick={() => ref.current?.close()} autoFocus>返回</button>
+        <button type="button" className="rv-cap ghost" onClick={close} autoFocus>返回</button>
         <button type="button" className="rv-cap red" onClick={onConfirm}>刪除</button>
       </div>
     </dialog>

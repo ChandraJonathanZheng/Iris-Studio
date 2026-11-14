@@ -2,6 +2,8 @@ import { SaveButton, useSaveFlow } from '../components/SaveButton';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
+import { SlotCompare } from '../components/RescheduleCard';
+import { closeModal, openModal } from '../lib/modalMotion';
 import { useCurrentUser } from '../components/Shell';
 import { RouteSheet } from '../components/Sheet';
 import { SlotPicker } from '../components/SlotPicker';
@@ -87,12 +89,8 @@ function ProposalCard({ l }: { l: Lesson }) {
   return (
     <section className="sh-card sh-prop" aria-labelledby={`prop-${l.id}`}>
       <p className="overline" id={`prop-${l.id}`}><Icon name="reschedule" size={14} weight="bold" /> 老師想調整上課時間</p>
-      <p className="sh-prop-time">
-        <span className="sh-prop-old"><span className="sr-only">原時段 </span>{fmtSlot(l.date, l.time)}</span>
-        <span aria-hidden="true">→</span>
-        <b><span className="sr-only">改到 </span>{fmtSlot(c.toDate, c.toTime)}</b>
-      </p>
-      {c.reason && <p className="sh-prop-msg">老師：「{c.reason}」</p>}
+      <SlotCompare className="sh-prop-cmp" from={{ date: l.date, time: l.time }} fromLabel="目前時段" to={{ date: c.toDate, time: c.toTime }} toLabel="老師提議改至" />
+      {c.reason && <p className="sh-prop-msg"><span className="cm-label">老師</span>：「{c.reason}」</p>}
       <p className="sh-prop-note">你同意後才會改。不方便的話，原本的時段會保留。</p>
       <div className="sh-prop-actions">
         <button className="btn secondary" disabled={answer.isPending} onClick={() => reply(false)}>不方便</button>
@@ -371,8 +369,8 @@ export function Move() {
   return (
     <>
       <PageHead title="申請改時間" back />
-      <div className="inner"><p className="overline" style={{ marginBottom: 8 }}>目前時段</p>
-        <div className="row"><div className="grow stack g1"><p className="t">{fmtSlot(l.date, l.time)}</p><p className="caption">{l.room}</p></div><Tag tone="ok">已確認</Tag></div></div>
+      <SlotCompare from={{ date: l.date, time: l.time }} fromLabel="目前時段" fromHint={`${l.room} · 老師確認前會幫你保留`}
+        to={date && time ? { date, time } : null} toLabel="希望改至" />
       <form className="stack g4" onSubmit={(e) => { e.preventDefault(); if (!date || !time) return;
         ask.mutate({ lessonId: l.id, date, time, reason }, { onSuccess: () => { nav('/app', { replace: true, viewTransition: true }); toast({ text: '已送出申請，等待老師回覆' }); } }); }}>
         <section className="card">
@@ -487,16 +485,17 @@ function ReportDialog({ lesson, onClose }: { lesson: Lesson; onClose: () => void
   const fee = studio.data?.cancelFee ?? 500;
   useEffect(() => {
     const d = ref.current; if (!d) return;
-    d.showModal();
+    openModal(d);
     document.documentElement.classList.add('modal-open');
     return () => document.documentElement.classList.remove('modal-open');
   }, []);
-  const close = () => ref.current?.close();
+  const close = () => closeModal(ref.current);
   const send = () => report.mutate({ lessonId: lesson.id, reason, key }, {
     onSuccess: () => { toast({ text: '已送出回報，老師確認後會通知你' }); close(); },
   });
   return (
     <dialog ref={ref} className="rcpt rpt" aria-labelledby="rpt-t" aria-describedby="rpt-d" onClose={onClose}
+      onCancel={(e) => { e.preventDefault(); if (!report.isPending) close(); }}
       onClick={(e) => { if (e.target === e.currentTarget && !report.isPending) close(); }}>
       <div className="rcpt-box">
         <h2 id="rpt-t" className="rpt-h">要申請取消這堂課嗎？</h2>
@@ -557,7 +556,7 @@ export function QuotaPage() {
               <div className="list">{pays.data.map((p) => (
                 <div className="li" key={p.id}><div className="grow stack g1"><p className="t">{p.trial ? '單堂課 · ' : ''}{p.packageSize} 堂 · {fmtMoney(p.amount)}</p>
                   {!!p.fees?.length && <p className="caption">含取消費 {fmtMoney(p.fees.reduce((n, f) => n + f.amount, 0))}</p>}
-                  <p className="caption">{fmtRelative(p.uploadedAt)} 上傳{p.rejectReason ? ` · 退回原因：${p.rejectReason}` : ''}</p></div>
+                  <p className="caption">{fmtRelative(p.uploadedAt)} 上傳{p.rejectReason && <> · <span className="cm-label">退回原因</span>：{p.rejectReason}</>}</p></div>
                   <Tag tone={p.status === 'Confirmed' ? 'ok' : p.status === 'Rejected' ? 'bad' : 'warn'}>{{ Confirmed: '已確認', Rejected: '已退回', Pending: '確認中' }[p.status]}</Tag></div>
               ))}</div>
             ) : <p className="caption">還沒有付款紀錄。</p>}
