@@ -71,7 +71,6 @@ Version **13 Nov 2026 v1.0** (first written spec; adds the 學生列表 / 個人
 | GET | `/api/teacher/consults` | Teacher |  | Teacher |
 | POST | `/api/teacher/consults/{id:guid}/contacted` | Teacher |  | Teacher |
 | GET | `/api/teacher/lessons` | Teacher |  | Teacher |
-| POST | `/api/teacher/lessons` | Teacher | required | Teacher |
 | POST | `/api/teacher/lessons/{id:guid}/cancel` | Teacher |  | Teacher |
 | POST | `/api/teacher/lessons/{id:guid}/proposals` | Teacher |  | Teacher |
 | POST | `/api/teacher/lessons/{id:guid}/undo-cancel` | Teacher |  | Teacher |
@@ -166,11 +165,41 @@ Errors: `400 validation` (請輸入內容。 / 內容最多 1000 字。 / 類型
 ### `GET /api/teacher/students/{id}/notes`
 All notes + homework for one student, newest first. (No screen yet — the list will go on the 個人資料 page.)
 
+### Removed 13 Nov: `POST /api/teacher/lessons`
+Iris no longer books for students; only `POST /api/student/lessons` creates a lesson.
+
 ### Approval (`POST /api/teacher/applications/{id}/approve`)
 Now also assigns `studentNo` (max + 1, from 1001) and `joinedOn` = today, if not set yet.
 
 ### `GET /api/teacher/payments?status=…`
 Each payment now carries `studentAvatarUrl` (for 最近付款記錄 on the teacher home; the home takes the 3 newest by `uploadedAt`).
+
+### 課程 page (13 Nov, evening)
+| Route | Body → result |
+|---|---|
+| `PATCH /api/teacher/students/{id}/basics` | `{ voiceType, grade }` (each ≤ 20, empty = not set) → 204 |
+| `PUT /api/teacher/students/{id}/skills` | `{ skills: string[] }` — whole list, trimmed, de-duplicated, ≤ 12 × ≤ 20 chars → `200 string[]` |
+| `PATCH /api/teacher/students/{id}/growth` | `{ level: 0–10 }` → 204 |
+
+`StudentDetail` also carries `skills`, `growthLevel`, `missed` (缺課 = cancelled late without refund, or through 回報), `totalLessons` (all non-cancelled lessons) and `movedLessonIds` (lessons with an approved 改時間 → ↻ in 上課紀錄).
+
+### 課堂筆記 (14 Nov)
+| Route | Body → result |
+|---|---|
+| `GET /api/teacher/lessons/{id}/note` | → `200 LessonNote` · `404 no_note` when there is none yet |
+| `PUT /api/teacher/lessons/{id}/note` | multipart `kind=text&html=…` or `kind=image&file=…` (JPG/PNG/WEBP ≤ 5 MB) → `200 LessonNote`; replaces the old note. `409 not_started` before the class starts, `409 cancelled` |
+| `GET /api/teacher/lesson-notes/files/{name}` | the WebP (teacher only, private cache) |
+
+No DELETE on purpose: 刪除 in the dialog only clears the preview on the client; the server copy stays until a new note is saved.
+`LessonNote = { lessonId, studentId, kind: 'text'|'image', html, imageUrl, fileName, lqip, width, height, updatedAt }`. In `GET /api/teacher/overview` (`today`) and `GET /api/teacher/lessons` (行事曆), each lesson carries `noteKind` (`'text' | 'image' | null`) for the 今天的課 icon.
+
+### 個人資料 photo / banner (14 Nov)
+| Route | Body → result |
+|---|---|
+| `POST /api/teacher/students/{id}/avatar` | multipart `file` (JPG/PNG/WEBP ≤ 5 MB) → `{ url }` — WebP ≤ 512 px, old file deleted |
+| `POST /api/teacher/students/{id}/cover` | same → `{ url }` — WebP ≤ 1800 px; `StudentDetail.coverUrl` |
+
+Files live in `Studio:AvatarsFolder` and are served by `GET /api/public/avatars/{name}` (random names). `Users.CoverUrl` is a new nullable column.
 
 ## 5. Added 12 Nov 2026 (summary)
 

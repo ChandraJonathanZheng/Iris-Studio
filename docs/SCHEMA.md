@@ -88,6 +88,8 @@ erDiagram
 | Gender | text(8) | ✓ | Male / Female |
 | JoinedOn | date | ✓ | start of lessons (上課資年); set on approval, editable |
 | DisabledAtUtc | timestamp | ✓ | 停用 time; null = active. Disabled students can't book |
+| Skills | text[] | | 技能徽章 (≤ 12, each ≤ 20) — 課程 page |
+| GrowthLevel | int | | 成長等級, **check 0–10**, teacher-only |
 
 ### `Lessons`
 | Column | Type | Null | Notes |
@@ -372,6 +374,23 @@ Seeded from `Studio:Packages` the first time; Iris edits them (`PUT /api/teacher
 | Text | varchar(1000) | | **check** `char_length("Text") BETWEEN 1 AND 1000` |
 | ByUserId | uuid | | who wrote it (Iris) |
 | CreatedAtUtc | timestamp | | index (StudentId, CreatedAtUtc) |
+
+### `LessonNotes` (課堂筆記, 14 Nov)
+One per lesson. Rich text **or** one screenshot.
+| Column | Type | Null | Notes |
+|---|---|---|---|
+| Id | uuid | | PK |
+| LessonId | uuid | | FK → Lessons (cascade) · **unique** — saving again replaces the note |
+| StudentId | uuid | | copied from the lesson · index — binds the note (and its file) to the student |
+| Kind | text(10) | | Text / Image |
+| Html | varchar(5000) | ✓ | Kind = Text: sanitised HTML (b, i, u, ul, ol, li, p, br, div — no attributes) |
+| FileName | varchar(200) | ✓ | Kind = Image: the file id, `yyyyMMdd_學生姓名_Class_Notes.webp` (`…_HHmm.webp` for a 2nd lesson that day) in `Studio:LessonNotesFolder` |
+| Lqip, Width, Height | text / int | ✓ | blurred preview + size of the WebP |
+| ByUserId | uuid | | Iris |
+| UpdatedAtUtc | timestamp | | |
+
+**check** `CK_LessonNotes_Payload`: Text ⇒ Html set and FileName null; Image ⇒ FileName set and Html null.
+Uploads are converted to WebP in memory (≤ 2000 px, EXIF removed); the original is never written to disk, and the old file is deleted once a replacement is saved.
 
 ### Derived for the 學生列表 / 個人資料 (not stored)
 | Value | Rule |

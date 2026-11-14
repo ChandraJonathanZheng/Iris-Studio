@@ -114,6 +114,10 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 | T-11 | **教師個人資料**: name, contact LINE ID + "show to students" switch, avatar (≤ 2 MB), 目前狀態 + 狀態訊息 with live preview of the student card, 儲存; separate 登入方式 card (email change needs password, LINE unlink only if another login exists). |
 | T-12 | **個資權利申請**: list with due date (15 / 30 days, overdue red); 標為已處理 needs a note. |
 | T-13 | **回報 審核** (申請 → 回報, status 待審核): card = student, lesson date/time, when it was reported. **同意** → lesson becomes 已取消（回報）, **+1 堂** back, a **取消費 NT$ 500** is added to the student's next payment; **婉拒** (reason required) → lesson stays 已上課, nothing changes. Both have 復原 (T-10) and alert the student after 10 s. Counts in the 收件匣 badge and the 學生申請 tile. |
+| T-19 | **學生 › 課程** (📖 in 學生列表 and on 個人資料): breadcrumb 首頁 / 列表 / 課程 → name + `一對一 · N 堂課` → 3-column band: **學習目標** (the student's goal) · **技能徽章** (outlined capsules, ＋ 新增 with suggestions, × removes; ≤ 12) · numbers 剩餘 (調整) · 總堂數 · **成長等級** 0–10 with (i) + 編輯 stepper · 缺課 → **課程中心**: 上課紀錄 (last 3, `Monday, 2026-11-05 16:00`, ✓ attended · ↻ moved · ✕ 回報-cancelled; → opens all) | 下一堂課 (改時間 + 筆記 capsules, big `FRI`, date, time). 上課紀錄 and 下一堂課 are two separate cards. **Iris does not book for students** — no 預約 button anywhere on the teacher side. |
+| T-20 | **編輯聲部與程度** (個人資料 › 基本資料): sheet with two dropdowns (6 voice types / Grade 1–8), only the teacher can change 程度. |
+| T-21 | **課堂筆記** (今天的課): once the now-dot reaches a class, a notebook icon appears before its status (and stays). It opens a dialog: 1. 輸入文字 (rich text, default) or 2. 上傳截圖 (converted to WebP, named `yyyyMMdd_學生_Class_Notes.webp`, original discarded, bound to the lesson and student). With a note, the icon is filled; the dialog previews it, and 刪除 clears it locally so Iris can redo it — the server keeps the old note until the new one is saved. Also on every past class in 行事曆 (14 Nov). Teacher-only for now. |
+| T-22 | **收據審核 — B Financial Highlight V2** (14 Nov): receipt card = name · `yyyy-MM-dd HH:mm 上傳` (Asia/Taipei) · status badge top-right; 購買課堂 and 付款金額 in two highlighted panels; note only when present; actions 退回 / 審核收據 (opens the receipt — credits are added only from inside it, after the amount check). Status labels: Pending 待審核 · Confirmed 已確認 (read-only) · Rejected 需補件 (reason + 等待學生重新上傳). Confirm is not optimistic: the receipt stays open with a spinner until the server confirms; errors show inline. **Open:** 已婉拒 (final rejection, no re-upload) has no backend status yet. |
 | T-14 | **給筆記 / 給作業** (學生列表 ⋯): centred dialog with a textarea (1–1000 chars, counter). 筆記 = only Iris sees it; 作業 = the student gets a 通知 (kind `homework`). Saved with the shared 儲存 motion. |
 | T-15 | **停用 / 重新啟用** (學生列表 ⋯): confirm dialog 「停用 X？」; a disabled student keeps lessons, credits and history but **cannot book new lessons** (Iris still can); 重新啟用 has no confirm. |
 | T-16 | **IG Reels admin** (更多 → IG Reels): breadcrumb 設定 / 列表頁 / 編輯; list of max 8, drag the 3-line handle (or ↑↓) to sort, title links to the reel, 編輯 / 刪除 (confirm 「你確定要刪除這一則？」 返回 / 刪除, soft delete + renumber). Edit page: 排序號, IG 自訂標題 \* (≤ 60), Reels 連結 \* (checked 0.6 s after typing), 封面圖 upload (9:16 preview, 建議 1080 × 1920), 取消 / 儲存. |
@@ -178,6 +182,16 @@ Priority: **P0** = launch, **P1** = soon after, **P2** = later. Full feature lis
 
 All alerts go through one outbox (`Alert.SendAfterUtc`) and one `IAlertChannel`. Real LINE / email delivery is plugged in once Iris's LINE OA and Resend account exist.
 
+**課堂改期申請 notifications (B1, 14 Nov 2026).** Every reschedule event notifies both sides, in-app (the Alert row) and by email (`EmailAlertChannel`, alerts whose Source is `change:…` only):
+
+| Event | Student | Teacher |
+|---|---|---|
+| Student submits 改期申請 | — | 學生申請改期 (immediately) |
+| Iris 同意改期 / 婉拒 | 老師同意改時間 / 老師無法改到這個時間 | 已同意改期 / 已婉拒改期 |
+| Student answers Iris's 提議 | — | 學生已同意改期 / 學生不方便改期 |
+
+Decisions by Iris are delayed by the undo window; Undo drops both alerts (same Source), so no "never mind" email is sent. Until a real provider is configured, `LogEmailSender` writes the email to the log. The teacher has no alert list yet; her in-app signals are the 收件匣 badge and the toast.
+
 ## 7. Success metrics (2 months after launch)
 
 | Metric | Target |
@@ -217,7 +231,7 @@ React 19 · Vite 6 · TypeScript · React Router 7 · TanStack Query · Vaul (sh
 | 10 | Re-apply after being declined? | **Pending** |
 | 11 | Unify labels? | Yes: 一對一 / 團體課 / 體驗課 everywhere |
 | 12 | Automatic payment reminder? | Yes, when the last credit is booked |
-| 13 | Teacher books for a student? | Yes, screen built (學生詳細 → 預約課程) |
+| 13 | Teacher books for a student? | **No** (13 Nov) — only students book. Screen, route and endpoint removed |
 | 14 | Can a student cancel a lesson that has already passed? | Yes, via **回報** → Iris reviews. If she agrees: +1 堂 back and 取消費 NT$ 500 on the next payment (12 Nov 2026) |
 | 15 | How long after the lesson can a student 回報? | **Pending** — built with 7 days (`Studio:ReportDays`), confirm with Iris |
 | 16 | Can Iris waive the 取消費 for one report (illness, emergency)? | **Pending** — built as a 這次免收取消費 tick box on the 回報 card (off by default), confirm with Iris |
@@ -228,7 +242,7 @@ Still open: real content (photos, bio, testimonials with consent), the real 體�
 ## 11. Release checklist
 
 - [ ] `dotnet build`, then `dotnet ef migrations add Initial` + `database update` (includes 13 Nov: `Users.StudentNo/Gender/JoinedOn/DisabledAtUtc`, `StudentNotes`)
-- [ ] Decide where 調整堂數 and 幫學生預約 are opened from now that the student page has no lessons block (T-4)
+- [x] 調整堂數 lives on 學生 › 課程 (剩餘 › 調整); 幫學生預約 removed (13 Nov)
 - [ ] Real content, prices and bank details (env / user-secrets)
 - [ ] Strong teacher password; HTTPS; `Cookie.SecurePolicy = Always`
 - [ ] LINE Login + Messaging channels under the same provider, and the Official Account **linked to the LOGIN channel** (needed for the add-friend prompt); Resend domain verified

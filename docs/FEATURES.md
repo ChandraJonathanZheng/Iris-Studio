@@ -68,7 +68,7 @@ Priorities match `PRD.md` (P0 launch · P1 soon · P2 later).
 | D13 | 可預約時段 — 特殊日期 | P0 | ✅ | Date, 全天休息 / 自訂時段 (multi-range), note; shows usual hours for that weekday; warns about existing lessons (never auto-cancels) |
 | D14 | 可預約時段 — 預約設定 | P0 | ✅ | 每堂課時長, 課程間隔, 可提前預約 (selects); students' slots update immediately |
 | D15 | ⌘K command menu | P1 | ✅ | Jump to any page / common action |
-| D16 | Book for a student | P0 | ✅ | 學生詳細 → ＋ 預約課程 sheet: slot picker (first open day preselected), "uses 1 堂, N left", student gets 老師新增了一堂課; blocked with a link to 調整堂數 at 0 credits; idempotent |
+| D16 | ~~Book for a student~~ | — | ❌ removed 13 Nov | Only students book. Was: 學生詳細 → ＋ 預約課程 sheet: slot picker (first open day preselected), "uses 1 堂, N left", student gets 老師新增了一堂課; blocked with a link to 調整堂數 at 0 credits; idempotent |
 | D17 | Automatic reminder at 0 credits | P0 | 🟡 | Queued by the booking that uses the last credit; skipped if a receipt is pending or a reminder went out < 24 h ago; dropped if that lesson is cancelled with refund. Delivery as D7 |
 | D18 | Propose a new time | P0 | ✅ | Sheet from 學生詳細, 行事曆 or 婉拒: slot picker + message; replaces the student's open request; lesson moves only on the student's 可以 |
 | D19 | Automatic attendance | P0 | ✅ | Booked lessons become 已上課 once their end time passes (server job every minute) |

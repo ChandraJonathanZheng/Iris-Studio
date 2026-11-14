@@ -165,7 +165,7 @@ Iris's settings page shows the exact same result as a preview (`可預約 6 堂�
 4. The lesson's `Type` is copied from the student's class type (一對一 / 團體課 / 體驗課).
 5. If this booking used the **last credit**, an automatic 繳費提醒 is queued (see 4.8b).
 6. 409 `slot_taken` if someone was faster: "沒有扣堂數，請選其他時段" and the slots refresh.
-7. **Iris books for a student**: 學生詳細 → ＋ 預約課程 → same slot picker → `POST /api/teacher/lessons?studentId=` (idempotent). Same rules and transaction, uses one of the student's credits, student gets 老師新增了一堂課 (+10 s).
+7. ~~Iris books for a student~~ — removed 13 Nov: only students book (`POST /api/student/lessons`). Same rules and transaction, uses one of the student's credits, student gets 老師新增了一堂課 (+10 s).
 
 ### 4.5 Cancel (student or Iris)
 - Student: sheet tells *before* confirming whether the credit comes back (≥ 24 h). `POST …/lessons/{id}/cancel` → status Cancelled, refund if eligible → toast with 復原 (`undo-cancel`, 30 s, only if the slot is still free).
@@ -323,7 +323,7 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 | PATCH | `/api/teacher/students/{id}/class-type` · `/grade` | teacher | 編輯 |
 | POST | `/api/teacher/students/{id}/remind` · DELETE `/reminders/{rid}` | teacher | 通知學生繳學費 / undo |
 | GET | `/api/teacher/requests` | teacher | 改時間 (student requests) + 新學生 + proposals |
-| POST | `/api/teacher/change-requests/{id}/approve` · `/decline` · `/undo` | teacher | decide |
+| POST | `/api/teacher/change-requests/{id}/approve` · `/decline` · `/undo` | teacher | decide — approve re-checks the slot in the transaction (409 `slot_taken`); a 2nd decision → 409 `already_handled` |
 | POST | `/api/teacher/reports/{id}/approve` · `/decline` · `/undo` | teacher | decide a 回報 (+1 堂 and 取消費 on approve)  |
 | POST | `/api/teacher/applications/{id}/{approve\|decline\|undo}` | teacher | new students |
 | GET | `/api/teacher/payments?status` | teacher | 收據 |
@@ -345,7 +345,7 @@ All responses JSON; errors are `application/problem+json` with a Chinese `detail
 ## 6. Background work
 | Job | When | Does |
 |---|---|---|
-| `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (in-app only today; LINE / email adapters plug in) → sets `DeliveredAtUtc` |
+| `AlertDispatcher` | every 5 s | releases alerts with `SendAfterUtc ≤ now` → `IAlertChannel` (`EmailAlertChannel`: email for `change:…` alerts, everything else in-app only; a LINE adapter plugs in later) → sets `DeliveredAtUtc` |
 | `RetentionService` | every 6 h | deletes expired data: reset links 1 day after expiry, idempotency 24 h, consults 12 mo, read alerts 12 mo, handled privacy requests 3 y (`Studio:Retention`, proposed values) |
 | `AttendanceSettler` | every minute (inside `AlertDispatcher`) | Booked lessons whose end time has passed → **Attended**; open change requests on them → Declined |
 
@@ -365,7 +365,7 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   direction LR
-  [*] --> Booked: student books / Iris books
+  [*] --> Booked: student books
   Booked --> Booked: moved (approved request)
   Booked --> Cancelled: cancelled before start
   Cancelled --> Booked: 復原 within 30 s (slot still free)
@@ -431,7 +431,6 @@ stateDiagram-v2
 | 通知學生繳學費 | Reminder (Iris's own text) | 10 s |
 | Booking used the last credit | Reminder (automatic, max 1 per 24 h, not if a receipt is pending) | 10 s |
 | Iris proposes a new time | Proposal (old → new + her message) | 10 s |
-| Iris books for the student | Added | 10 s |
 | 回報 approved / declined | Report — 老師同意取消這堂課 (+1 堂, 取消費 NT$ 500 on the next payment, or 不收取消費) / 老師無法取消這堂課 (Iris's reason) | 10 s |
 
 Iris's side has no alert list; her **counters** (待確認收據, 學生申請 = 改時間 + 回報, 新學生, 諮詢) and the 申請 / 付款 badges are computed live from the data.
