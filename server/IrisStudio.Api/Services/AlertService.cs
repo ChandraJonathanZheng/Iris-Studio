@@ -39,6 +39,24 @@ public class InAppOnlyChannel : IAlertChannel
     public Task SendAsync(User user, Alert alert, CancellationToken ct) => Task.CompletedTask;
 }
 
+/// <summary>
+/// In-app + email for reschedule alerts (Source "change:…": 申請 / 同意 / 婉拒 / 學生回覆). The in-app copy is the Alert row
+/// itself; this adds the email. Other alert kinds stay in-app only until the LINE vs email decision (PRD §9 Q2) —
+/// widen <see cref="Emails"/> when that's settled. An email failure is logged, never retried forever, and never
+/// blocks the in-app alert (the dispatcher still marks it delivered).
+/// </summary>
+public class EmailAlertChannel(IEmailSender email, ILogger<EmailAlertChannel> log) : IAlertChannel
+{
+    private static bool Emails(Alert a) => a.Source?.StartsWith("change:", StringComparison.Ordinal) == true;
+
+    public async Task SendAsync(User user, Alert alert, CancellationToken ct)
+    {
+        if (!Emails(alert) || string.IsNullOrWhiteSpace(user.Email)) return;
+        try { await email.SendAsync(user.Email, $"IRIS Studio｜{alert.Title}", alert.Body, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { log.LogWarning(ex, "Email for alert {Id} failed.", alert.Id); }
+    }
+}
+
 /// <summary>Outbox worker: every few seconds, releases alerts whose delay has passed.</summary>
 public class AlertDispatcher(IServiceScopeFactory scopes, ILogger<AlertDispatcher> log) : BackgroundService
 {

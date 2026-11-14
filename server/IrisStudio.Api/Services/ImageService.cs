@@ -31,6 +31,25 @@ public class ImageService
     }
 
     /// <summary>
+    /// 課堂筆記 screenshots: re-encode whatever came in (JPG/PNG/WEBP) as WebP, at most <paramref name="maxSide"/> px on
+    /// the long side. Decoding + re-encoding also drops EXIF (location, device) and anything hidden after the image data.
+    /// Runs in memory, so the original upload is never written to disk.
+    /// </summary>
+    public static async Task<(byte[] Bytes, int Width, int Height)> ToWebpAsync(Stream s, CancellationToken ct, int maxSide = 2000, int quality = 80)
+    {
+        s.Position = 0;
+        using var img = await Image.LoadAsync(s, ct);
+        img.Mutate(x => x.AutoOrient());
+        if (img.Width > maxSide || img.Height > maxSide)
+            img.Mutate(x => x.Resize(new ResizeOptions { Size = new Size(maxSide, maxSide), Mode = ResizeMode.Max }));
+        img.Metadata.ExifProfile = null;
+        using var ms = new MemoryStream();
+        await img.SaveAsWebpAsync(ms, new WebpEncoder { Quality = quality }, ct);
+        s.Position = 0;
+        return (ms.ToArray(), img.Width, img.Height);
+    }
+
+    /// <summary>
     /// 16 px wide JPEG as a data: URL (~300 bytes). The client shows it blurred while the full image loads (#8),
     /// so the box never sits empty or jumps when the picture arrives.
     /// </summary>

@@ -26,8 +26,10 @@ public static class TeacherEndpoints
                 await db.Users.CountAsync(u => u.Role == Role.Student && u.Status == UserStatus.Pending && !u.Declined, ct),
                 await db.Consults.CountAsync(c => !c.Contacted, ct));
             var outIds = await db.Users.Where(u => u.Role == Role.Student && u.Status == UserStatus.Active && u.Credits == 0).Select(u => u.Id).ToListAsync(ct);
+            var todayIds = lessons.Select(l => l.Id).ToList();
+            var notes = await db.LessonNotes.AsNoTracking().Where(n => todayIds.Contains(n.LessonId)).ToDictionaryAsync(n => n.LessonId, n => n.Kind, ct);
             return TypedResults.Ok(new OverviewDto(
-                lessons.Select(l => Map.Lesson(l, o.Value.Room, null)).ToArray(), counts,
+                lessons.Select(l => Map.Lesson(l, o.Value.Room, null) with { NoteKind = notes.TryGetValue(l.Id, out var k) ? (k == LessonNoteKind.Text ? "text" : "image") : null }).ToArray(), counts,
                 await Summaries(db, clock, outIds, ct)));
         });
 
@@ -38,15 +40,12 @@ public static class TeacherEndpoints
                 .OrderBy(l => l.Date).ThenBy(l => l.Time).ToListAsync(ct);
             var ids = lessons.Select(l => l.Id).ToList();
             var open = await db.ChangeRequests.AsNoTracking().Where(c => ids.Contains(c.LessonId) && c.Status == ChangeStatus.Open).ToListAsync(ct);
-            return TypedResults.Ok(lessons.Select(l => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id))).ToArray());
+            var notes = await db.LessonNotes.AsNoTracking().Where(n => ids.Contains(n.LessonId)).ToDictionaryAsync(n => n.LessonId, n => n.Kind, ct);
+            return TypedResults.Ok(lessons.Select(l => Map.Lesson(l, o.Value.Room, open.FirstOrDefault(c => c.LessonId == l.Id))
+                with { NoteKind = notes.TryGetValue(l.Id, out var k) ? (k == LessonNoteKind.Text ? "text" : "image") : null }).ToArray());
         });
 
-        t.MapPost("/lessons", async (BookRequest r, Guid studentId, BookingService booking, CancellationToken ct) =>
-        {
-            if (!Map.TryParseSlot(r.Date, r.Time, out var d, out var tm)) return Problems.Of(400, "validation", "日期或時間格式不正確。");
-            var l = await booking.BookAsync(studentId, d, tm, byTeacher: true, ct);
-            return Results.Created($"/api/teacher/lessons/{l.Id}", new { l.Id });
-        }).AddEndpointFilter<IdempotencyFilter>();
+        // 13 Nov: Iris no longer books for students — booking is the student's own action (POST /api/student/lessons).
 
         t.MapPost("/lessons/{id:guid}/cancel", async (Guid id, BookingService booking, CancellationToken ct) =>
         {
@@ -90,7 +89,12 @@ public static class TeacherEndpoints
                 new[] { lessons.Where(l => l.Status != LessonStatus.Cancelled).Select(l => (DateOnly?)l.Date).Min(), u.JoinedOn }.Where(x => x is not null).Min() is { } first && lessons.Count > 0 ? Map.D(first) : null,
                 pays.Where(p => p.Status == PaymentStatus.Confirmed).Select(p => (DateTime?)DateTime.SpecifyKind(p.UploadedAtUtc, DateTimeKind.Utc)).Min(),
                 pays.Where(p => p.Status == PaymentStatus.Confirmed).Sum(p => p.Amount),
-                u.LineUserId is not null ? "line" : "email"));
+                u.LineUserId is not null ? "line" : "email",
+                u.Skills.ToArray(), u.GrowthLevel,
+                lessons.Count(l => l.Status == LessonStatus.Cancelled && (l.CancelledByReport || !l.Refunded)),
+                lessons.Count(l => l.Status != LessonStatus.Cancelled),
+                await db.ChangeRequests.Where(c => c.Lesson.StudentId == id && c.Status == ChangeStatus.Approved).Select(c => c.LessonId).Distinct().ToArrayAsync(ct),
+                u.CoverUrl));
         });
 
         // 通知學生繳學費 — manual payment reminder. It goes through the normal alert outbox: queued for the usual
@@ -169,6 +173,39 @@ public static class TeacherEndpoints
         // ---------- 課程方案 (packages & prices) — Iris edits them herself ----------
         t.MapPut("/packages", async (PackagesRequest r, PackageService packages, CancellationToken ct) =>
             await packages.ReplaceAsync(r.Packages, ct) is { } problem ? Problems.Of(400, "validation", problem) : Results.Ok(await packages.GetAsync(ct)));
+
+        // 技能徽章: the whole list is replaced (trimmed, de-duplicated, ≤ 12 × ≤ 20 chars)
+        t.MapPut("/students/{id:guid}/skills", async (Guid id, SkillsRequest r, AppDbContext db, CancellationToken ct) =>
+        {
+            var list = (r.Skills ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).Distinct().ToList();
+            if (list.Count > 12) return Problems.Of(400, "validation", "最多 12 個徽章。");
+            if (list.Any(x => x.Length > 20)) return Problems.Of(400, "validation", "每個徽章最多 20 個字。");
+            var u = await db.Users.FirstOrDefaultAsync(x => x.Id == id && x.Role == Role.Student, ct);
+            if (u is null) return Problems.Of(404, "not_found", "找不到學生。");
+            u.Skills = list;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(list);
+        });
+
+        // 成長等級 0–10
+        t.MapPatch("/students/{id:guid}/growth", async (Guid id, GrowthRequest r, AppDbContext db, CancellationToken ct) =>
+        {
+            if (r.Level is < 0 or > 10) return Problems.Of(400, "validation", "等級需要是 0–10。");
+            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s.SetProperty(u => u.GrowthLevel, r.Level), ct);
+            return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
+        });
+
+        // 聲部 + 程度 — Iris sets them (one sheet on 個人資料 › 基本資料). Empty = not set.
+        t.MapPatch("/students/{id:guid}/basics", async (Guid id, StudentBasicsRequest r, AppDbContext db, CancellationToken ct) =>
+        {
+            var voice = (r.VoiceType ?? "").Trim();
+            var grade = (r.Grade ?? "").Trim();
+            if (voice.Length > 20 || grade.Length > 20) return Problems.Of(400, "validation", "最多 20 個字。");
+            var n = await db.Users.Where(u => u.Id == id && u.Role == Role.Student).ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.VoiceType, voice.Length == 0 ? null : voice)
+                .SetProperty(u => u.Grade, grade.Length == 0 ? null : grade), ct);
+            return n == 0 ? Problems.Of(404, "not_found", "找不到學生。") : Results.NoContent();
+        });
 
         t.MapPatch("/students/{id:guid}/grade", async (Guid id, string grade, AppDbContext db, CancellationToken ct) =>
         {

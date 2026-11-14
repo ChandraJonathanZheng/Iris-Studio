@@ -159,6 +159,18 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         return true;
     }, ct);
 
+    // ---------- notifications to Iris (in-app record + email via the alert channel) ----------
+    private Task<string> StudentNameAsync(Guid id, CancellationToken ct) =>
+        db.Users.Where(u => u.Id == id).Select(u => u.Name).FirstAsync(ct);
+
+    /// <summary>One studio, one teacher: alerts for Iris go to the Teacher account. Same Source as the student's
+    /// alert, so an Undo (which drops queued alerts by Source) removes both — nobody gets a "never mind" email.</summary>
+    private async Task NotifyTeacherAsync(string title, string body, string source, bool delay, CancellationToken ct)
+    {
+        var teacherId = await db.Users.Where(u => u.Role == Role.Teacher).Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct);
+        if (teacherId is { } id) alerts.Add(id, AlertKind.Moved, title, body, source, delay);
+    }
+
     // ---------- change requests ----------
     public async Task<ChangeRequest> AskMoveAsync(Guid studentId, Guid lessonId, DateOnly date, TimeOnly time, string? reason, CancellationToken ct)
     {
@@ -173,6 +185,8 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         if (await IsTakenAsync(date, time, l.Id, ct, l.DurationMinutes)) throw new BizException(409, "slot_taken", "這個時段已經有人了。");
         var c = new ChangeRequest { LessonId = l.Id, ToDate = date, ToTime = time, Reason = (reason ?? "").Trim() };
         db.ChangeRequests.Add(c);
+        var name = await db.Users.Where(u => u.Id == studentId).Select(u => u.Name).FirstAsync(ct);
+        await NotifyTeacherAsync("學生申請改期", $"{name}：{Fmt(l.Date, l.Time)} → {Fmt(date, time)}" + (c.Reason.Length > 0 ? $"\n原因：{c.Reason}" : ""), $"change:{c.Id}", delay: false, ct);
         await db.SaveChangesAsync(ct); // original slot stays booked until Iris approves
         return c;
     }
@@ -191,12 +205,14 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
             l.Date = c.ToDate; l.Time = c.ToTime;
             c.Status = ChangeStatus.Approved;
             alerts.Add(l.StudentId, AlertKind.Approved, "老師同意改時間", $"{Fmt(c.PrevDate.Value, c.PrevTime.Value)} 改到 {Fmt(c.ToDate, c.ToTime)}。", $"change:{c.Id}");
+            await NotifyTeacherAsync("已同意改期", $"{await StudentNameAsync(l.StudentId, ct)}：{Fmt(c.PrevDate.Value, c.PrevTime.Value)} 改到 {Fmt(c.ToDate, c.ToTime)}，已通知學生。", $"change:{c.Id}", delay: true, ct);
         }
         else
         {
             c.Status = ChangeStatus.Declined;
             var body = string.IsNullOrWhiteSpace(message) ? $"{Fmt(l.Date, l.Time)} 的課維持不變。" : message.Trim();
             alerts.Add(l.StudentId, AlertKind.Declined, "老師無法改到這個時間", body, $"change:{c.Id}");
+            await NotifyTeacherAsync("已婉拒改期", $"{await StudentNameAsync(l.StudentId, ct)}：{Fmt(l.Date, l.Time)} 的課維持不變，已通知學生。", $"change:{c.Id}", delay: true, ct);
         }
         c.DecidedAtUtc = clock.UtcNow;
         try { await db.SaveChangesAsync(ct); }
@@ -247,6 +263,9 @@ public class BookingService(AppDbContext db, StudioClock clock, AlertService ale
         }
         else c.Status = ChangeStatus.Declined; // the lesson stays where it was
         c.DecidedAtUtc = clock.UtcNow;
+        var who = await StudentNameAsync(l.StudentId, ct);
+        await NotifyTeacherAsync(accept ? "學生已同意改期" : "學生不方便改期",
+            accept ? $"{who}：改到 {Fmt(c.ToDate, c.ToTime)}。" : $"{who}：{Fmt(l.Date, l.Time)} 的課維持不變。", $"change:{c.Id}", delay: false, ct);
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException ex) when (IsSlotConflict(ex)) { throw new BizException(409, "slot_taken", "這個時段已經不能預約了，請和老師聯絡。"); }
         return true;

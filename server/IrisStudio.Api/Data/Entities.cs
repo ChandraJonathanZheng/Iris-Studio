@@ -12,6 +12,8 @@ public enum AlertKind { Moved, Approved, Declined, Payment, Added, Welcome, Canc
 public enum Gender { Male, Female }
 /// <summary>給筆記 (only Iris sees it) or 給作業 (the student is notified and sees it).</summary>
 public enum StudentNoteKind { Note, Homework }
+/// <summary>課堂筆記: Iris writes rich text or uploads one screenshot — one or the other, never both.</summary>
+public enum LessonNoteKind { Text, Image }
 /// <summary>回報 of a past lesson. Declined is final; Withdrawn lets the student report again.</summary>
 public enum ReportStatus { Open, Approved, Declined, Withdrawn }
 /// <summary>取消費: Unpaid → Billed (on the next receipt) → Paid (receipt confirmed).</summary>
@@ -36,6 +38,8 @@ public class User
     public string? Goal { get; set; }
     public string? Grade { get; set; }
     public string? AvatarUrl { get; set; }
+    /// <summary>個人資料 banner (set by Iris). WebP under Studio:AvatarsFolder, served like avatars.</summary>
+    public string? CoverUrl { get; set; }
     /// <summary>Sessions not yet booked. DB check keeps it ≥ 0.</summary>
     public int Credits { get; set; }
     public int PackageSize { get; set; }
@@ -54,6 +58,10 @@ public class User
     public DateOnly? JoinedOn { get; set; }
     /// <summary>停用: kept with all history, but can't book new lessons. Null = active.</summary>
     public DateTime? DisabledAtUtc { get; set; }
+    /// <summary>技能徽章 Iris gives on the 課程 page (≤ 12, each ≤ 20 chars). Postgres text[].</summary>
+    public List<string> Skills { get; set; } = [];
+    /// <summary>成長等級 0–10, set by Iris; only she sees it.</summary>
+    public int GrowthLevel { get; set; }
     /// <summary>When Iris approved/declined the application (for the undo window).</summary>
     public DateTime? DecidedAtUtc { get; set; }
 
@@ -356,4 +364,27 @@ public class StudentNote
     public required string Text { get; set; }
     public Guid ByUserId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// 課堂筆記 — one per lesson (unique LessonId). Iris adds it from 今天的課 once the class has started and can replace it any
+/// time. StudentId is copied from the lesson so a student's notes can be listed without a join, and so the note stays
+/// bound to the student even if the lesson row is later cancelled.
+/// </summary>
+public class LessonNote
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid LessonId { get; set; }
+    public Lesson Lesson { get; set; } = null!;
+    public Guid StudentId { get; set; }
+    public LessonNoteKind Kind { get; set; }
+    /// <summary>Kind = Text: sanitised HTML (b/i/u/ul/ol/li/p/br only), ≤ 5000 characters.</summary>
+    public string? Html { get; set; }
+    /// <summary>Kind = Image: stored WebP file name, e.g. 20261114_王小明_Class_Notes.webp (the file id).</summary>
+    public string? FileName { get; set; }
+    public string? Lqip { get; set; }
+    public int? Width { get; set; }
+    public int? Height { get; set; }
+    public Guid ByUserId { get; set; }
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

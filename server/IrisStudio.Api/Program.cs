@@ -28,7 +28,7 @@ builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<PasswordService>();
 builder.Services.AddSingleton<IEmailSender, LogEmailSender>(); // swap for a Resend sender once the account exists
 builder.Services.AddSingleton<PasswordHasher<User>>();
-builder.Services.AddSingleton<IAlertChannel, InAppOnlyChannel>(); // swap for a LINE push channel later
+builder.Services.AddScoped<IAlertChannel, EmailAlertChannel>(); // in-app + email for 改期; add a LINE push channel later
 builder.Services.AddHostedService<AlertDispatcher>();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
@@ -119,6 +119,8 @@ app.MapSlotsAndStudent();
 app.MapTeacher();
 app.MapTeacherProfile();
 app.MapReels();
+app.MapLessonNotes();
+app.MapStudentMedia();
 app.MapPrivacy();
 
 // Unknown /api paths are real 404s; everything else is a React route.

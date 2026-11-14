@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<StudentNote> StudentNotes => Set<StudentNote>();
+    public DbSet<LessonNote> LessonNotes => Set<LessonNote>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -75,6 +76,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.LineUserId).IsUnique().HasFilter("\"LineUserId\" IS NOT NULL");
             e.HasIndex(x => x.StudentNo).IsUnique().HasFilter("\"StudentNo\" IS NOT NULL");
             e.Property(x => x.Gender).HasConversion<string>().HasMaxLength(8);
+            e.ToTable(t => t.HasCheckConstraint("CK_User_GrowthLevel", "\"GrowthLevel\" BETWEEN 0 AND 10"));
             e.ToTable(t => t.HasCheckConstraint("CK_User_Credits", "\"Credits\" >= 0"));
         });
 
@@ -93,6 +95,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Text).HasMaxLength(1000);
             e.HasIndex(x => new { x.StudentId, x.CreatedAtUtc });
             e.ToTable(t => t.HasCheckConstraint("CK_StudentNotes_Text", "char_length(\"Text\") BETWEEN 1 AND 1000"));
+        });
+        m.Entity<LessonNote>(e =>
+        {
+            e.HasIndex(x => x.LessonId).IsUnique(); // one note per lesson: a new save replaces it
+            e.HasIndex(x => x.StudentId);
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.Html).HasMaxLength(5000);
+            e.Property(x => x.FileName).HasMaxLength(200);
+            e.HasOne(x => x.Lesson).WithOne().HasForeignKey<LessonNote>(x => x.LessonId).OnDelete(DeleteBehavior.Cascade);
+            // exactly one payload, matching the kind
+            e.ToTable(t => t.HasCheckConstraint("CK_LessonNotes_Payload",
+                "(\"Kind\" = 'Text' AND \"Html\" IS NOT NULL AND \"FileName\" IS NULL) OR (\"Kind\" = 'Image' AND \"FileName\" IS NOT NULL AND \"Html\" IS NULL)"));
         });
         m.Entity<InstagramReel>(e => { e.Property(x => x.Title).HasMaxLength(60); e.Property(x => x.Url).HasMaxLength(300); e.HasQueryFilter(x => x.DeletedAt == null); e.HasIndex(x => x.SortOrder); });
         // one row per package size; at most one 單堂課 (partial unique index)

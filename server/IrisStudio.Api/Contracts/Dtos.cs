@@ -12,7 +12,9 @@ public record MeDto(Guid Id, string Name, string Role, string Status, string? Em
 
 public record ChangeInfoDto(Guid Id, string ToDate, string ToTime, string Reason, string By);
 public record LessonDto(Guid Id, string Date, string Time, string Status, string Type, int Minutes, string Room, Guid StudentId, string StudentName, ChangeInfoDto? Change,
-    LessonReportInfoDto? Report = null, DateTime? ReportUntil = null);
+    LessonReportInfoDto? Report = null, DateTime? ReportUntil = null, string? NoteKind = null);
+/// <summary>課堂筆記. Text → Html; Image → ImageUrl (+ blurred Lqip while it loads).</summary>
+public record LessonNoteDto(Guid LessonId, Guid StudentId, string Kind, string? Html, string? ImageUrl, string? FileName, string? Lqip, int? Width, int? Height, DateTime UpdatedAt);
 /// <summary>Where a past lesson's 回報 stands. Fee = 取消費 charged (null = none / waived).</summary>
 public record LessonReportInfoDto(Guid Id, string Status, string? Reason, string? Message, int? Fee);
 /// <summary>An open 回報 waiting for Iris.</summary>
@@ -39,8 +41,13 @@ public record StudentDetailDto(Guid Id, string Name, string Status, string Class
     string? Email, string? Phone, string? Grade, string? Goal, int Attended, int PackageSize, LessonDto[] Upcoming, LessonDto[] Past, PaymentDto[] Payments,
     string? RemindChannel, DateTime? LastRemindedAt, StudentConsentDto Consent, bool ConsultationCompleted,
     int StudentNo, string? Gender, DateTime JoinedAt, string? AvatarUrl, bool Disabled, string? Segment,
-    string? FirstLessonDate, DateTime? FirstPurchaseAt, int TotalPaid, string LoginMethod);
+    string? FirstLessonDate, DateTime? FirstPurchaseAt, int TotalPaid, string LoginMethod,
+    string[] Skills, int GrowthLevel, int Missed, int TotalLessons, Guid[] MovedLessonIds, string? CoverUrl = null);
+/// <param name="Missed">缺課: cancelled late (no refund) or through 回報</param>
+public record SkillsRequest(string[] Skills);
+public record GrowthRequest(int Level);
 public record StudentStatusRequest(bool Disabled);
+public record StudentBasicsRequest(string? VoiceType, string? Grade);
 public record StudentNoteRequest(string Kind, string Text);
 public record StudentNoteDto(Guid Id, Guid StudentId, string Kind, string Text, DateTime CreatedAt);
 public record RemindRequest(string Message);

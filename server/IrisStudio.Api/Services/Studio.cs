@@ -22,6 +22,7 @@ public class StudioOptions
     public string ReceiptsFolder { get; set; } = "App_Data/receipts";
     public string AvatarsFolder { get; set; } = "App_Data/avatars";
     public string ReelCoversFolder { get; set; } = "App_Data/reel-covers";
+    public string LessonNotesFolder { get; set; } = "App_Data/lesson-notes";
     /// <summary>The site's own address, used to build links in emails (never taken from the request's Host header).</summary>
     public string PublicUrl { get; set; } = "http://localhost:5000";
     /// <summary>忘記密碼 links are valid this long.</summary>
